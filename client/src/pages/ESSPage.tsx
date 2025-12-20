@@ -15,15 +15,21 @@ export default function ESSPage() {
   const [payslips, setPayslips] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Mock logged in user ID
-  const currentUserId = '1'; 
-
   useEffect(() => {
     loadData();
   }, []);
 
   const loadData = async () => {
     try {
+      // Get first employee to simulate logged-in user
+      const employees = await import('../services/employeeService').then(m => m.employeeService.getAll());
+      if (employees.length === 0) {
+        setLoading(false);
+        return;
+      }
+      
+      const currentUserId = employees[0].id;
+
       const [statsData, requestsData, payslipsData] = await Promise.all([
         essService.getDashboardStats(currentUserId),
         essService.getMyRequests(currentUserId),

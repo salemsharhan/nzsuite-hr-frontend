@@ -7,9 +7,9 @@ export default function TimesheetsPage() {
   const [week, setWeek] = useState('2025-W51');
   const [entries, setEntries] = useState<TimesheetEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState<string>('');
   
   const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const currentUserId = '1'; // Mock user ID
 
   useEffect(() => {
     loadData();
@@ -18,12 +18,22 @@ export default function TimesheetsPage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const data = await timesheetService.getMyTimesheets(currentUserId, week);
+      // Get first employee to simulate logged-in user
+      const employees = await import('../services/employeeService').then(m => m.employeeService.getAll());
+      if (employees.length === 0) {
+        setLoading(false);
+        return;
+      }
+      
+      const userId = employees[0].id;
+      setCurrentUserId(userId);
+
+      const data = await timesheetService.getMyTimesheets(userId, week);
       // If no data, initialize with empty rows
       if (data.length === 0) {
         setEntries([
-          { id: 'new-1', employee_id: currentUserId, week, project: 'Project Alpha', hours: { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0, Sun: 0 }, status: 'Draft', total_hours: 0 },
-          { id: 'new-2', employee_id: currentUserId, week, project: 'Internal Ops', hours: { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0, Sun: 0 }, status: 'Draft', total_hours: 0 }
+          { id: 'new-1', employee_id: userId, week, project: 'Project Alpha', hours: { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0, Sun: 0 }, status: 'Draft', total_hours: 0 },
+          { id: 'new-2', employee_id: userId, week, project: 'Internal Ops', hours: { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0, Sun: 0 }, status: 'Draft', total_hours: 0 }
         ]);
       } else {
         setEntries(data);

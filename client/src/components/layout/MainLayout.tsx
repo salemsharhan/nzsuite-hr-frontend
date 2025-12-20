@@ -48,6 +48,8 @@ export const Sidebar = ({ collapsed, setCollapsed, mobileOpen, setMobileOpen }: 
     { icon: Clock, label: t('common.attendance'), href: '/attendance' },
     { icon: Calendar, label: t('common.leaves'), href: '/leaves' },
     { icon: DollarSign, label: t('common.payroll'), href: '/payroll' },
+    { icon: Users, label: 'Self Service', href: '/ess' },
+    { icon: Clock, label: 'Timesheets', href: '/timesheets' },
     { icon: Briefcase, label: t('common.recruitment'), href: '/recruitment' },
     { icon: FileText, label: t('common.documents'), href: '/documents' },
     { icon: BarChart3, label: t('common.analytics'), href: '/analytics' },

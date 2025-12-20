@@ -1,4 +1,4 @@
-import { api } from './api';
+import { api, adminApi } from './api';
 import { attendance as mockAttendance } from '../data/mockData';
 
 export interface AttendanceLog {
@@ -60,7 +60,7 @@ export const attendanceService = {
 
   async createPunch(log: Partial<AttendanceLog>) {
     try {
-      const response = await api.post('/attendance_logs', log);
+      const response = await adminApi.post('/attendance_logs', log);
       if (response.data && response.data.length > 0) {
         return response.data[0];
       }
@@ -73,7 +73,7 @@ export const attendanceService = {
 
   async updatePunch(id: string, updates: Partial<AttendanceLog>) {
     try {
-      const response = await api.patch(`/attendance_logs?id=eq.${id}`, updates);
+      const response = await adminApi.patch(`/attendance_logs?id=eq.${id}`, updates);
       if (response.data && response.data.length > 0) {
         return response.data[0];
       }
@@ -86,7 +86,7 @@ export const attendanceService = {
 
   async deletePunch(id: string) {
     try {
-      await api.delete(`/attendance_logs?id=eq.${id}`);
+      await adminApi.delete(`/attendance_logs?id=eq.${id}`);
       return true;
     } catch (error) {
       console.error('Error deleting punch:', error);

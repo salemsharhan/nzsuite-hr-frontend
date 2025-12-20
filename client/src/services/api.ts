@@ -34,7 +34,23 @@ export const adminApi = axios.create({
 api.interceptors.response.use(
   response => response,
   error => {
-    console.error('API Error:', error.response?.data || error.message);
+    // Log detailed error information
+    if (error.response) {
+      console.error('API Error Response:', {
+        status: error.response.status,
+        data: error.response.data,
+        headers: error.response.headers,
+        config: {
+          url: error.config.url,
+          method: error.config.method,
+          data: error.config.data
+        }
+      });
+    } else if (error.request) {
+      console.error('API No Response:', error.request);
+    } else {
+      console.error('API Error Message:', error.message);
+    }
     return Promise.reject(error);
   }
 );

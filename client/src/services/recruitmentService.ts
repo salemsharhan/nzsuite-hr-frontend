@@ -1,4 +1,4 @@
-import { api } from './api';
+import { api, adminApi } from './api';
 
 export interface Candidate {
   id: string;
@@ -23,7 +23,7 @@ export const recruitmentService = {
 
   async create(candidate: Omit<Candidate, 'id' | 'created_at' | 'status'>) {
     try {
-      const response = await api.post('/candidates', { ...candidate, status: 'Applied' });
+      const response = await adminApi.post('/candidates', { ...candidate, status: 'Applied' });
       if (response.data && response.data.length > 0) {
         return response.data[0];
       }
@@ -36,7 +36,7 @@ export const recruitmentService = {
 
   async updateStatus(id: string, status: Candidate['status']) {
     try {
-      const response = await api.patch(`/candidates?id=eq.${id}`, { status });
+      const response = await adminApi.patch(`/candidates?id=eq.${id}`, { status });
       if (response.data && response.data.length > 0) {
         return response.data[0];
       }
@@ -49,7 +49,7 @@ export const recruitmentService = {
 
   async delete(id: string) {
     try {
-      await api.delete(`/candidates?id=eq.${id}`);
+      await adminApi.delete(`/candidates?id=eq.${id}`);
       return true;
     } catch (error) {
       console.error('Error deleting candidate:', error);

@@ -1,4 +1,4 @@
-import { api } from './api';
+import { api, adminApi } from './api';
 
 export interface LeaveRequest {
   id: string;
@@ -40,7 +40,7 @@ export const leaveService = {
 
   async create(request: Omit<LeaveRequest, 'id' | 'created_at' | 'status'>) {
     try {
-      const response = await api.post('/leave_requests', { ...request, status: 'Pending' });
+      const response = await adminApi.post('/leave_requests', { ...request, status: 'Pending' });
       if (response.data && response.data.length > 0) {
         return response.data[0];
       }
@@ -53,7 +53,7 @@ export const leaveService = {
 
   async updateStatus(id: string, status: 'Approved' | 'Rejected') {
     try {
-      const response = await api.patch(`/leave_requests?id=eq.${id}`, { status });
+      const response = await adminApi.patch(`/leave_requests?id=eq.${id}`, { status });
       if (response.data && response.data.length > 0) {
         return response.data[0];
       }
@@ -66,7 +66,7 @@ export const leaveService = {
 
   async delete(id: string) {
     try {
-      await api.delete(`/leave_requests?id=eq.${id}`);
+      await adminApi.delete(`/leave_requests?id=eq.${id}`);
       return true;
     } catch (error) {
       console.error('Error deleting leave request:', error);

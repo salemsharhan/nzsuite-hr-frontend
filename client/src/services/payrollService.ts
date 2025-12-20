@@ -1,4 +1,4 @@
-import { api } from './api';
+import { api, adminApi } from './api';
 
 export interface PayrollCycle {
   id: string;
@@ -40,7 +40,7 @@ export const payrollService = {
         status: 'Processing'
       };
 
-      const response = await api.post('/payroll_cycles', newCycle);
+      const response = await adminApi.post('/payroll_cycles', newCycle);
       if (response.data && response.data.length > 0) {
         return response.data[0];
       }
@@ -53,7 +53,7 @@ export const payrollService = {
 
   async updateStatus(id: string, status: 'Processed') {
     try {
-      const response = await api.patch(`/payroll_cycles?id=eq.${id}`, { 
+      const response = await adminApi.patch(`/payroll_cycles?id=eq.${id}`, { 
         status,
         approval_date: new Date().toISOString().split('T')[0]
       });

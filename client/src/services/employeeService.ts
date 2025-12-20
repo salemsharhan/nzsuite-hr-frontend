@@ -1,4 +1,4 @@
-import { api } from './api';
+import { api, adminApi } from './api';
 import { employees as mockEmployees } from '../data/mockData';
 
 export interface Employee {
@@ -59,7 +59,20 @@ export const employeeService = {
 
   async create(employee: Omit<Employee, 'id' | 'created_at'>) {
     try {
-      const response = await api.post('/employees', employee);
+      // Sanitize payload to ensure no extra fields (like salary or joining_date) are sent
+      const payload = {
+        employee_id: employee.employee_id,
+        first_name: employee.first_name,
+        last_name: employee.last_name,
+        email: employee.email,
+        phone: employee.phone,
+        department: employee.department,
+        designation: employee.designation,
+        join_date: employee.join_date,
+        status: employee.status,
+        avatar_url: employee.avatar_url
+      };
+      const response = await adminApi.post('/employees', payload);
       if (response.data && response.data.length > 0) {
         return response.data[0];
       }
@@ -72,7 +85,7 @@ export const employeeService = {
 
   async update(id: string, updates: Partial<Employee>) {
     try {
-      const response = await api.patch(`/employees?id=eq.${id}`, updates);
+      const response = await adminApi.patch(`/employees?id=eq.${id}`, updates);
       if (response.data && response.data.length > 0) {
         return response.data[0];
       }
@@ -85,7 +98,7 @@ export const employeeService = {
 
   async delete(id: string) {
     try {
-      await api.delete(`/employees?id=eq.${id}`);
+      await adminApi.delete(`/employees?id=eq.${id}`);
       return true;
     } catch (error) {
       console.error('Error deleting employee:', error);

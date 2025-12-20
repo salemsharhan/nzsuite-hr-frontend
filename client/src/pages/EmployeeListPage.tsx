@@ -51,14 +51,20 @@ export default function EmployeeListPage() {
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // Create payload without salary as it's not in the schema
+      const { salary, ...employeeData } = newEmployee;
+      
       await employeeService.create({
-        ...newEmployee,
+        first_name: employeeData.first_name,
+        last_name: employeeData.last_name,
+        email: employeeData.email,
+        department: employeeData.department,
         employee_id: `EMP-${Math.floor(Math.random() * 10000)}`,
         status: 'Active',
-        avatar_url: `https://ui-avatars.com/api/?name=${newEmployee.first_name}+${newEmployee.last_name}`,
-        phone: '',
-        designation: newEmployee.position,
-        join_date: newEmployee.joining_date
+        avatar_url: `https://ui-avatars.com/api/?name=${employeeData.first_name}+${employeeData.last_name}`,
+        phone: null as any, // Send null for optional fields
+        designation: employeeData.position,
+        join_date: employeeData.joining_date
       });
       
       await loadEmployees();

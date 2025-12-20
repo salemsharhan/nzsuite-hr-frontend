@@ -1,30 +1,33 @@
 import React from 'react';
 import { Shield, Users, Activity, Lock } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, Button, Badge } from '../components/common/UIComponents';
+import { useTranslation } from 'react-i18next';
 
 export default function AdminPage() {
+  const { t } = useTranslation();
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold font-heading">Admin & Governance</h1>
-        <p className="text-muted-foreground">System controls, user roles, and audit logs</p>
+        <h1 className="text-3xl font-bold font-heading">{t('admin.title')}</h1>
+        <p className="text-muted-foreground">{t('admin.securityControls')}</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* User Management */}
         <Card className="md:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>User Management</CardTitle>
-            <Button size="sm" className="gap-2"><Users size={16} /> Add User</Button>
+            <CardTitle>{t('admin.userManagement')}</CardTitle>
+            <Button size="sm" className="gap-2"><Users size={16} /> {t('admin.addUser')}</Button>
           </CardHeader>
           <CardContent>
             <table className="w-full text-sm text-left">
               <thead className="text-xs text-muted-foreground uppercase bg-white/5">
                 <tr>
-                  <th className="px-4 py-3 rounded-l-lg">User</th>
-                  <th className="px-4 py-3">Role</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-right rounded-r-lg">Last Login</th>
+                  <th className="px-4 py-3 rounded-l-lg">{t('employees.name')}</th>
+                  <th className="px-4 py-3">{t('admin.role')}</th>
+                  <th className="px-4 py-3">{t('common.status')}</th>
+                  <th className="px-4 py-3 text-right rounded-r-lg">{t('admin.lastLogin')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -51,16 +54,16 @@ export default function AdminPage() {
         {/* Quick Actions */}
         <div className="space-y-6">
           <Card>
-            <CardHeader><CardTitle>Security Controls</CardTitle></CardHeader>
+            <CardHeader><CardTitle>{t('admin.securityControls')}</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <Button variant="outline" className="w-full justify-start gap-3">
-                <Lock size={16} /> Reset Password
+                <Lock size={16} /> {t('common.edit')} Password
               </Button>
               <Button variant="outline" className="w-full justify-start gap-3">
-                <Shield size={16} /> 2FA Settings
+                <Shield size={16} /> 2FA {t('settings.title')}
               </Button>
               <Button variant="outline" className="w-full justify-start gap-3">
-                <Activity size={16} /> View Audit Logs
+                <Activity size={16} /> {t('common.view')} {t('admin.auditLogs')}
               </Button>
             </CardContent>
           </Card>

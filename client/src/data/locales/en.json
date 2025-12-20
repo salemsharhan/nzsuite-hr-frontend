@@ -73,5 +73,49 @@
     "regularization": "Regularization Request",
     "punchLog": "Punch Log",
     "systemControlled": "System Controlled"
+  },
+  "leaves": {
+    "title": "Leave Management",
+    "calendar": "Leave Calendar",
+    "pendingApprovals": "Pending Approvals",
+    "newRequest": "New Request",
+    "annualLeave": "Annual Leave",
+    "sickLeave": "Sick Leave",
+    "unpaidLeave": "Unpaid Leave"
+  },
+  "recruitment": {
+    "title": "Recruitment Pipeline",
+    "applied": "Applied",
+    "screening": "Screening",
+    "interview": "Interview",
+    "offer": "Offer",
+    "hired": "Hired",
+    "addCandidate": "Add Candidate"
+  },
+  "ess": {
+    "title": "My Dashboard",
+    "checkInTime": "Check-in Time",
+    "leaveBalance": "Leave Balance",
+    "nextPayday": "Next Payday",
+    "myRequests": "My Requests",
+    "recentPayslips": "Recent Payslips",
+    "requestLeave": "Request Leave"
+  },
+  "admin": {
+    "title": "Admin & Governance",
+    "userManagement": "User Management",
+    "securityControls": "Security Controls",
+    "auditLogs": "Audit Logs",
+    "addUser": "Add User",
+    "role": "Role",
+    "lastLogin": "Last Login"
+  },
+  "settings": {
+    "title": "System Settings",
+    "general": "General Settings",
+    "companyName": "Company Name",
+    "supportEmail": "Support Email",
+    "currency": "Default Currency",
+    "timezone": "Timezone"
   }
 }

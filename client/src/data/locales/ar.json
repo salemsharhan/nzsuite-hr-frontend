@@ -73,5 +73,49 @@
     "regularization": "طلب تسوية",
     "punchLog": "سجل البصمة",
     "systemControlled": "تحكم النظام"
+  },
+  "leaves": {
+    "title": "إدارة الإجازات",
+    "calendar": "تقويم الإجازات",
+    "pendingApprovals": "الموافقات المعلقة",
+    "newRequest": "طلب جديد",
+    "annualLeave": "إجازة سنوية",
+    "sickLeave": "إجازة مرضية",
+    "unpaidLeave": "إجازة بدون راتب"
+  },
+  "recruitment": {
+    "title": "مسار التوظيف",
+    "applied": "تم التقديم",
+    "screening": "فرز",
+    "interview": "مقابلة",
+    "offer": "عرض عمل",
+    "hired": "تم التعيين",
+    "addCandidate": "إضافة مرشح"
+  },
+  "ess": {
+    "title": "لوحة التحكم الخاصة بي",
+    "checkInTime": "وقت الدخول",
+    "leaveBalance": "رصيد الإجازات",
+    "nextPayday": "موعد الراتب القادم",
+    "myRequests": "طلباتي",
+    "recentPayslips": "قسائم الراتب الأخيرة",
+    "requestLeave": "طلب إجازة"
+  },
+  "admin": {
+    "title": "الإدارة والحوكمة",
+    "userManagement": "إدارة المستخدمين",
+    "securityControls": "ضوابط الأمان",
+    "auditLogs": "سجلات التدقيق",
+    "addUser": "إضافة مستخدم",
+    "role": "الدور",
+    "lastLogin": "آخر تسجيل دخول"
+  },
+  "settings": {
+    "title": "إعدادات النظام",
+    "general": "الإعدادات العامة",
+    "companyName": "اسم الشركة",
+    "supportEmail": "بريد الدعم",
+    "currency": "العملة الافتراضية",
+    "timezone": "المنطقة الزمنية"
   }
 }

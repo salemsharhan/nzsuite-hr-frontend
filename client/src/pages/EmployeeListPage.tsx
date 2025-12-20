@@ -12,6 +12,7 @@ import {
   User
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, Button, Input, Badge } from '../components/common/UIComponents';
+import Modal from '../components/common/Modal';
 import { employeeService, Employee } from '../services/employeeService';
 import { useEffect } from 'react';
 
@@ -21,6 +22,7 @@ export default function EmployeeListPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDept, setFilterDept] = useState('All');
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
     loadEmployees();
@@ -56,11 +58,37 @@ export default function EmployeeListPage() {
           <h1 className="text-3xl font-bold font-heading tracking-tight text-foreground">{t('employees.title')}</h1>
           <p className="text-muted-foreground mt-1">Manage your organization's workforce.</p>
         </div>
-        <Button variant="primary">
+        <Button variant="primary" onClick={() => setIsModalOpen(true)}>
           <Plus size={18} className="mr-2 rtl:ml-2 rtl:mr-0" />
           {t('employees.addEmployee')}
         </Button>
       </div>
+
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={t('employees.addEmployee')}>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">{t('employees.name')}</label>
+            <Input placeholder="John Doe" />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">{t('employees.email')}</label>
+            <Input placeholder="john@example.com" />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">{t('employees.department')}</label>
+            <select className="w-full h-10 bg-white/5 border border-white/10 rounded-md px-3 text-sm focus:outline-none focus:border-primary">
+              <option>Engineering</option>
+              <option>Sales</option>
+              <option>Marketing</option>
+              <option>HR</option>
+            </select>
+          </div>
+          <div className="pt-4 flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setIsModalOpen(false)}>{t('common.cancel')}</Button>
+            <Button onClick={() => setIsModalOpen(false)}>{t('common.save')}</Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Filters */}
       <Card>

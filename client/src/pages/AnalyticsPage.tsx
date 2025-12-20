@@ -1,6 +1,7 @@
 import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/common/UIComponents';
+import { useTranslation } from 'react-i18next';
 
 const headcountData = [
   { name: 'Jan', employees: 1100 },
@@ -21,17 +22,19 @@ const attritionData = [
 const COLORS = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b'];
 
 export default function AnalyticsPage() {
+  const { t } = useTranslation();
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold font-heading">Analytics & Reports</h1>
-        <p className="text-muted-foreground">Data-driven insights for HR decision making</p>
+        <h1 className="text-3xl font-bold font-heading">{t('common.analytics')}</h1>
+        <p className="text-muted-foreground">{t('dashboard.subtitle')}</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Headcount Growth */}
         <Card>
-          <CardHeader><CardTitle>Headcount Growth (YTD)</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t('dashboard.headcountByDept')}</CardTitle></CardHeader>
           <CardContent className="h-80">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={headcountData}>
@@ -50,7 +53,7 @@ export default function AnalyticsPage() {
 
         {/* Attrition by Department */}
         <Card>
-          <CardHeader><CardTitle>Attrition by Department</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t('dashboard.attendanceOverview')}</CardTitle></CardHeader>
           <CardContent className="h-80">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -86,7 +89,7 @@ export default function AnalyticsPage() {
 
         {/* Payroll Cost Trend */}
         <Card className="lg:col-span-2">
-          <CardHeader><CardTitle>Payroll Cost Trend</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t('dashboard.payrollCost')}</CardTitle></CardHeader>
           <CardContent className="h-80">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={headcountData}>

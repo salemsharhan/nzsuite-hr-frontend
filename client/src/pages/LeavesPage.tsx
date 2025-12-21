@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar as CalendarIcon, CheckCircle, XCircle, Clock, Plus, Filter } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, Button, Badge, Input } from '../components/common/UIComponents';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import Modal from '../components/common/Modal';
 import { useTranslation } from 'react-i18next';
 import { leaveService, LeaveRequest } from '../services/leaveService';

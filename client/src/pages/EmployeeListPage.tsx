@@ -289,25 +289,31 @@ export default function EmployeeListPage() {
                 value="basic" 
                 className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-sm flex-1"
               >
-                Basic Info
+                {t('employees.basicInfo')}
               </TabsTrigger>
               <TabsTrigger 
                 value="contact" 
                 className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-sm flex-1"
               >
-                Contact
+                {t('employees.contactInfo')}
               </TabsTrigger>
               <TabsTrigger 
                 value="employment" 
                 className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-sm flex-1"
               >
-                Employment
+                {t('employees.employmentDetails')}
               </TabsTrigger>
               <TabsTrigger 
-                value="emergency" 
+                value="emergency"
                 className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-sm flex-1"
               >
-                Emergency
+                {t('employees.emergencyContact')}
+              </TabsTrigger>
+              <TabsTrigger 
+                value="working-hours"
+                className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-sm flex-1"
+              >
+                {t('employees.workingHours')}
               </TabsTrigger>
             </TabsList>
 
@@ -315,29 +321,29 @@ export default function EmployeeListPage() {
             <TabsContent value="basic" className="mt-6 space-y-5 focus-visible:outline-none">
               <div className="grid grid-cols-2 gap-5">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">First Name *</label>
+                  <label className="text-sm font-medium text-foreground">{t('common.firstName')} *</label>
                   <Input 
                     required
                     value={newEmployee.first_name}
                     onChange={e => setNewEmployee({...newEmployee, first_name: e.target.value})}
-                    placeholder="John" 
+                    placeholder={t('common.firstName')} 
                     className="h-11"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Last Name *</label>
+                  <label className="text-sm font-medium text-foreground">{t('common.lastName')} *</label>
                   <Input 
                     required
                     value={newEmployee.last_name}
                     onChange={e => setNewEmployee({...newEmployee, last_name: e.target.value})}
-                    placeholder="Doe" 
+                    placeholder={t('common.lastName')} 
                     className="h-11"
                   />
                 </div>
               </div>
               
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Email *</label>
+                <label className="text-sm font-medium text-foreground">{t('common.email')} *</label>
                 <Input 
                   required
                   type="email"
@@ -350,7 +356,7 @@ export default function EmployeeListPage() {
 
               <div className="grid grid-cols-2 gap-5">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Date of Birth</label>
+                  <label className="text-sm font-medium text-foreground">{t('employees.dateOfBirth')}</label>
                   <Input 
                     type="date"
                     value={newEmployee.date_of_birth}
@@ -359,16 +365,16 @@ export default function EmployeeListPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Gender</label>
+                  <label className="text-sm font-medium text-foreground">{t('employees.gender')}</label>
                   <Select value={newEmployee.gender} onValueChange={(value) => setNewEmployee({...newEmployee, gender: value})}>
                     <SelectTrigger className="w-full h-11">
-                      <SelectValue placeholder="Select gender" />
+                      <SelectValue placeholder={t('common.select') + ' ' + t('employees.gender').toLowerCase()} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Male">Male</SelectItem>
-                      <SelectItem value="Female">Female</SelectItem>
-                      <SelectItem value="Other">Other</SelectItem>
-                      <SelectItem value="Prefer not to say">Prefer not to say</SelectItem>
+                      <SelectItem value="Male">{t('employees.male')}</SelectItem>
+                      <SelectItem value="Female">{t('employees.female')}</SelectItem>
+                      <SelectItem value="Other">{t('employees.other')}</SelectItem>
+                      <SelectItem value="Prefer not to say">{t('employees.other')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -376,21 +382,21 @@ export default function EmployeeListPage() {
 
               <div className="grid grid-cols-2 gap-5">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Marital Status</label>
+                  <label className="text-sm font-medium text-foreground">{t('employees.maritalStatus')}</label>
                   <Select value={newEmployee.marital_status} onValueChange={(value) => setNewEmployee({...newEmployee, marital_status: value})}>
                     <SelectTrigger className="w-full h-11">
-                      <SelectValue placeholder="Select status" />
+                      <SelectValue placeholder={t('common.select') + ' ' + t('common.status').toLowerCase()} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Single">Single</SelectItem>
-                      <SelectItem value="Married">Married</SelectItem>
-                      <SelectItem value="Divorced">Divorced</SelectItem>
-                      <SelectItem value="Widowed">Widowed</SelectItem>
+                      <SelectItem value="Single">{t('employees.single')}</SelectItem>
+                      <SelectItem value="Married">{t('employees.married')}</SelectItem>
+                      <SelectItem value="Divorced">{t('employees.divorced')}</SelectItem>
+                      <SelectItem value="Widowed">{t('employees.widowed')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Nationality</label>
+                  <label className="text-sm font-medium text-foreground">{t('employees.nationality')}</label>
                   <Input 
                     value={newEmployee.nationality}
                     onChange={e => setNewEmployee({...newEmployee, nationality: e.target.value})}
@@ -405,7 +411,7 @@ export default function EmployeeListPage() {
             <TabsContent value="contact" className="mt-6 space-y-5 focus-visible:outline-none">
               <div className="grid grid-cols-2 gap-5">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Phone</label>
+                  <label className="text-sm font-medium text-foreground">{t('employees.phone')}</label>
                   <Input 
                     type="tel"
                     value={newEmployee.phone}
@@ -415,7 +421,7 @@ export default function EmployeeListPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Alternate Phone</label>
+                  <label className="text-sm font-medium text-foreground">{t('employees.alternatePhone')}</label>
                   <Input 
                     type="tel"
                     value={newEmployee.alternate_phone}
@@ -427,31 +433,31 @@ export default function EmployeeListPage() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Address</label>
+                <label className="text-sm font-medium text-foreground">{t('employees.address')}</label>
                 <Input 
                   value={newEmployee.address}
                   onChange={e => setNewEmployee({...newEmployee, address: e.target.value})}
-                  placeholder="Street address" 
+                  placeholder={t('employees.address')} 
                   className="h-11"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-5">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">City</label>
+                  <label className="text-sm font-medium text-foreground">{t('employees.city')}</label>
                   <Input 
                     value={newEmployee.city}
                     onChange={e => setNewEmployee({...newEmployee, city: e.target.value})}
-                    placeholder="City" 
+                    placeholder={t('employees.city')} 
                     className="h-11"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">State/Province</label>
+                  <label className="text-sm font-medium text-foreground">{t('employees.state')}</label>
                   <Input 
                     value={newEmployee.state}
                     onChange={e => setNewEmployee({...newEmployee, state: e.target.value})}
-                    placeholder="State" 
+                    placeholder={t('employees.state')} 
                     className="h-11"
                   />
                 </div>
@@ -459,16 +465,16 @@ export default function EmployeeListPage() {
 
               <div className="grid grid-cols-2 gap-5">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Country</label>
+                  <label className="text-sm font-medium text-foreground">{t('employees.country')}</label>
                   <Input 
                     value={newEmployee.country}
                     onChange={e => setNewEmployee({...newEmployee, country: e.target.value})}
-                    placeholder="Country" 
+                    placeholder={t('employees.country')} 
                     className="h-11"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Postal Code</label>
+                  <label className="text-sm font-medium text-foreground">{t('employees.postalCode')}</label>
                   <Input 
                     value={newEmployee.postal_code}
                     onChange={e => setNewEmployee({...newEmployee, postal_code: e.target.value})}
@@ -482,10 +488,10 @@ export default function EmployeeListPage() {
             {/* Employment Details Tab */}
             <TabsContent value="employment" className="mt-6 space-y-5 focus-visible:outline-none">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Department *</label>
+                <label className="text-sm font-medium text-foreground">{t('employees.department')} *</label>
                 <Select value={newEmployee.department_id} onValueChange={(value) => setNewEmployee({...newEmployee, department_id: value})} required>
                   <SelectTrigger className="w-full h-11">
-                    <SelectValue placeholder="Select department" />
+                    <SelectValue placeholder={t('common.select') + ' ' + t('employees.department').toLowerCase()} />
                   </SelectTrigger>
                   <SelectContent>
                     {departments.map(dept => (
@@ -497,7 +503,7 @@ export default function EmployeeListPage() {
 
               <div className="grid grid-cols-2 gap-5">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Role *</label>
+                  <label className="text-sm font-medium text-foreground">{t('common.role')} *</label>
                   <Select 
                     value={selectedRoleId} 
                     onValueChange={(value) => {
@@ -507,7 +513,7 @@ export default function EmployeeListPage() {
                     required
                   >
                     <SelectTrigger className="w-full h-11">
-                      <SelectValue placeholder="Select role" />
+                      <SelectValue placeholder={t('common.select') + ' ' + t('common.role').toLowerCase()} />
                     </SelectTrigger>
                     <SelectContent>
                       {roles.map(role => (
@@ -517,7 +523,7 @@ export default function EmployeeListPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Job *</label>
+                  <label className="text-sm font-medium text-foreground">{t('common.job')} *</label>
                   <Select 
                     value={newEmployee.job_id} 
                     onValueChange={(value) => setNewEmployee({...newEmployee, job_id: value})}
@@ -525,7 +531,7 @@ export default function EmployeeListPage() {
                     required
                   >
                     <SelectTrigger className="w-full h-11">
-                      <SelectValue placeholder={selectedRoleId ? "Select job" : "Select role first"} />
+                      <SelectValue placeholder={selectedRoleId ? t('common.select') + ' ' + t('common.job').toLowerCase() : t('common.select') + ' ' + t('common.role').toLowerCase() + ' ' + t('common.first')} />
                     </SelectTrigger>
                     <SelectContent>
                       {availableJobs.map(job => (
@@ -538,29 +544,29 @@ export default function EmployeeListPage() {
 
               <div className="grid grid-cols-2 gap-5">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Employment Type *</label>
+                  <label className="text-sm font-medium text-foreground">{t('employees.employmentType')} *</label>
                   <Select value={newEmployee.employment_type} onValueChange={(value) => setNewEmployee({...newEmployee, employment_type: value})}>
                     <SelectTrigger className="w-full h-11">
-                      <SelectValue placeholder="Select type" />
+                      <SelectValue placeholder={t('common.select') + ' ' + t('common.type')} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Full Time">Full Time</SelectItem>
-                      <SelectItem value="Part Time">Part Time</SelectItem>
-                      <SelectItem value="Consultant">Consultant</SelectItem>
-                      <SelectItem value="Intern">Intern</SelectItem>
+                      <SelectItem value="Full Time">{t('employees.fullTime')}</SelectItem>
+                      <SelectItem value="Part Time">{t('employees.partTime')}</SelectItem>
+                      <SelectItem value="Consultant">{t('employees.contract')}</SelectItem>
+                      <SelectItem value="Intern">{t('employees.intern')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Work Location</label>
+                  <label className="text-sm font-medium text-foreground">{t('employees.workLocation')}</label>
                   <Select value={newEmployee.work_location} onValueChange={(value) => setNewEmployee({...newEmployee, work_location: value})}>
                     <SelectTrigger className="w-full h-11">
-                      <SelectValue placeholder="Select location" />
+                      <SelectValue placeholder={t('common.select') + ' ' + t('employees.workLocation').toLowerCase()} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Office">Office</SelectItem>
-                      <SelectItem value="Remote">Remote</SelectItem>
-                      <SelectItem value="Hybrid">Hybrid</SelectItem>
+                      <SelectItem value="Office">{t('employees.office')}</SelectItem>
+                      <SelectItem value="Remote">{t('employees.remote')}</SelectItem>
+                      <SelectItem value="Hybrid">{t('employees.hybrid')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -568,7 +574,7 @@ export default function EmployeeListPage() {
 
               <div className="grid grid-cols-2 gap-5">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Joining Date *</label>
+                  <label className="text-sm font-medium text-foreground">{t('employees.joinDate')} *</label>
                   <Input 
                     type="date"
                     required
@@ -578,7 +584,7 @@ export default function EmployeeListPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Salary</label>
+                  <label className="text-sm font-medium text-foreground">{t('employees.salary')}</label>
                   <Input 
                     type="number"
                     step="0.01"
@@ -591,13 +597,13 @@ export default function EmployeeListPage() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Reporting Manager</label>
-                <Select value={newEmployee.reporting_manager_id} onValueChange={(value) => setNewEmployee({...newEmployee, reporting_manager_id: value})}>
+                <label className="text-sm font-medium text-foreground">{t('employees.reportingManager')}</label>
+                <Select value={newEmployee.reporting_manager_id} onValueChange={(value) => setNewEmployee({...newEmployee, reporting_manager_id: value === 'none' ? '' : value})}>
                   <SelectTrigger className="w-full h-11">
-                    <SelectValue placeholder="Select manager" />
+                    <SelectValue placeholder={t('common.select') + ' ' + t('employees.manager').toLowerCase()} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
+                    <SelectItem value="none">{t('common.none')}</SelectItem>
                     {employees.map(emp => (
                       <SelectItem key={emp.id} value={emp.id}>
                         {emp.first_name || emp.firstName} {emp.last_name || emp.lastName}
@@ -611,18 +617,18 @@ export default function EmployeeListPage() {
             {/* Emergency Contact Tab */}
             <TabsContent value="emergency" className="mt-6 space-y-5 focus-visible:outline-none">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Emergency Contact Name</label>
+                <label className="text-sm font-medium text-foreground">{t('employees.emergencyContact')} {t('common.name')}</label>
                 <Input 
                   value={newEmployee.emergency_contact_name}
                   onChange={e => setNewEmployee({...newEmployee, emergency_contact_name: e.target.value})}
-                  placeholder="Contact name" 
+                  placeholder={t('employees.emergencyContact') + ' ' + t('common.name')} 
                   className="h-11"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-5">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Emergency Contact Phone</label>
+                  <label className="text-sm font-medium text-foreground">{t('employees.emergencyContact')} {t('employees.phone')}</label>
                   <Input 
                     type="tel"
                     value={newEmployee.emergency_contact_phone}
@@ -632,29 +638,29 @@ export default function EmployeeListPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Relationship</label>
+                  <label className="text-sm font-medium text-foreground">{t('employees.relationship')}</label>
                   <Select value={newEmployee.emergency_contact_relationship} onValueChange={(value) => setNewEmployee({...newEmployee, emergency_contact_relationship: value})}>
                     <SelectTrigger className="w-full h-11">
-                      <SelectValue placeholder="Select relationship" />
+                      <SelectValue placeholder={t('common.select') + ' ' + t('employees.relationship').toLowerCase()} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Spouse">Spouse</SelectItem>
-                      <SelectItem value="Parent">Parent</SelectItem>
-                      <SelectItem value="Sibling">Sibling</SelectItem>
-                      <SelectItem value="Child">Child</SelectItem>
-                      <SelectItem value="Other">Other</SelectItem>
+                      <SelectItem value="Spouse">{t('employees.spouse')}</SelectItem>
+                      <SelectItem value="Parent">{t('employees.parent')}</SelectItem>
+                      <SelectItem value="Sibling">{t('employees.sibling')}</SelectItem>
+                      <SelectItem value="Child">{t('employees.child')}</SelectItem>
+                      <SelectItem value="Other">{t('employees.other')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Notes</label>
+                <label className="text-sm font-medium text-foreground">{t('employees.notes')}</label>
                 <textarea
                   className="w-full min-h-[120px] rounded-lg border border-input bg-background/50 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-all resize-none"
                   value={newEmployee.notes}
                   onChange={e => setNewEmployee({...newEmployee, notes: e.target.value})}
-                  placeholder="Additional notes..."
+                  placeholder={t('employees.notes')}
                 />
               </div>
             </TabsContent>
@@ -662,10 +668,10 @@ export default function EmployeeListPage() {
             {/* Working Hours Tab */}
             <TabsContent value="working-hours" className="mt-6 space-y-5 focus-visible:outline-none">
               <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Weekday Working Hours</h3>
+                <h3 className="text-lg font-semibold">{t('employees.workingHours')}</h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-foreground">Monday Hours</label>
+                    <label className="text-sm font-medium text-foreground">{t('employees.monday')} {t('employees.hours')}</label>
                     <Input
                       type="number"
                       step="0.25"
@@ -677,7 +683,7 @@ export default function EmployeeListPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-foreground">Tuesday Hours</label>
+                    <label className="text-sm font-medium text-foreground">{t('employees.tuesday')} {t('employees.hours')}</label>
                     <Input
                       type="number"
                       step="0.25"
@@ -689,7 +695,7 @@ export default function EmployeeListPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-foreground">Wednesday Hours</label>
+                    <label className="text-sm font-medium text-foreground">{t('employees.wednesday')} {t('employees.hours')}</label>
                     <Input
                       type="number"
                       step="0.25"
@@ -701,7 +707,7 @@ export default function EmployeeListPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-foreground">Thursday Hours</label>
+                    <label className="text-sm font-medium text-foreground">{t('employees.thursday')} {t('employees.hours')}</label>
                     <Input
                       type="number"
                       step="0.25"
@@ -713,7 +719,7 @@ export default function EmployeeListPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-foreground">Friday Hours</label>
+                    <label className="text-sm font-medium text-foreground">{t('employees.friday')} {t('employees.hours')}</label>
                     <Input
                       type="number"
                       step="0.25"
@@ -725,7 +731,7 @@ export default function EmployeeListPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-foreground">Saturday Hours</label>
+                    <label className="text-sm font-medium text-foreground">{t('employees.saturday')} {t('employees.hours')}</label>
                     <Input
                       type="number"
                       step="0.25"
@@ -737,7 +743,7 @@ export default function EmployeeListPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-foreground">Sunday Hours</label>
+                    <label className="text-sm font-medium text-foreground">{t('employees.sunday')} {t('employees.hours')}</label>
                     <Input
                       type="number"
                       step="0.25"
@@ -758,13 +764,13 @@ export default function EmployeeListPage() {
                       onChange={e => setNewEmployee({...newEmployee, flexible_hours: e.target.checked})}
                       className="rounded"
                     />
-                    <label className="text-sm font-medium text-foreground">Flexible Working Hours</label>
+                    <label className="text-sm font-medium text-foreground">{t('employees.flexibleHours')}</label>
                   </div>
                   
                   {newEmployee.flexible_hours && (
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <label className="text-sm font-medium text-foreground">Start Time</label>
+                        <label className="text-sm font-medium text-foreground">{t('employees.startTime')}</label>
                         <Input
                           type="time"
                           value={newEmployee.start_time}
@@ -773,7 +779,7 @@ export default function EmployeeListPage() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-sm font-medium text-foreground">End Time</label>
+                        <label className="text-sm font-medium text-foreground">{t('employees.endTime')}</label>
                         <Input
                           type="time"
                           value={newEmployee.end_time}
@@ -782,7 +788,7 @@ export default function EmployeeListPage() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-sm font-medium text-foreground">Break Duration (Minutes)</label>
+                        <label className="text-sm font-medium text-foreground">{t('employees.breakDuration')}</label>
                         <Input
                           type="number"
                           min="0"

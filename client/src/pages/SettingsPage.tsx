@@ -145,7 +145,7 @@ export default function SettingsPage() {
       setNewDept({ name: '', code: '', description: '' });
     } catch (error) {
       console.error('Failed to save department:', error);
-      alert('Failed to save department');
+      alert(t('settings.failedToSave') + ': ' + t('settings.departments').toLowerCase());
     }
   };
 
@@ -163,14 +163,14 @@ export default function SettingsPage() {
       setNewRole({ name: '', code: '', description: '' });
     } catch (error) {
       console.error('Failed to save role:', error);
-      alert('Failed to save role');
+      alert(t('settings.failedToSave') + ': ' + t('settings.roles').toLowerCase());
     }
   };
 
   const handleSaveJob = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedRoleForJob && !editingJob) {
-      alert('Please select a role');
+      alert(t('settings.selectRole'));
       return;
     }
     try {
@@ -186,41 +186,41 @@ export default function SettingsPage() {
       setSelectedRoleForJob('');
     } catch (error) {
       console.error('Failed to save job:', error);
-      alert('Failed to save job');
+      alert(t('settings.failedToSave') + ': ' + t('settings.jobs').toLowerCase());
     }
   };
 
   const handleDeleteDepartment = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this department?')) return;
+    if (!confirm(t('settings.confirmDeleteDepartment'))) return;
     try {
       await departmentService.delete(id);
       await loadDepartments();
     } catch (error) {
       console.error('Failed to delete department:', error);
-      alert('Failed to delete department');
+      alert(t('settings.failedToDelete') + ': ' + t('settings.departments').toLowerCase());
     }
   };
 
   const handleDeleteRole = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this role? This will also delete all associated jobs.')) return;
+    if (!confirm(t('settings.confirmDeleteRole'))) return;
     try {
       await roleService.delete(id);
       await loadRoles();
       await loadJobs();
     } catch (error) {
       console.error('Failed to delete role:', error);
-      alert('Failed to delete role');
+      alert(t('settings.failedToDelete') + ': ' + t('settings.roles').toLowerCase());
     }
   };
 
   const handleDeleteJob = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this job?')) return;
+    if (!confirm(t('settings.confirmDeleteJob'))) return;
     try {
       await jobService.delete(id);
       await loadJobs();
     } catch (error) {
       console.error('Failed to delete job:', error);
-      alert('Failed to delete job');
+      alert(t('settings.failedToDelete') + ': ' + t('settings.jobs').toLowerCase());
     }
   };
 
@@ -270,11 +270,11 @@ export default function SettingsPage() {
         const result = await companyService.create(newCompany);
         // Show success message with login credentials
         alert(
-          `Company created successfully!\n\n` +
-          `Admin Login Credentials:\n` +
-          `Email: ${result.authUser.email}\n` +
-          `Password: ${newCompany.admin_password}\n\n` +
-          `The admin user can now login at /login`
+          `${t('settings.companyCreatedSuccess')}\n\n` +
+          `${t('settings.adminLoginCredentials')}:\n` +
+          `${t('common.email')}: ${result.authUser.email}\n` +
+          `${t('common.password')}: ${newCompany.admin_password}\n\n` +
+          `${t('settings.adminCanLogin')}`
         );
       }
       await loadCompanies();
@@ -296,18 +296,18 @@ export default function SettingsPage() {
       });
     } catch (error: any) {
       console.error('Failed to save company:', error);
-      alert(`Failed to save company: ${error?.message || 'Unknown error'}`);
+      alert(`${t('settings.failedToSave')}: ${error?.message || t('settings.unknownError')}`);
     }
   };
 
   const handleDeleteCompany = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this company? This will also delete all associated employees and admins.')) return;
+    if (!confirm(t('settings.confirmDeleteCompany'))) return;
     try {
       await companyService.delete(id);
       await loadCompanies();
     } catch (error) {
       console.error('Failed to delete company:', error);
-      alert('Failed to delete company');
+      alert(t('settings.failedToDelete') + ': ' + t('settings.companies').toLowerCase());
     }
   };
 
@@ -318,7 +318,7 @@ export default function SettingsPage() {
       await loadCompanies();
     } catch (error) {
       console.error('Failed to sync company:', error);
-      alert('Failed to sync company');
+      alert(t('settings.failedToSync'));
     }
   };
 
@@ -414,10 +414,10 @@ export default function SettingsPage() {
         } as CompanySettings);
         setCompanySettings(newSettings);
       }
-      alert('Company settings saved successfully!');
+      alert(t('settings.settingsSavedSuccess'));
     } catch (error: any) {
       console.error('Failed to save company settings:', error);
-      alert(`Failed to save company settings: ${error?.message || 'Unknown error'}`);
+      alert(`${t('settings.failedToSave')}: ${error?.message || t('settings.unknownError')}`);
     }
   };
 
@@ -430,7 +430,7 @@ export default function SettingsPage() {
     const jobId = newSalaryConfig.job_id && newSalaryConfig.job_id.trim() !== '' ? newSalaryConfig.job_id : null;
     
     if (!roleId && !jobId) {
-      alert('Please select either a Role or a Job for the salary configuration.');
+      alert(t('settings.selectRoleOrJob'));
       return;
     }
     
@@ -469,10 +469,10 @@ export default function SettingsPage() {
         insurance_deduction: 0,
         other_deductions: 0
       });
-      alert('Salary configuration saved successfully!');
+      alert(t('settings.salaryConfigSavedSuccess'));
     } catch (error: any) {
       console.error('Failed to save salary config:', error);
-      alert(`Failed to save salary config: ${error?.message || 'Unknown error'}`);
+      alert(`${t('settings.failedToSave')}: ${error?.message || t('settings.unknownError')}`);
     }
   };
 
@@ -500,7 +500,7 @@ export default function SettingsPage() {
         can_manage_documents: false,
         can_manage_recruitment: false
       });
-      alert('Permissions configuration saved successfully!');
+      alert(t('settings.permissionsConfigSavedSuccess'));
     } catch (error: any) {
       console.error('Failed to save permissions config:', error);
       alert(`Failed to save permissions config: ${error?.message || 'Unknown error'}`);
@@ -560,10 +560,10 @@ export default function SettingsPage() {
       return (
         <>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Departments Master</CardTitle>
+            <CardTitle>{t('settings.departmentsMaster')}</CardTitle>
             <Button onClick={() => { setEditingDept(null); setNewDept({ name: '', code: '', description: '' }); setIsDeptModalOpen(true); }}>
               <Plus size={18} className="mr-2" />
-              Add Department
+              {t('settings.addDepartment')}
             </Button>
           </CardHeader>
           <CardContent>
@@ -588,7 +588,7 @@ export default function SettingsPage() {
                 </div>
               ))}
               {departments.length === 0 && (
-                <p className="text-center text-muted-foreground py-8">No departments found. Add one to get started.</p>
+                <p className="text-center text-muted-foreground py-8">{t('settings.noDepartments')}</p>
               )}
             </div>
           </CardContent>
@@ -600,10 +600,10 @@ export default function SettingsPage() {
       return (
         <>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Roles Master</CardTitle>
+            <CardTitle>{t('settings.rolesMaster')}</CardTitle>
             <Button onClick={() => { setEditingRole(null); setNewRole({ name: '', code: '', description: '' }); setIsRoleModalOpen(true); }}>
               <Plus size={18} className="mr-2" />
-              Add Role
+              {t('settings.addRole')}
             </Button>
           </CardHeader>
           <CardContent>
@@ -628,7 +628,7 @@ export default function SettingsPage() {
                 </div>
               ))}
               {roles.length === 0 && (
-                <p className="text-center text-muted-foreground py-8">No roles found. Add one to get started.</p>
+                <p className="text-center text-muted-foreground py-8">{t('settings.noRoles')}</p>
               )}
             </div>
           </CardContent>
@@ -648,10 +648,10 @@ export default function SettingsPage() {
       return (
         <>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Jobs Master</CardTitle>
+            <CardTitle>{t('settings.jobsMaster')}</CardTitle>
             <Button onClick={() => { setEditingJob(null); setNewJob({ role_id: '', name: '', code: '', description: '' }); setSelectedRoleForJob(''); setIsJobModalOpen(true); }}>
               <Plus size={18} className="mr-2" />
-              Add Job
+              {t('settings.addJob')}
             </Button>
           </CardHeader>
           <CardContent>
@@ -683,7 +683,7 @@ export default function SettingsPage() {
                 </div>
               ))}
               {jobs.length === 0 && (
-                <p className="text-center text-muted-foreground py-8">No jobs found. Add one to get started.</p>
+                <p className="text-center text-muted-foreground py-8">{t('settings.noJobs')}</p>
               )}
             </div>
           </CardContent>
@@ -695,7 +695,7 @@ export default function SettingsPage() {
       return (
         <>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Companies & API Integration</CardTitle>
+            <CardTitle>{t('settings.companiesApiIntegration')}</CardTitle>
             <Button onClick={() => { 
               setEditingCompany(null); 
               setNewCompany({
@@ -715,7 +715,7 @@ export default function SettingsPage() {
               setIsCompanyModalOpen(true); 
             }}>
               <Plus size={18} className="mr-2" />
-              Add Company
+              {t('settings.addCompany')}
             </Button>
           </CardHeader>
           <CardContent>
@@ -736,12 +736,12 @@ export default function SettingsPage() {
                       {company.description && <p className="text-sm text-muted-foreground mb-2">{company.description}</p>}
                       {company.api_endpoint && (
                         <div className="text-xs text-muted-foreground mb-2">
-                          <strong>API Endpoint:</strong> {company.api_endpoint}
+                          <strong>{t('settings.apiEndpoint')}:</strong> {company.api_endpoint}
                         </div>
                       )}
                       {company.last_sync_at && (
                         <div className="text-xs text-muted-foreground">
-                          <strong>Last Sync:</strong> {new Date(company.last_sync_at).toLocaleString()}
+                          <strong>{t('settings.lastSync')}:</strong> {new Date(company.last_sync_at).toLocaleString()}
                         </div>
                       )}
                       {company.sync_error_message && (
@@ -756,7 +756,7 @@ export default function SettingsPage() {
                           variant="ghost" 
                           size="sm" 
                           onClick={() => copyToClipboard(company.api_key!, `api_key_${company.id}`)}
-                          title="Copy API Key"
+                          title={t('settings.copyApiKey')}
                         >
                           {copiedField === `api_key_${company.id}` ? <Check size={16} /> : <Copy size={16} />}
                         </Button>
@@ -766,7 +766,7 @@ export default function SettingsPage() {
                           variant="ghost" 
                           size="sm" 
                           onClick={() => handleSyncCompany(company.id)}
-                          title="Sync Now"
+                          title={t('settings.syncNow')}
                         >
                           <RefreshCw size={16} />
                         </Button>
@@ -782,7 +782,7 @@ export default function SettingsPage() {
                 </div>
               ))}
               {companies.length === 0 && (
-                <p className="text-center text-muted-foreground py-8">No companies found. Add one to get started.</p>
+                <p className="text-center text-muted-foreground py-8">{t('settings.noCompanies')}</p>
               )}
             </div>
           </CardContent>
@@ -800,12 +800,12 @@ export default function SettingsPage() {
             {/* Working Hours Settings */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold flex items-center gap-2">
-                <Clock size={20} /> Working Hours
+                <Clock size={20} /> {t('settings.workingHours')}
               </h3>
               <form onSubmit={handleSaveCompanySettings} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Default Working Hours per Day</label>
+                    <label className="text-sm font-medium">{t('settings.defaultWorkingHoursPerDay')}</label>
                     <Input
                       type="number"
                       step="0.25"
@@ -814,7 +814,7 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Working Days per Week</label>
+                    <label className="text-sm font-medium">{t('settings.workingDaysPerWeek')}</label>
                     <Input
                       type="number"
                       value={companySettings?.default_working_days_per_week || 5}
@@ -822,7 +822,7 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Week Start Day</label>
+                    <label className="text-sm font-medium">{t('settings.weekStartDay')}</label>
                     <Select
                       value={String(companySettings?.work_week_start_day || 1)}
                       onValueChange={(value) => setCompanySettings({ ...companySettings!, work_week_start_day: parseInt(value) })}
@@ -831,18 +831,18 @@ export default function SettingsPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="1">Monday</SelectItem>
-                        <SelectItem value="2">Tuesday</SelectItem>
-                        <SelectItem value="3">Wednesday</SelectItem>
-                        <SelectItem value="4">Thursday</SelectItem>
-                        <SelectItem value="5">Friday</SelectItem>
-                        <SelectItem value="6">Saturday</SelectItem>
-                        <SelectItem value="7">Sunday</SelectItem>
+                        <SelectItem value="1">{t('employees.monday')}</SelectItem>
+                        <SelectItem value="2">{t('employees.tuesday')}</SelectItem>
+                        <SelectItem value="3">{t('employees.wednesday')}</SelectItem>
+                        <SelectItem value="4">{t('employees.thursday')}</SelectItem>
+                        <SelectItem value="5">{t('employees.friday')}</SelectItem>
+                        <SelectItem value="6">{t('employees.saturday')}</SelectItem>
+                        <SelectItem value="7">{t('employees.sunday')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Week End Day</label>
+                    <label className="text-sm font-medium">{t('settings.weekEndDay')}</label>
                     <Select
                       value={String(companySettings?.work_week_end_day || 5)}
                       onValueChange={(value) => setCompanySettings({ ...companySettings!, work_week_end_day: parseInt(value) })}
@@ -851,13 +851,13 @@ export default function SettingsPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="1">Monday</SelectItem>
-                        <SelectItem value="2">Tuesday</SelectItem>
-                        <SelectItem value="3">Wednesday</SelectItem>
-                        <SelectItem value="4">Thursday</SelectItem>
-                        <SelectItem value="5">Friday</SelectItem>
-                        <SelectItem value="6">Saturday</SelectItem>
-                        <SelectItem value="7">Sunday</SelectItem>
+                        <SelectItem value="1">{t('employees.monday')}</SelectItem>
+                        <SelectItem value="2">{t('employees.tuesday')}</SelectItem>
+                        <SelectItem value="3">{t('employees.wednesday')}</SelectItem>
+                        <SelectItem value="4">{t('employees.thursday')}</SelectItem>
+                        <SelectItem value="5">{t('employees.friday')}</SelectItem>
+                        <SelectItem value="6">{t('employees.saturday')}</SelectItem>
+                        <SelectItem value="7">{t('employees.sunday')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -866,11 +866,11 @@ export default function SettingsPage() {
                 {/* Leave Settings */}
                 <div className="pt-4 border-t border-white/10">
                   <h3 className="text-lg font-semibold flex items-center gap-2 mb-4">
-                    <Calendar size={20} /> Leave Settings
+                    <Calendar size={20} /> {t('settings.leaveSettings')}
                   </h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Annual Leave Days per Year</label>
+                      <label className="text-sm font-medium">{t('settings.annualLeaveDaysPerYear')}</label>
                       <Input
                         type="number"
                         value={companySettings?.annual_leave_days_per_year || 20}
@@ -878,7 +878,7 @@ export default function SettingsPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Sick Leave Days per Year</label>
+                      <label className="text-sm font-medium">{t('settings.sickLeaveDaysPerYear')}</label>
                       <Input
                         type="number"
                         value={companySettings?.sick_leave_days_per_year || 10}
@@ -886,7 +886,7 @@ export default function SettingsPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Max Carry Forward Days</label>
+                      <label className="text-sm font-medium">{t('settings.maxCarryForwardDays')}</label>
                       <Input
                         type="number"
                         value={companySettings?.max_carry_forward_days || 5}
@@ -900,7 +900,7 @@ export default function SettingsPage() {
                         onChange={(e) => setCompanySettings({ ...companySettings!, carry_forward_annual_leave: e.target.checked })}
                         className="mr-2"
                       />
-                      <label className="text-sm font-medium">Allow Carry Forward Annual Leave</label>
+                      <label className="text-sm font-medium">{t('settings.allowCarryForward')}</label>
                     </div>
                   </div>
                 </div>
@@ -908,11 +908,11 @@ export default function SettingsPage() {
                 {/* Payroll Settings */}
                 <div className="pt-4 border-t border-white/10">
                   <h3 className="text-lg font-semibold flex items-center gap-2 mb-4">
-                    <DollarSign size={20} /> Payroll Settings
+                    <DollarSign size={20} /> {t('settings.payrollSettings')}
                   </h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Payroll Cycle</label>
+                      <label className="text-sm font-medium">{t('settings.payrollCycle')}</label>
                       <Select
                         value={companySettings?.payroll_cycle || 'monthly'}
                         onValueChange={(value: 'monthly' | 'bi-weekly' | 'weekly') => setCompanySettings({ ...companySettings!, payroll_cycle: value })}
@@ -920,15 +920,15 @@ export default function SettingsPage() {
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="monthly">Monthly</SelectItem>
-                          <SelectItem value="bi-weekly">Bi-Weekly</SelectItem>
-                          <SelectItem value="weekly">Weekly</SelectItem>
-                        </SelectContent>
+                      <SelectContent>
+                        <SelectItem value="monthly">{t('settings.monthly')}</SelectItem>
+                        <SelectItem value="bi-weekly">{t('settings.biWeekly')}</SelectItem>
+                        <SelectItem value="weekly">{t('settings.weekly')}</SelectItem>
+                      </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Payroll Day</label>
+                      <label className="text-sm font-medium">{t('settings.payrollDay')}</label>
                       <Input
                         type="number"
                         min="1"
@@ -942,10 +942,10 @@ export default function SettingsPage() {
 
                 {/* Attendance Settings */}
                 <div className="pt-4 border-t border-white/10">
-                  <h3 className="text-lg font-semibold mb-4">Attendance Settings</h3>
+                  <h3 className="text-lg font-semibold mb-4">{t('settings.attendanceSettings')}</h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Late Tolerance (Minutes)</label>
+                      <label className="text-sm font-medium">{t('settings.lateToleranceMinutes')}</label>
                       <Input
                         type="number"
                         value={companySettings?.late_tolerance_minutes || 15}
@@ -953,7 +953,7 @@ export default function SettingsPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Overtime Threshold (Hours)</label>
+                      <label className="text-sm font-medium">{t('settings.overtimeThresholdHours')}</label>
                       <Input
                         type="number"
                         step="0.25"
@@ -962,7 +962,7 @@ export default function SettingsPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Overtime Multiplier</label>
+                      <label className="text-sm font-medium">{t('settings.overtimeMultiplier')}</label>
                       <Input
                         type="number"
                         step="0.1"
@@ -974,7 +974,7 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="pt-4 border-t border-white/10 flex justify-end">
-                  <Button type="submit">Save Settings</Button>
+                  <Button type="submit">{t('settings.saveSettings')}</Button>
                 </div>
               </form>
             </div>
@@ -983,11 +983,11 @@ export default function SettingsPage() {
             <div className="pt-6 border-t border-white/10">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold flex items-center gap-2">
-                  <DollarSign size={20} /> Role/Job Salary Configuration
+                  <DollarSign size={20} /> {t('settings.roleJobSalaryConfig')}
                 </h3>
                 <Button onClick={() => setIsSalaryConfigModalOpen(true)}>
                   <Plus size={18} className="mr-2" />
-                  Add Salary Config
+                  {t('settings.addSalaryConfig')}
                 </Button>
               </div>
               <div className="space-y-3">
@@ -996,11 +996,11 @@ export default function SettingsPage() {
                     <div className="flex items-center justify-between">
                       <div>
                         <div className="font-medium">
-                          {config.role_id ? `Role: ${roles.find(r => r.id === config.role_id)?.name || config.role_id}` : ''}
-                          {config.job_id ? `Job: ${jobs.find(j => j.id === config.job_id)?.name || config.job_id}` : ''}
+                          {config.role_id ? `${t('common.role')}: ${roles.find(r => r.id === config.role_id)?.name || config.role_id}` : ''}
+                          {config.job_id ? `${t('common.job')}: ${jobs.find(j => j.id === config.job_id)?.name || config.job_id}` : ''}
                         </div>
                         <div className="text-sm text-muted-foreground mt-1">
-                          Base Salary: {config.currency} {config.base_salary.toLocaleString()}
+                          {t('settings.baseSalary')}: {config.currency} {config.base_salary.toLocaleString()}
                         </div>
                       </div>
                       <Badge variant={config.is_active ? 'success' : 'outline'}>
@@ -1010,7 +1010,7 @@ export default function SettingsPage() {
                   </div>
                 ))}
                 {roleSalaryConfigs.length === 0 && (
-                  <p className="text-center text-muted-foreground py-4">No salary configurations found.</p>
+                  <p className="text-center text-muted-foreground py-4">{t('settings.noSalaryConfigs')}</p>
                 )}
               </div>
             </div>
@@ -1019,11 +1019,11 @@ export default function SettingsPage() {
             <div className="pt-6 border-t border-white/10">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold flex items-center gap-2">
-                  <Shield size={20} /> Role Permissions
+                  <Shield size={20} /> {t('settings.rolePermissions')}
                 </h3>
                 <Button onClick={() => setIsPermissionsConfigModalOpen(true)}>
                   <Plus size={18} className="mr-2" />
-                  Add Permissions Config
+                  {t('settings.addPermissionsConfig')}
                 </Button>
               </div>
               <div className="space-y-3">
@@ -1032,14 +1032,14 @@ export default function SettingsPage() {
                     <div className="flex items-center justify-between">
                       <div>
                         <div className="font-medium">
-                          Role: {roles.find(r => r.id === config.role_id)?.name || config.role_id}
+                          {t('common.role')}: {roles.find(r => r.id === config.role_id)?.name || config.role_id}
                         </div>
                         <div className="text-sm text-muted-foreground mt-2 flex flex-wrap gap-2">
-                          {config.can_approve_leave && <Badge variant="outline">Approve Leave</Badge>}
-                          {config.can_approve_overtime && <Badge variant="outline">Approve Overtime</Badge>}
-                          {config.can_view_salary && <Badge variant="outline">View Salary</Badge>}
-                          {config.can_edit_employee && <Badge variant="outline">Edit Employee</Badge>}
-                          {config.can_manage_documents && <Badge variant="outline">Manage Documents</Badge>}
+                          {config.can_approve_leave && <Badge variant="outline">{t('settings.canApproveLeave')}</Badge>}
+                          {config.can_approve_overtime && <Badge variant="outline">{t('settings.canApproveOvertime')}</Badge>}
+                          {config.can_view_salary && <Badge variant="outline">{t('settings.canViewSalary')}</Badge>}
+                          {config.can_edit_employee && <Badge variant="outline">{t('settings.canEditEmployee')}</Badge>}
+                          {config.can_manage_documents && <Badge variant="outline">{t('settings.canManageDocuments')}</Badge>}
                         </div>
                       </div>
                       <Badge variant={config.is_active ? 'success' : 'outline'}>
@@ -1049,7 +1049,7 @@ export default function SettingsPage() {
                   </div>
                 ))}
                 {rolePermissionsConfigs.length === 0 && (
-                  <p className="text-center text-muted-foreground py-4">No permissions configurations found.</p>
+                  <p className="text-center text-muted-foreground py-4">{t('settings.noPermissionsConfigs')}</p>
                 )}
               </div>
             </div>
@@ -1074,15 +1074,15 @@ export default function SettingsPage() {
           <CardContent className="p-2">
             {[
               { icon: Globe, label: t('settings.general'), tab: 'general' },
-              { icon: Building2, label: 'Departments', tab: 'departments' },
-              { icon: Briefcase, label: 'Roles', tab: 'roles' },
-              { icon: Users, label: 'Jobs', tab: 'jobs' },
-              { icon: Database, label: 'Companies', tab: 'companies', superAdminOnly: true },
-              { icon: SettingsIcon, label: 'Company Settings', tab: 'company-settings', adminOnly: true },
+              { icon: Building2, label: t('settings.departments'), tab: 'departments' },
+              { icon: Briefcase, label: t('settings.roles'), tab: 'roles' },
+              { icon: Users, label: t('settings.jobs'), tab: 'jobs' },
+              { icon: Database, label: t('settings.companies'), tab: 'companies', superAdminOnly: true },
+              { icon: SettingsIcon, label: t('settings.companySettings'), tab: 'company-settings', adminOnly: true },
               { icon: Bell, label: t('common.notifications'), tab: 'notifications' },
               { icon: Database, label: t('common.import'), tab: 'import' },
-              { icon: Smartphone, label: 'Mobile App', tab: 'mobile' },
-              { icon: Shield, label: 'Roles & Permissions', href: '/roles-permissions' },
+              { icon: Smartphone, label: t('settings.mobileApp'), tab: 'mobile' },
+              { icon: Shield, label: t('settings.rolesPermissions'), href: '/roles-permissions' },
             ].filter(item => {
               // Show Companies tab only to super_admin
               if (item.superAdminOnly && user?.role !== 'super_admin') return false;
@@ -1131,34 +1131,34 @@ export default function SettingsPage() {
       </div>
 
       {/* Department Modal */}
-      <Modal isOpen={isDeptModalOpen} onClose={() => { setIsDeptModalOpen(false); setEditingDept(null); }} title={editingDept ? 'Edit Department' : 'Add Department'}>
+      <Modal isOpen={isDeptModalOpen} onClose={() => { setIsDeptModalOpen(false); setEditingDept(null); }} title={editingDept ? t('settings.editDepartment') : t('settings.addDepartment')}>
         <form onSubmit={handleSaveDepartment} className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Name *</label>
+            <label className="text-sm font-medium">{t('common.name')} *</label>
             <Input required value={newDept.name} onChange={e => setNewDept({...newDept, name: e.target.value})} placeholder="Engineering" />
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium">Code</label>
+            <label className="text-sm font-medium">{t('common.code')}</label>
             <Input value={newDept.code} onChange={e => setNewDept({...newDept, code: e.target.value})} placeholder="ENG" />
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium">Description</label>
+            <label className="text-sm font-medium">{t('common.description')}</label>
             <textarea
               className="w-full min-h-[80px] rounded-lg border border-input bg-background/50 px-3 py-2 text-sm"
               value={newDept.description}
               onChange={e => setNewDept({...newDept, description: e.target.value})}
-              placeholder="Department description"
+              placeholder={t('common.description')}
             />
           </div>
           <div className="pt-4 flex justify-end gap-3 border-t border-white/10">
-            <Button type="button" variant="outline" onClick={() => { setIsDeptModalOpen(false); setEditingDept(null); }}>Cancel</Button>
-            <Button type="submit">Save</Button>
+            <Button type="button" variant="outline" onClick={() => { setIsDeptModalOpen(false); setEditingDept(null); }}>{t('common.cancel')}</Button>
+            <Button type="submit">{t('common.save')}</Button>
           </div>
         </form>
       </Modal>
 
       {/* Role Modal */}
-      <Modal isOpen={isRoleModalOpen} onClose={() => { setIsRoleModalOpen(false); setEditingRole(null); }} title={editingRole ? 'Edit Role' : 'Add Role'}>
+      <Modal isOpen={isRoleModalOpen} onClose={() => { setIsRoleModalOpen(false); setEditingRole(null); }} title={editingRole ? t('settings.editRole') : t('settings.addRole')}>
         <form onSubmit={handleSaveRole} className="space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">Name *</label>
@@ -1185,7 +1185,7 @@ export default function SettingsPage() {
       </Modal>
 
       {/* Job Modal */}
-      <Modal isOpen={isJobModalOpen} onClose={() => { setIsJobModalOpen(false); setEditingJob(null); setSelectedRoleForJob(''); }} title={editingJob ? 'Edit Job' : 'Add Job'}>
+      <Modal isOpen={isJobModalOpen} onClose={() => { setIsJobModalOpen(false); setEditingJob(null); setSelectedRoleForJob(''); }} title={editingJob ? t('settings.editJob') : t('settings.addJob')}>
         <form onSubmit={handleSaveJob} className="space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">Role *</label>
@@ -1230,68 +1230,68 @@ export default function SettingsPage() {
       </Modal>
 
       {/* Company Modal */}
-      <Modal isOpen={isCompanyModalOpen} onClose={() => { setIsCompanyModalOpen(false); setEditingCompany(null); }} title={editingCompany ? 'Edit Company' : 'Add Company'} size="xl">
+      <Modal isOpen={isCompanyModalOpen} onClose={() => { setIsCompanyModalOpen(false); setEditingCompany(null); }} title={editingCompany ? t('settings.editCompany') : t('settings.addCompany')} size="xl">
         <form onSubmit={handleSaveCompany} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Company Name *</label>
+              <label className="text-sm font-medium">{t('settings.companyName')} *</label>
               <Input required value={newCompany.name} onChange={e => setNewCompany({...newCompany, name: e.target.value})} placeholder="Hospital Management System" />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Company Code</label>
+              <label className="text-sm font-medium">{t('common.code')}</label>
               <Input value={newCompany.code} onChange={e => setNewCompany({...newCompany, code: e.target.value})} placeholder="HMS-001" />
             </div>
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium">Description</label>
+            <label className="text-sm font-medium">{t('common.description')}</label>
             <textarea
               className="w-full min-h-[80px] rounded-lg border border-input bg-background/50 px-3 py-2 text-sm"
               value={newCompany.description}
               onChange={e => setNewCompany({...newCompany, description: e.target.value})}
-              placeholder="Company description"
+              placeholder={t('common.description')}
             />
           </div>
           
           <div className="pt-4 border-t border-white/10">
-            <h3 className="font-semibold mb-3">API Integration Settings</h3>
+            <h3 className="font-semibold mb-3">{t('settings.apiEndpoint')}</h3>
             <div className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">API Endpoint</label>
+                <label className="text-sm font-medium">{t('settings.apiEndpoint')}</label>
                 <Input value={newCompany.api_endpoint} onChange={e => setNewCompany({...newCompany, api_endpoint: e.target.value})} placeholder="https://api.example.com/employees" />
-                <p className="text-xs text-muted-foreground">External API endpoint to fetch employees from</p>
+                <p className="text-xs text-muted-foreground">{t('settings.apiEndpoint')}</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">API Key</label>
+                  <label className="text-sm font-medium">{t('settings.apiKey')}</label>
                   <div className="flex gap-2">
                     <Input value={newCompany.api_key} onChange={e => setNewCompany({...newCompany, api_key: e.target.value})} placeholder="sk_..." />
-                    <Button type="button" variant="outline" onClick={generateApiKey}>Generate</Button>
+                    <Button type="button" variant="outline" onClick={generateApiKey}>{t('settings.generate')}</Button>
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">API Secret</label>
-                  <Input type="password" value={newCompany.api_secret} onChange={e => setNewCompany({...newCompany, api_secret: e.target.value})} placeholder="Secret key" />
+                  <label className="text-sm font-medium">{t('settings.apiSecret')}</label>
+                  <Input type="password" value={newCompany.api_secret} onChange={e => setNewCompany({...newCompany, api_secret: e.target.value})} placeholder={t('settings.apiSecret')} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Sync Frequency</label>
+                  <label className="text-sm font-medium">{t('settings.syncFrequency')}</label>
                   <Select value={newCompany.sync_frequency} onValueChange={(value: any) => setNewCompany({...newCompany, sync_frequency: value})}>
                     <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="manual">Manual</SelectItem>
-                      <SelectItem value="daily">Daily</SelectItem>
-                      <SelectItem value="weekly">Weekly</SelectItem>
-                      <SelectItem value="monthly">Monthly</SelectItem>
+                      <SelectItem value="manual">{t('settings.manual')}</SelectItem>
+                      <SelectItem value="daily">{t('settings.daily')}</SelectItem>
+                      <SelectItem value="weekly">{t('settings.weekly')}</SelectItem>
+                      <SelectItem value="monthly">{t('settings.monthly')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2 flex items-end">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={newCompany.sync_enabled} onChange={e => setNewCompany({...newCompany, sync_enabled: e.target.checked})} className="rounded" />
-                    <span className="text-sm font-medium">Enable Auto Sync</span>
+                    <span className="text-sm font-medium">{t('settings.syncEnabled')}</span>
                   </label>
                 </div>
               </div>
@@ -1300,52 +1300,52 @@ export default function SettingsPage() {
 
           {!editingCompany && (
             <div className="pt-4 border-t border-white/10">
-              <h3 className="font-semibold mb-3">Admin Account</h3>
+              <h3 className="font-semibold mb-3">{t('admin.addUser')}</h3>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Admin Email *</label>
+                  <label className="text-sm font-medium">{t('settings.adminEmail')} *</label>
                   <Input required type="email" value={newCompany.admin_email} onChange={e => setNewCompany({...newCompany, admin_email: e.target.value})} placeholder="admin@company.com" />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Admin Password *</label>
-                  <Input required type="password" value={newCompany.admin_password} onChange={e => setNewCompany({...newCompany, admin_password: e.target.value})} placeholder="Password" />
+                  <label className="text-sm font-medium">{t('settings.adminPassword')} *</label>
+                  <Input required type="password" value={newCompany.admin_password} onChange={e => setNewCompany({...newCompany, admin_password: e.target.value})} placeholder={t('common.password')} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4 mt-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">First Name</label>
-                  <Input value={newCompany.admin_first_name} onChange={e => setNewCompany({...newCompany, admin_first_name: e.target.value})} placeholder="John" />
+                  <label className="text-sm font-medium">{t('common.firstName')}</label>
+                  <Input value={newCompany.admin_first_name} onChange={e => setNewCompany({...newCompany, admin_first_name: e.target.value})} placeholder={t('common.firstName')} />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Last Name</label>
-                  <Input value={newCompany.admin_last_name} onChange={e => setNewCompany({...newCompany, admin_last_name: e.target.value})} placeholder="Doe" />
+                  <label className="text-sm font-medium">{t('common.lastName')}</label>
+                  <Input value={newCompany.admin_last_name} onChange={e => setNewCompany({...newCompany, admin_last_name: e.target.value})} placeholder={t('common.lastName')} />
                 </div>
               </div>
             </div>
           )}
 
           <div className="pt-4 flex justify-end gap-3 border-t border-white/10">
-            <Button type="button" variant="outline" onClick={() => { setIsCompanyModalOpen(false); setEditingCompany(null); }}>Cancel</Button>
-            <Button type="submit">Save</Button>
+            <Button type="button" variant="outline" onClick={() => { setIsCompanyModalOpen(false); setEditingCompany(null); }}>{t('common.cancel')}</Button>
+            <Button type="submit">{t('common.save')}</Button>
           </div>
         </form>
       </Modal>
 
       {/* Salary Config Modal */}
-      <Modal isOpen={isSalaryConfigModalOpen} onClose={() => setIsSalaryConfigModalOpen(false)} title="Add Salary Configuration" size="xl">
+      <Modal isOpen={isSalaryConfigModalOpen} onClose={() => setIsSalaryConfigModalOpen(false)} title={t('settings.addSalaryConfig')} size="xl">
         <form onSubmit={handleSaveSalaryConfig} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Role</label>
+              <label className="text-sm font-medium">{t('common.role')}</label>
               <Select
                 value={newSalaryConfig.role_id || 'none'}
                 onValueChange={(value) => setNewSalaryConfig({ ...newSalaryConfig, role_id: value === 'none' ? '' : value, job_id: '' })}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select role" />
+                  <SelectValue placeholder={t('settings.selectRole')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="none">{t('common.none')}</SelectItem>
                   {roles.map(role => (
                     <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>
                   ))}
@@ -1353,17 +1353,17 @@ export default function SettingsPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Job</label>
+              <label className="text-sm font-medium">{t('common.job')}</label>
               <Select
                 value={newSalaryConfig.job_id || 'none'}
                 onValueChange={(value) => setNewSalaryConfig({ ...newSalaryConfig, job_id: value === 'none' ? '' : value, role_id: '' })}
                 disabled={!newSalaryConfig.role_id}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select job" />
+                  <SelectValue placeholder={t('common.select') + ' ' + t('common.job').toLowerCase()} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="none">{t('common.none')}</SelectItem>
                   {jobs.filter(j => !newSalaryConfig.role_id || j.role_id === newSalaryConfig.role_id).map(job => (
                     <SelectItem key={job.id} value={job.id}>{job.name}</SelectItem>
                   ))}
@@ -1373,7 +1373,7 @@ export default function SettingsPage() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Base Salary *</label>
+              <label className="text-sm font-medium">{t('settings.baseSalary')} *</label>
               <Input
                 type="number"
                 step="0.01"
@@ -1383,7 +1383,7 @@ export default function SettingsPage() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Currency</label>
+              <label className="text-sm font-medium">{t('settings.currency')}</label>
               <Select
                 value={newSalaryConfig.currency || 'USD'}
                 onValueChange={(value) => setNewSalaryConfig({ ...newSalaryConfig, currency: value })}
@@ -1400,10 +1400,10 @@ export default function SettingsPage() {
             </div>
           </div>
           <div className="pt-4 border-t border-white/10">
-            <h4 className="font-semibold mb-3">Allowances</h4>
+            <h4 className="font-semibold mb-3">{t('settings.otherAllowances')}</h4>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Housing Allowance</label>
+                <label className="text-sm font-medium">{t('settings.housingAllowance')}</label>
                 <Input
                   type="number"
                   step="0.01"
@@ -1412,7 +1412,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Transport Allowance</label>
+                <label className="text-sm font-medium">{t('settings.transportAllowance')}</label>
                 <Input
                   type="number"
                   step="0.01"
@@ -1421,7 +1421,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Meal Allowance</label>
+                <label className="text-sm font-medium">{t('settings.mealAllowance')}</label>
                 <Input
                   type="number"
                   step="0.01"
@@ -1430,7 +1430,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Medical Allowance</label>
+                <label className="text-sm font-medium">{t('settings.medicalAllowance')}</label>
                 <Input
                   type="number"
                   step="0.01"
@@ -1441,10 +1441,10 @@ export default function SettingsPage() {
             </div>
           </div>
           <div className="pt-4 border-t border-white/10">
-            <h4 className="font-semibold mb-3">Deductions</h4>
+            <h4 className="font-semibold mb-3">{t('settings.deductions')}</h4>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Tax Percentage</label>
+                <label className="text-sm font-medium">{t('settings.taxPercentage')}</label>
                 <Input
                   type="number"
                   step="0.01"
@@ -1453,7 +1453,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Insurance Deduction</label>
+                <label className="text-sm font-medium">{t('settings.insuranceDeduction')}</label>
                 <Input
                   type="number"
                   step="0.01"
@@ -1464,24 +1464,24 @@ export default function SettingsPage() {
             </div>
           </div>
           <div className="pt-4 flex justify-end gap-3 border-t border-white/10">
-            <Button type="button" variant="outline" onClick={() => setIsSalaryConfigModalOpen(false)}>Cancel</Button>
-            <Button type="submit">Save</Button>
+            <Button type="button" variant="outline" onClick={() => setIsSalaryConfigModalOpen(false)}>{t('common.cancel')}</Button>
+            <Button type="submit">{t('common.save')}</Button>
           </div>
         </form>
       </Modal>
 
       {/* Permissions Config Modal */}
-      <Modal isOpen={isPermissionsConfigModalOpen} onClose={() => setIsPermissionsConfigModalOpen(false)} title="Add Permissions Configuration">
+      <Modal isOpen={isPermissionsConfigModalOpen} onClose={() => setIsPermissionsConfigModalOpen(false)} title={t('settings.addPermissionsConfig')}>
         <form onSubmit={handleSavePermissionsConfig} className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Role *</label>
+            <label className="text-sm font-medium">{t('common.role')} *</label>
             <Select
               value={newPermissionsConfig.role_id || ''}
               onValueChange={(value) => setNewPermissionsConfig({ ...newPermissionsConfig, role_id: value })}
               required
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select role" />
+                <SelectValue placeholder={t('settings.selectRole')} />
               </SelectTrigger>
               <SelectContent>
                 {roles.map(role => (
@@ -1491,7 +1491,7 @@ export default function SettingsPage() {
             </Select>
           </div>
           <div className="space-y-3 pt-4 border-t border-white/10">
-            <h4 className="font-semibold">Permissions</h4>
+            <h4 className="font-semibold">{t('settings.rolePermissions')}</h4>
             <div className="space-y-2">
               <label className="flex items-center gap-2">
                 <input
@@ -1499,7 +1499,7 @@ export default function SettingsPage() {
                   checked={newPermissionsConfig.can_approve_leave || false}
                   onChange={(e) => setNewPermissionsConfig({ ...newPermissionsConfig, can_approve_leave: e.target.checked })}
                 />
-                <span className="text-sm">Can Approve Leave</span>
+                <span className="text-sm">{t('settings.canApproveLeave')}</span>
               </label>
               <label className="flex items-center gap-2">
                 <input
@@ -1507,7 +1507,7 @@ export default function SettingsPage() {
                   checked={newPermissionsConfig.can_approve_overtime || false}
                   onChange={(e) => setNewPermissionsConfig({ ...newPermissionsConfig, can_approve_overtime: e.target.checked })}
                 />
-                <span className="text-sm">Can Approve Overtime</span>
+                <span className="text-sm">{t('settings.canApproveOvertime')}</span>
               </label>
               <label className="flex items-center gap-2">
                 <input
@@ -1515,7 +1515,7 @@ export default function SettingsPage() {
                   checked={newPermissionsConfig.can_view_salary || false}
                   onChange={(e) => setNewPermissionsConfig({ ...newPermissionsConfig, can_view_salary: e.target.checked })}
                 />
-                <span className="text-sm">Can View Salary</span>
+                <span className="text-sm">{t('settings.canViewSalary')}</span>
               </label>
               <label className="flex items-center gap-2">
                 <input
@@ -1523,7 +1523,7 @@ export default function SettingsPage() {
                   checked={newPermissionsConfig.can_edit_employee || false}
                   onChange={(e) => setNewPermissionsConfig({ ...newPermissionsConfig, can_edit_employee: e.target.checked })}
                 />
-                <span className="text-sm">Can Edit Employee</span>
+                <span className="text-sm">{t('settings.canEditEmployee')}</span>
               </label>
               <label className="flex items-center gap-2">
                 <input
@@ -1531,7 +1531,7 @@ export default function SettingsPage() {
                   checked={newPermissionsConfig.can_delete_employee || false}
                   onChange={(e) => setNewPermissionsConfig({ ...newPermissionsConfig, can_delete_employee: e.target.checked })}
                 />
-                <span className="text-sm">Can Delete Employee</span>
+                <span className="text-sm">{t('settings.canDeleteEmployee')}</span>
               </label>
               <label className="flex items-center gap-2">
                 <input
@@ -1539,7 +1539,7 @@ export default function SettingsPage() {
                   checked={newPermissionsConfig.can_manage_documents || false}
                   onChange={(e) => setNewPermissionsConfig({ ...newPermissionsConfig, can_manage_documents: e.target.checked })}
                 />
-                <span className="text-sm">Can Manage Documents</span>
+                <span className="text-sm">{t('settings.canManageDocuments')}</span>
               </label>
               <label className="flex items-center gap-2">
                 <input
@@ -1547,13 +1547,13 @@ export default function SettingsPage() {
                   checked={newPermissionsConfig.can_manage_recruitment || false}
                   onChange={(e) => setNewPermissionsConfig({ ...newPermissionsConfig, can_manage_recruitment: e.target.checked })}
                 />
-                <span className="text-sm">Can Manage Recruitment</span>
+                <span className="text-sm">{t('settings.canManageRecruitment')}</span>
               </label>
             </div>
           </div>
           <div className="pt-4 flex justify-end gap-3 border-t border-white/10">
-            <Button type="button" variant="outline" onClick={() => setIsPermissionsConfigModalOpen(false)}>Cancel</Button>
-            <Button type="submit">Save</Button>
+            <Button type="button" variant="outline" onClick={() => setIsPermissionsConfigModalOpen(false)}>{t('common.cancel')}</Button>
+            <Button type="submit">{t('common.save')}</Button>
           </div>
         </form>
       </Modal>

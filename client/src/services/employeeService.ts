@@ -10,14 +10,47 @@ interface SupabaseEmployee {
   last_name: string;
   email: string;
   phone?: string;
+  alternate_phone?: string;
+  date_of_birth?: string;
+  gender?: string;
+  marital_status?: string;
+  nationality?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  postal_code?: string;
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+  emergency_contact_relationship?: string;
+  department_id?: string;
+  role_id?: string;
+  job_id?: string;
   department?: string;
   designation?: string;
   join_date?: string;
   status?: string;
   employment_type?: string;
+  salary?: string;
+  work_location?: string;
+  reporting_manager_id?: string;
+  notes?: string;
   avatar_url?: string;
+  working_hours_monday?: number;
+  working_hours_tuesday?: number;
+  working_hours_wednesday?: number;
+  working_hours_thursday?: number;
+  working_hours_friday?: number;
+  working_hours_saturday?: number;
+  working_hours_sunday?: number;
+  flexible_hours?: boolean;
+  start_time?: string;
+  end_time?: string;
+  break_duration_minutes?: number;
+  company_id?: string;
   manager_id?: string;
   created_at?: string;
+  updated_at?: string;
 }
 
 export interface Employee {
@@ -27,12 +60,43 @@ export interface Employee {
   lastName: string;
   email: string;
   phone?: string;
+  alternate_phone?: string;
+  date_of_birth?: string;
+  gender?: string;
+  marital_status?: string;
+  nationality?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  postal_code?: string;
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+  emergency_contact_relationship?: string;
+  department_id?: string;
+  role_id?: string;
+  job_id?: string;
   department?: string;
   position?: string;
   hireDate?: string;
   salary?: string;
+  work_location?: string;
+  reporting_manager_id?: string;
+  notes?: string;
   status: 'Active' | 'Inactive' | 'On Leave';
   employmentType: 'Full Time' | 'Part Time' | 'Consultant';
+  working_hours_monday?: number;
+  working_hours_tuesday?: number;
+  working_hours_wednesday?: number;
+  working_hours_thursday?: number;
+  working_hours_friday?: number;
+  working_hours_saturday?: number;
+  working_hours_sunday?: number;
+  flexible_hours?: boolean;
+  start_time?: string;
+  end_time?: string;
+  break_duration_minutes?: number;
+  company_id?: string;
   createdAt?: string;
   updatedAt?: string;
   
@@ -47,7 +111,7 @@ export interface Employee {
 }
 
 // Helper function to map Supabase employee to Employee interface
-function mapSupabaseToEmployee(supabaseEmp: SupabaseEmployee): Employee {
+function mapSupabaseToEmployee(supabaseEmp: any): Employee {
   return {
     id: supabaseEmp.id,
     employeeId: supabaseEmp.employee_id,
@@ -55,12 +119,45 @@ function mapSupabaseToEmployee(supabaseEmp: SupabaseEmployee): Employee {
     lastName: supabaseEmp.last_name,
     email: supabaseEmp.email,
     phone: supabaseEmp.phone,
-    department: supabaseEmp.department,
-    position: supabaseEmp.designation,
+    alternate_phone: supabaseEmp.alternate_phone,
+    date_of_birth: supabaseEmp.date_of_birth,
+    gender: supabaseEmp.gender,
+    marital_status: supabaseEmp.marital_status,
+    nationality: supabaseEmp.nationality,
+    address: supabaseEmp.address,
+    city: supabaseEmp.city,
+    state: supabaseEmp.state,
+    country: supabaseEmp.country,
+    postal_code: supabaseEmp.postal_code,
+    emergency_contact_name: supabaseEmp.emergency_contact_name,
+    emergency_contact_phone: supabaseEmp.emergency_contact_phone,
+    emergency_contact_relationship: supabaseEmp.emergency_contact_relationship,
+    department_id: supabaseEmp.department_id,
+    role_id: supabaseEmp.role_id,
+    job_id: supabaseEmp.job_id,
+    department: supabaseEmp.departments?.name || supabaseEmp.department,
+    position: supabaseEmp.jobs?.name || supabaseEmp.designation,
     hireDate: supabaseEmp.join_date,
+    salary: supabaseEmp.salary,
+    work_location: supabaseEmp.work_location,
+    reporting_manager_id: supabaseEmp.reporting_manager_id,
+    notes: supabaseEmp.notes,
     status: (supabaseEmp.status as 'Active' | 'Inactive' | 'On Leave') || 'Active',
     employmentType: (supabaseEmp.employment_type as 'Full Time' | 'Part Time' | 'Consultant') || 'Full Time',
+    working_hours_monday: supabaseEmp.working_hours_monday,
+    working_hours_tuesday: supabaseEmp.working_hours_tuesday,
+    working_hours_wednesday: supabaseEmp.working_hours_wednesday,
+    working_hours_thursday: supabaseEmp.working_hours_thursday,
+    working_hours_friday: supabaseEmp.working_hours_friday,
+    working_hours_saturday: supabaseEmp.working_hours_saturday,
+    working_hours_sunday: supabaseEmp.working_hours_sunday,
+    flexible_hours: supabaseEmp.flexible_hours,
+    start_time: supabaseEmp.start_time,
+    end_time: supabaseEmp.end_time,
+    break_duration_minutes: supabaseEmp.break_duration_minutes,
+    company_id: supabaseEmp.company_id,
     createdAt: supabaseEmp.created_at,
+    updatedAt: supabaseEmp.updated_at,
     // Legacy fields
     employee_id: supabaseEmp.employee_id,
     first_name: supabaseEmp.first_name,
@@ -119,7 +216,7 @@ export const employeeService = {
   async getAll(companyId?: string): Promise<Employee[]> {
     try {
       const params: any = {
-        select: '*',
+        select: '*,departments(name),jobs(name),roles(name)',
         order: 'created_at.desc'
       };
       

@@ -80,10 +80,10 @@ export default function AdminPage() {
         first_name: '',
         last_name: ''
       });
-      alert('Admin user created successfully!');
+      alert(t('admin.addAdmin') + ' ' + t('common.success'));
     } catch (error: any) {
       console.error('Failed to create admin:', error);
-      alert(`Failed to create admin: ${error?.message || 'Unknown error'}`);
+      alert(`${t('settings.failedToSave')}: ${error?.message || t('settings.unknownError')}`);
     }
   };
 
@@ -93,21 +93,21 @@ export default function AdminPage() {
       await loadAdmins();
     } catch (error: any) {
       console.error('Failed to update status:', error);
-      alert(`Failed to update status: ${error?.message || 'Unknown error'}`);
+      alert(`${t('settings.failedToSave')}: ${error?.message || t('settings.unknownError')}`);
     }
   };
 
   const handleDelete = async (userId: string, email: string) => {
-    if (!confirm(`Are you sure you want to delete admin user ${email}? This action cannot be undone.`)) {
+    if (!confirm(t('admin.confirmDelete'))) {
       return;
     }
     try {
       await userManagementService.deleteAdmin(userId);
       await loadAdmins();
-      alert('Admin user deleted successfully!');
+      alert(t('common.delete') + ' ' + t('common.success'));
     } catch (error: any) {
       console.error('Failed to delete admin:', error);
-      alert(`Failed to delete admin: ${error?.message || 'Unknown error'}`);
+      alert(`${t('settings.failedToDelete')}: ${error?.message || t('settings.unknownError')}`);
     }
   };
 
@@ -122,25 +122,25 @@ export default function AdminPage() {
         {/* User Management */}
         <Card className="md:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Admin Users</CardTitle>
+            <CardTitle>{t('admin.adminUsers')}</CardTitle>
             <Button size="sm" className="gap-2" onClick={() => setIsModalOpen(true)}>
-              <Plus size={16} /> Add Admin
+              <Plus size={16} /> {t('admin.addAdmin')}
             </Button>
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="text-center py-8 text-muted-foreground">Loading...</div>
+              <div className="text-center py-8 text-muted-foreground">{t('common.loading')}</div>
             ) : admins.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">No admin users found</div>
+              <div className="text-center py-8 text-muted-foreground">{t('common.noData')}</div>
             ) : (
               <table className="w-full text-sm text-left">
                 <thead className="text-xs text-muted-foreground uppercase bg-white/5">
                   <tr>
-                    <th className="px-4 py-3 rounded-l-lg">Email</th>
-                    <th className="px-4 py-3">Role</th>
-                    <th className="px-4 py-3">Company</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3 text-right rounded-r-lg">Actions</th>
+                    <th className="px-4 py-3 rounded-l-lg">{t('common.email')}</th>
+                    <th className="px-4 py-3">{t('common.role')}</th>
+                    <th className="px-4 py-3">{t('common.company')}</th>
+                    <th className="px-4 py-3">{t('common.status')}</th>
+                    <th className="px-4 py-3 text-right rounded-r-lg">{t('common.actions')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
@@ -149,12 +149,12 @@ export default function AdminPage() {
                       <td className="px-4 py-3">
                         <div className="font-medium">{admin.email}</div>
                         <div className="text-xs text-muted-foreground">
-                          Created: {new Date(admin.created_at).toLocaleDateString()}
+                          {t('admin.created')}: {new Date(admin.created_at).toLocaleDateString()}
                         </div>
                       </td>
                       <td className="px-4 py-3">
                         <Badge variant={admin.role === 'super_admin' ? 'default' : 'outline'}>
-                          {admin.role === 'super_admin' ? 'Super Admin' : 'Admin'}
+                          {admin.role === 'super_admin' ? t('admin.superAdmin') : t('admin.admin')}
                         </Badge>
                       </td>
                       <td className="px-4 py-3">
@@ -166,7 +166,7 @@ export default function AdminPage() {
                       </td>
                       <td className="px-4 py-3">
                         <Badge variant={admin.is_active ? 'success' : 'destructive'}>
-                          {admin.is_active ? 'Active' : 'Inactive'}
+                          {admin.is_active ? t('common.active') : t('common.inactive')}
                         </Badge>
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -176,7 +176,7 @@ export default function AdminPage() {
                             variant="outline"
                             onClick={() => handleToggleStatus(admin.user_id, admin.is_active)}
                           >
-                            {admin.is_active ? 'Deactivate' : 'Activate'}
+                            {admin.is_active ? t('admin.deactivate') : t('admin.activate')}
                           </Button>
                           <Button
                             size="sm"
@@ -201,22 +201,22 @@ export default function AdminPage() {
             <CardHeader><CardTitle>{t('admin.securityControls')}</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <Button variant="outline" className="w-full justify-start gap-3">
-                <Lock size={16} /> {t('common.edit')} Password
+                <Lock size={16} /> {t('admin.editPassword')}
               </Button>
               <Button variant="outline" className="w-full justify-start gap-3">
-                <Shield size={16} /> 2FA {t('settings.title')}
+                <Shield size={16} /> {t('admin.twoFactorAuth')}
               </Button>
               <Button variant="outline" className="w-full justify-start gap-3">
-                <Activity size={16} /> {t('common.view')} {t('admin.auditLogs')}
+                <Activity size={16} /> {t('admin.viewAuditLogs')}
               </Button>
             </CardContent>
           </Card>
 
           <Card className="bg-destructive/10 border-destructive/20">
-            <CardHeader><CardTitle className="text-destructive">Danger Zone</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-destructive">{t('admin.dangerZone')}</CardTitle></CardHeader>
             <CardContent>
-              <p className="text-xs text-muted-foreground mb-4">Irreversible actions. Proceed with caution.</p>
-              <Button variant="destructive" className="w-full">System Maintenance Mode</Button>
+              <p className="text-xs text-muted-foreground mb-4">{t('admin.irreversibleActions')}</p>
+              <Button variant="destructive" className="w-full">{t('admin.systemMaintenanceMode')}</Button>
             </CardContent>
           </Card>
         </div>
@@ -226,11 +226,11 @@ export default function AdminPage() {
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title="Add Admin User"
+        title={t('admin.addAdmin')}
       >
         <form onSubmit={handleAddAdmin} className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Email *</label>
+            <label className="text-sm font-medium">{t('common.email')} *</label>
             <Input
               type="email"
               required
@@ -241,68 +241,68 @@ export default function AdminPage() {
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Password *</label>
+            <label className="text-sm font-medium">{t('common.password')} *</label>
             <Input
               type="password"
               required
               value={newAdmin.password}
               onChange={(e) => setNewAdmin({ ...newAdmin, password: e.target.value })}
-              placeholder="Enter password"
+              placeholder={t('common.password')}
               minLength={6}
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">First Name</label>
+              <label className="text-sm font-medium">{t('common.firstName')}</label>
               <Input
                 value={newAdmin.first_name}
                 onChange={(e) => setNewAdmin({ ...newAdmin, first_name: e.target.value })}
-                placeholder="First name"
+                placeholder={t('common.firstName')}
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Last Name</label>
+              <label className="text-sm font-medium">{t('common.lastName')}</label>
               <Input
                 value={newAdmin.last_name}
                 onChange={(e) => setNewAdmin({ ...newAdmin, last_name: e.target.value })}
-                placeholder="Last name"
+                placeholder={t('common.lastName')}
               />
             </div>
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Role *</label>
+            <label className="text-sm font-medium">{t('common.role')} *</label>
             <Select
               value={newAdmin.role}
               onValueChange={(value: 'super_admin' | 'admin') => setNewAdmin({ ...newAdmin, role: value, company_id: value === 'super_admin' ? undefined : (user?.role === 'admin' ? user.company_id : newAdmin.company_id) })}
               disabled={user?.role === 'admin'} // Admins can only create admins
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select role" />
+                <SelectValue placeholder={t('common.select') + ' ' + t('common.role').toLowerCase()} />
               </SelectTrigger>
               <SelectContent>
-                {user?.role === 'super_admin' && <SelectItem value="super_admin">Super Admin</SelectItem>}
-                <SelectItem value="admin">Admin</SelectItem>
+                {user?.role === 'super_admin' && <SelectItem value="super_admin">{t('admin.superAdmin')}</SelectItem>}
+                <SelectItem value="admin">{t('admin.admin')}</SelectItem>
               </SelectContent>
             </Select>
             {user?.role === 'admin' && (
-              <p className="text-xs text-muted-foreground">You can only create admin users for your company.</p>
+              <p className="text-xs text-muted-foreground">{t('settings.youCanOnlyCreateAdmins')}</p>
             )}
           </div>
 
           {newAdmin.role === 'admin' && user?.role === 'super_admin' && (
             <div className="space-y-2">
-              <label className="text-sm font-medium">Company (Optional for Admin)</label>
+              <label className="text-sm font-medium">{t('common.company')} ({t('common.select')})</label>
               <Select
                 value={newAdmin.company_id || 'none'}
                 onValueChange={(value) => setNewAdmin({ ...newAdmin, company_id: value === 'none' ? undefined : value })}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select company" />
+                  <SelectValue placeholder={t('common.select') + ' ' + t('common.company').toLowerCase()} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">No Company (Super Admin)</SelectItem>
+                  <SelectItem value="none">{t('common.none')}</SelectItem>
                   {companies.map((company) => (
                     <SelectItem key={company.id} value={company.id}>
                       {company.name}
@@ -314,22 +314,22 @@ export default function AdminPage() {
           )}
           {newAdmin.role === 'admin' && user?.role === 'admin' && user?.company_id && (
             <div className="space-y-2">
-              <label className="text-sm font-medium">Company</label>
+              <label className="text-sm font-medium">{t('common.company')}</label>
               <Input
-                value={companies.find(c => c.id === user.company_id)?.name || 'Your Company'}
+                value={companies.find(c => c.id === user.company_id)?.name || t('common.company')}
                 disabled
                 className="bg-white/5"
               />
-              <p className="text-xs text-muted-foreground">Admin will be created for your company.</p>
+              <p className="text-xs text-muted-foreground">{t('settings.adminWillBeCreated')}</p>
             </div>
           )}
 
           <div className="flex justify-end gap-3 pt-4">
             <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button type="submit">
-              Create Admin
+              {t('admin.addAdmin')}
             </Button>
           </div>
         </form>

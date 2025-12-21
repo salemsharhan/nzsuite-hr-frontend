@@ -11,6 +11,7 @@ export interface Employee {
   designation: string;
   join_date: string;
   status: string;
+  employment_type: 'Full Time' | 'Part Time' | 'Consultant';
   avatar_url: string;
   salary?: number;
 }
@@ -52,6 +53,7 @@ export const employeeService = {
         designation: employee.designation,
         join_date: employee.join_date,
         status: employee.status,
+        employment_type: employee.employment_type,
         avatar_url: employee.avatar_url
       };
       const response = await adminApi.post('/employees', payload);

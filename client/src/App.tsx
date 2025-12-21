@@ -20,6 +20,8 @@ import DocumentsPage from "./pages/DocumentsPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import AdminPage from "./pages/AdminPage";
 import SettingsPage from "./pages/SettingsPage";
+import HiringChecklistPage from "./pages/HiringChecklistPage";
+import RolesPermissionsPage from "./pages/RolesPermissionsPage";
 import './utils/i18n';
 
 // Placeholder pages for routes not yet implemented
@@ -30,8 +32,8 @@ const PlaceholderPage = ({ title }: { title: string }) => (
     <p className="text-muted-foreground max-w-md">This module is currently under development. Check back soon for the full implementation.</p>
   </div>
 );
-
 function Router() {
+  // make sure to consider if you need authentication for certain routes
   return (
     <MainLayout>
       <Switch>
@@ -49,6 +51,8 @@ function Router() {
         <Route path="/analytics" component={AnalyticsPage} />
         <Route path="/admin" component={AdminPage} />
         <Route path="/settings" component={SettingsPage} />
+        <Route path="/hiring-checklist" component={HiringChecklistPage} />
+        <Route path="/roles-permissions" component={RolesPermissionsPage} />
         
         {/* Fallback */}
         <Route component={NotFound} />

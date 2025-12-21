@@ -30,7 +30,8 @@ export default function EmployeeListPage() {
     department: 'Engineering',
     position: '',
     salary: 0,
-    joining_date: new Date().toISOString().split('T')[0]
+    joining_date: new Date().toISOString().split('T')[0],
+    employment_type: 'Full Time'
   });
 
   useEffect(() => {
@@ -64,7 +65,8 @@ export default function EmployeeListPage() {
         avatar_url: `https://ui-avatars.com/api/?name=${employeeData.first_name}+${employeeData.last_name}`,
         phone: null as any, // Send null for optional fields
         designation: employeeData.position,
-        join_date: employeeData.joining_date
+        join_date: employeeData.joining_date,
+        employment_type: employeeData.employment_type as any
       });
       
       await loadEmployees();
@@ -77,7 +79,8 @@ export default function EmployeeListPage() {
         department: 'Engineering',
         position: '',
         salary: 0,
-        joining_date: new Date().toISOString().split('T')[0]
+        joining_date: new Date().toISOString().split('T')[0],
+        employment_type: 'Full Time'
       });
     } catch (error) {
       console.error('Failed to add employee:', error);
@@ -158,6 +161,18 @@ export default function EmployeeListPage() {
                 <option value="Marketing">Marketing</option>
                 <option value="HR">HR</option>
                 <option value="Operations">Operations</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Employment Type</label>
+              <select 
+                className="w-full h-10 bg-white/5 border border-white/10 rounded-md px-3 text-sm focus:outline-none focus:border-primary"
+                value={newEmployee.employment_type}
+                onChange={e => setNewEmployee({...newEmployee, employment_type: e.target.value})}
+              >
+                <option value="Full Time">Full Time</option>
+                <option value="Part Time">Part Time</option>
+                <option value="Consultant">Consultant</option>
               </select>
             </div>
             <div className="space-y-2">
@@ -257,9 +272,14 @@ export default function EmployeeListPage() {
                     <p className="text-xs text-muted-foreground">{employee.designation}</p>
                   </div>
                 </div>
-                <Badge variant={employee.status === 'Active' ? 'success' : 'warning'}>
-                  {employee.status}
-                </Badge>
+                  <div className="flex flex-col items-end gap-1">
+                    <Badge variant={employee.status === 'Active' ? 'success' : 'warning'}>
+                      {employee.status}
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px]">
+                      {employee.employment_type || 'Full Time'}
+                    </Badge>
+                  </div>
               </div>
               
               <div className="space-y-3 mb-6">

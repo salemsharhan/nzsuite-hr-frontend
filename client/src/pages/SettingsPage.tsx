@@ -1,5 +1,6 @@
 import React from 'react';
-import { Globe, Bell, Database, Smartphone } from 'lucide-react';
+import { Globe, Bell, Database, Smartphone, Shield } from 'lucide-react';
+import { Link } from 'wouter';
 import { Card, CardContent, CardHeader, CardTitle, Button, Input } from '../components/common/UIComponents';
 import { useTranslation } from 'react-i18next';
 
@@ -22,17 +23,40 @@ export default function SettingsPage() {
               { icon: Bell, label: t('common.notifications'), active: false },
               { icon: Database, label: t('common.import'), active: false },
               { icon: Smartphone, label: 'Mobile App', active: false },
-            ].map((item, i) => (
-              <button 
-                key={i}
-                className={`w-full flex items-center gap-3 p-3 rounded-lg text-sm font-medium transition-colors ${
-                  item.active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
-                }`}
-              >
-                <item.icon size={18} />
-                {item.label}
-              </button>
-            ))}
+              { icon: Shield, label: 'Roles & Permissions', active: false, href: '/roles-permissions' },
+            ].map((item, i) => {
+              const content = (
+                <>
+                  <item.icon size={18} />
+                  {item.label}
+                </>
+              );
+              
+              if (item.href) {
+                return (
+                  <Link key={i} href={item.href}>
+                    <button
+                      className={`w-full flex items-center gap-3 p-3 rounded-lg text-sm font-medium transition-colors ${
+                        item.active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
+                      }`}
+                    >
+                      {content}
+                    </button>
+                  </Link>
+                );
+              }
+              
+              return (
+                <button
+                  key={i}
+                  className={`w-full flex items-center gap-3 p-3 rounded-lg text-sm font-medium transition-colors ${
+                    item.active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
+                  }`}
+                >
+                  {content}
+                </button>
+              );
+            })}
           </CardContent>
         </Card>
 

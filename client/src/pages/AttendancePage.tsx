@@ -42,7 +42,8 @@ export default function AttendancePage() {
         employeeService.getAll()
       ]);
       setLogs(logsData);
-      setEmployees(employeesData);
+      // Filter out Consultants from attendance tracking
+      setEmployees(employeesData.filter(e => e.employment_type !== 'Consultant'));
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {

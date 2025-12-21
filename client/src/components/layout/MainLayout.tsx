@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useLocation } from 'wouter';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from '../../context/LanguageContext';
-import { 
+import {
   LayoutDashboard, 
   Users, 
   Clock, 
@@ -18,7 +18,8 @@ import {
   Briefcase,
   BarChart3,
   ShieldCheck,
-  Globe
+  Globe,
+  ClipboardCheck
 } from 'lucide-react';
 import { cn } from '../common/UIComponents';
 
@@ -42,19 +43,23 @@ export const Sidebar = ({ collapsed, setCollapsed, mobileOpen, setMobileOpen }: 
   const { t } = useTranslation();
   const { direction } = useLanguage();
 
+  // Mock user role - in a real app this would come from auth context
+  const userRole = 'Admin'; // 'Admin' | 'Consultant' | 'Employee'
+
   const menuItems = [
-    { icon: LayoutDashboard, label: t('common.dashboard'), href: '/' },
-    { icon: Users, label: t('common.employees'), href: '/employees' },
-    { icon: Clock, label: t('common.attendance'), href: '/attendance' },
-    { icon: Calendar, label: t('common.leaves'), href: '/leaves' },
-    { icon: DollarSign, label: t('common.payroll'), href: '/payroll' },
-    { icon: Users, label: 'Self Service', href: '/ess' },
-    { icon: Clock, label: 'Timesheets', href: '/timesheets' },
-    { icon: Briefcase, label: t('common.recruitment'), href: '/recruitment' },
-    { icon: FileText, label: t('common.documents'), href: '/documents' },
-    { icon: BarChart3, label: t('common.analytics'), href: '/analytics' },
-    { icon: ShieldCheck, label: t('common.admin'), href: '/admin' },
-    { icon: Settings, label: t('common.settings'), href: '/settings' },
+    { icon: LayoutDashboard, label: t('common.dashboard'), href: '/', roles: ['Admin', 'Consultant', 'Employee'] },
+    { icon: Users, label: t('common.employees'), href: '/employees', roles: ['Admin'] },
+    { icon: Clock, label: t('common.attendance'), href: '/attendance', roles: ['Admin', 'Employee'] },
+    { icon: Calendar, label: t('common.leaves'), href: '/leaves', roles: ['Admin', 'Employee'] },
+    { icon: DollarSign, label: t('common.payroll'), href: '/payroll', roles: ['Admin'] },
+    { icon: Users, label: 'Self Service', href: '/ess', roles: ['Admin', 'Employee', 'Consultant'] },
+    { icon: Clock, label: 'Timesheets', href: '/timesheets', roles: ['Admin', 'Employee', 'Consultant'] },
+    { icon: Briefcase, label: t('common.recruitment'), href: '/recruitment', roles: ['Admin'] },
+    { icon: ClipboardCheck, label: 'Hiring Checklist', href: '/hiring-checklist', roles: ['Admin', 'Employee'] },
+    { icon: FileText, label: t('common.documents'), href: '/documents', roles: ['Admin', 'Consultant'] },
+    { icon: BarChart3, label: t('common.analytics'), href: '/analytics', roles: ['Admin'] },
+    { icon: ShieldCheck, label: t('common.admin'), href: '/admin', roles: ['Admin'] },
+    { icon: Settings, label: t('common.settings'), href: '/settings', roles: ['Admin'] },
   ];
 
   return (
@@ -97,7 +102,7 @@ export const Sidebar = ({ collapsed, setCollapsed, mobileOpen, setMobileOpen }: 
         <div className="flex-1 overflow-y-auto py-6 px-3 custom-scrollbar">
           <div className="space-y-1">
             {!collapsed && <div className="px-3 mb-2 text-xs font-semibold text-muted-foreground/50 uppercase tracking-wider">Main Menu</div>}
-            {menuItems.map((item) => (
+            {menuItems.filter(item => item.roles.includes(userRole)).map((item) => (
               <SidebarItem 
                 key={item.href}
                 icon={item.icon}

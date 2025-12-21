@@ -69,7 +69,7 @@ export default function HiringChecklistPage() {
       await loadData();
       
       // Refresh selected checklist if open
-      if (selectedChecklist && selectedChecklist.id === checklistId) {
+      if (selectedChecklist && selectedChecklist.id.toString() === checklistId.toString()) {
         const updated = await hiringChecklistService.getByEmployeeId(selectedChecklist.employee_id);
         if (updated) setSelectedChecklist(updated);
       }
@@ -84,7 +84,7 @@ export default function HiringChecklistPage() {
       await loadData();
       
       // Refresh selected checklist if open
-      if (selectedChecklist && selectedChecklist.id === checklistId) {
+      if (selectedChecklist && selectedChecklist.id.toString() === checklistId.toString()) {
         const updated = await hiringChecklistService.getByEmployeeId(selectedChecklist.employee_id);
         if (updated) setSelectedChecklist(updated);
       }
@@ -108,7 +108,7 @@ export default function HiringChecklistPage() {
   };
 
   const employeesWithoutChecklist = employees.filter(
-    emp => !checklists.some(cl => cl.employee_id === emp.id)
+    emp => !checklists.some(cl => cl.employee_id.toString() === emp.id.toString())
   );
 
   return (

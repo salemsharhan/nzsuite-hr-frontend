@@ -85,3 +85,16 @@
 - [x] Create hiringChecklistService with CRUD operations
 - [x] Display checklist completion status
 - [x] Add route and navigation link
+
+
+## 🐛 Bug Fixes
+
+- [x] Identified root cause: Services using Supabase instead of MySQL/Drizzle
+- [x] Add all HR tables to Drizzle schema (employees, attendance, payroll, etc.)
+- [x] Add hiring_checklists table to Drizzle schema
+- [x] Add roles and permissions tables to Drizzle schema
+- [x] Generate and run Drizzle migrations
+- [x] Create tRPC server routers for all HR operations
+- [x] Update employee service to use mock data temporarily
+- [x] Fix all TypeScript type errors across pages
+- [x] Test all CRUD operations with new database setup

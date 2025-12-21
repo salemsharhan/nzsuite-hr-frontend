@@ -28,7 +28,7 @@ export default function ESSPage() {
         return;
       }
       
-      const currentUserId = employees[0].id;
+      const currentUserId = employees[0].id.toString();
 
       const [statsData, requestsData, payslipsData] = await Promise.all([
         essService.getDashboardStats(currentUserId),

@@ -1,0 +1,8 @@
+{
+  "query": "ALTER TABLE employees ADD COLUMN IF NOT EXISTS employment_type TEXT DEFAULT 'Full Time';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Y4LUdwLzEhz5gM.5423c4ab2420 --database ReGE2zjkjXh93VXA6BaaSd --execute ALTER TABLE employees ADD COLUMN IF NOT EXISTS employment_type TEXT DEFAULT 'Full Time';",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1146 (42S02) at line 1: Table 'rege2zjkjxh93vxa6baasd.employees' doesn't exist"
+  ]
+}

@@ -20,7 +20,7 @@ export default function EmployeeDetailPage() {
       // In a real app, we would fetch by ID. For now, we'll simulate it or fetch all and find.
       // Since our mock/service might not support getById perfectly in fallback mode:
       const all = await employeeService.getAll();
-      const found = all.find(e => e.id === id || e.employee_id === id);
+      const found = all.find(e => e.id.toString() === id || (e.employee_id || e.employeeId) === id);
       if (found) setEmployee(found);
     } catch (error) {
       console.error('Failed to load employee details', error);
@@ -40,12 +40,12 @@ export default function EmployeeDetailPage() {
           <Card className="border-primary/20 bg-primary/5">
             <CardContent className="p-6 flex items-center gap-6">
               <div className="w-24 h-24 rounded-full bg-primary/20 flex items-center justify-center text-3xl font-bold text-primary border-2 border-primary/30">
-                {employee.first_name[0]}{employee.last_name[0]}
+                {(employee.first_name || employee.firstName || 'U')[0]}{(employee.last_name || employee.lastName || 'N')[0]}
               </div>
               <div className="flex-1">
                 <div className="flex justify-between items-start">
                   <div>
-                    <h1 className="text-3xl font-bold font-heading">{employee.first_name} {employee.last_name}</h1>
+                    <h1 className="text-3xl font-bold font-heading">{employee.first_name || employee.firstName} {employee.last_name || employee.lastName}</h1>
                     <p className="text-lg text-muted-foreground">{employee.designation} • {employee.department}</p>
                   </div>
                   <Badge variant={employee.status === 'Active' ? 'success' : 'warning'} className="text-lg px-4 py-1">
@@ -57,7 +57,7 @@ export default function EmployeeDetailPage() {
                     <User size={16} /> {employee.employee_id}
                   </div>
                   <div className="flex items-center gap-2">
-                    <Clock size={16} /> Joined {new Date(employee.join_date).toLocaleDateString()}
+                    <Clock size={16} /> Joined {employee.join_date || employee.hireDate ? new Date(employee.join_date || employee.hireDate!).toLocaleDateString() : 'N/A'}
                   </div>
                   <div className="flex items-center gap-2">
                     <Shield size={16} /> Manager: Sarah Connor

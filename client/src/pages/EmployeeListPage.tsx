@@ -89,10 +89,10 @@ export default function EmployeeListPage() {
   };
 
   const filteredEmployees = employees.filter(emp => {
-    const fullName = `${emp.first_name} ${emp.last_name}`;
+    const fullName = `${emp.first_name || emp.firstName || ''} ${emp.last_name || emp.lastName || ''}`;
     const matchesSearch = fullName.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           emp.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          emp.employee_id.toLowerCase().includes(searchTerm.toLowerCase());
+                          (emp.employee_id || emp.employeeId || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchesDept = filterDept === 'All' || emp.department === filterDept;
     return matchesSearch && matchesDept;
   });
@@ -264,11 +264,11 @@ export default function EmployeeListPage() {
                     {employee.avatar_url ? (
                       <img src={employee.avatar_url} alt="" className="w-full h-full object-cover" />
                     ) : (
-                      <span>{employee.first_name[0]}{employee.last_name[0]}</span>
+                      <span>{(employee.first_name || employee.firstName || 'U')[0]}{(employee.last_name || employee.lastName || 'N')[0]}</span>
                     )}
                   </div>
                   <div>
-                    <h3 className="font-bold text-foreground">{employee.first_name} {employee.last_name}</h3>
+                    <h3 className="font-bold text-foreground">{employee.first_name || employee.firstName} {employee.last_name || employee.lastName}</h3>
                     <p className="text-xs text-muted-foreground">{employee.designation}</p>
                   </div>
                 </div>
@@ -285,7 +285,7 @@ export default function EmployeeListPage() {
               <div className="space-y-3 mb-6">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <User size={14} className="shrink-0" />
-                  <span>{employee.employee_id}</span>
+                  <span>{employee.employee_id || employee.employeeId}</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Mail size={14} className="shrink-0" />

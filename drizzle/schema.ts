@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, decimal } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -25,4 +25,188 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// TODO: Add your tables here
+// Employees table
+export const employees = mysqlTable("employees", {
+  id: int("id").autoincrement().primaryKey(),
+  employeeId: varchar("employeeId", { length: 50 }).notNull().unique(),
+  firstName: varchar("firstName", { length: 100 }).notNull(),
+  lastName: varchar("lastName", { length: 100 }).notNull(),
+  email: varchar("email", { length: 320 }).notNull().unique(),
+  phone: varchar("phone", { length: 20 }),
+  department: varchar("department", { length: 100 }),
+  position: varchar("position", { length: 100 }),
+  hireDate: timestamp("hireDate"),
+  salary: decimal("salary", { precision: 10, scale: 2 }),
+  status: mysqlEnum("status", ["Active", "Inactive", "On Leave"]).default("Active").notNull(),
+  employmentType: mysqlEnum("employmentType", ["Full Time", "Part Time", "Consultant"]).default("Full Time").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Employee = typeof employees.$inferSelect;
+export type InsertEmployee = typeof employees.$inferInsert;
+
+// Attendance table
+export const attendance = mysqlTable("attendance", {
+  id: int("id").autoincrement().primaryKey(),
+  employeeId: int("employeeId").notNull(),
+  date: timestamp("date").notNull(),
+  checkIn: timestamp("checkIn"),
+  checkOut: timestamp("checkOut"),
+  status: mysqlEnum("status", ["Present", "Absent", "Late", "Half Day", "On Leave"]).default("Present").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Attendance = typeof attendance.$inferSelect;
+export type InsertAttendance = typeof attendance.$inferInsert;
+
+// Leaves table
+export const leaves = mysqlTable("leaves", {
+  id: int("id").autoincrement().primaryKey(),
+  employeeId: int("employeeId").notNull(),
+  leaveType: varchar("leaveType", { length: 50 }).notNull(),
+  startDate: timestamp("startDate").notNull(),
+  endDate: timestamp("endDate").notNull(),
+  reason: text("reason"),
+  status: mysqlEnum("status", ["Pending", "Approved", "Rejected"]).default("Pending").notNull(),
+  approvedBy: int("approvedBy"),
+  approvedAt: timestamp("approvedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Leave = typeof leaves.$inferSelect;
+export type InsertLeave = typeof leaves.$inferInsert;
+
+// Payroll table
+export const payroll = mysqlTable("payroll", {
+  id: int("id").autoincrement().primaryKey(),
+  employeeId: int("employeeId").notNull(),
+  month: varchar("month", { length: 7 }).notNull(), // Format: YYYY-MM
+  basicSalary: decimal("basicSalary", { precision: 10, scale: 2 }).notNull(),
+  allowances: decimal("allowances", { precision: 10, scale: 2 }).default("0.00").notNull(),
+  deductions: decimal("deductions", { precision: 10, scale: 2 }).default("0.00").notNull(),
+  netSalary: decimal("netSalary", { precision: 10, scale: 2 }).notNull(),
+  status: mysqlEnum("status", ["Draft", "Processed", "Paid"]).default("Draft").notNull(),
+  paidAt: timestamp("paidAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Payroll = typeof payroll.$inferSelect;
+export type InsertPayroll = typeof payroll.$inferInsert;
+
+// Recruitment table
+export const recruitment = mysqlTable("recruitment", {
+  id: int("id").autoincrement().primaryKey(),
+  candidateName: varchar("candidateName", { length: 200 }).notNull(),
+  email: varchar("email", { length: 320 }).notNull(),
+  phone: varchar("phone", { length: 20 }),
+  position: varchar("position", { length: 100 }).notNull(),
+  status: mysqlEnum("status", ["Applied", "Screening", "Interview", "Offer", "Hired", "Rejected"]).default("Applied").notNull(),
+  appliedDate: timestamp("appliedDate").defaultNow().notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Recruitment = typeof recruitment.$inferSelect;
+export type InsertRecruitment = typeof recruitment.$inferInsert;
+
+// Timesheets table
+export const timesheets = mysqlTable("timesheets", {
+  id: int("id").autoincrement().primaryKey(),
+  employeeId: int("employeeId").notNull(),
+  date: timestamp("date").notNull(),
+  projectName: varchar("projectName", { length: 200 }),
+  hoursWorked: decimal("hoursWorked", { precision: 5, scale: 2 }).notNull(),
+  description: text("description"),
+  status: mysqlEnum("status", ["Draft", "Submitted", "Approved", "Rejected"]).default("Draft").notNull(),
+  approvedBy: int("approvedBy"),
+  approvedAt: timestamp("approvedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Timesheet = typeof timesheets.$inferSelect;
+export type InsertTimesheet = typeof timesheets.$inferInsert;
+
+// Documents table
+export const documents = mysqlTable("documents", {
+  id: int("id").autoincrement().primaryKey(),
+  employeeId: int("employeeId"),
+  documentName: varchar("documentName", { length: 200 }).notNull(),
+  documentType: varchar("documentType", { length: 100 }).notNull(),
+  fileUrl: text("fileUrl").notNull(),
+  uploadedBy: int("uploadedBy"),
+  expiryDate: timestamp("expiryDate"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Document = typeof documents.$inferSelect;
+export type InsertDocument = typeof documents.$inferInsert;
+
+// Hiring Checklists table
+export const hiringChecklists = mysqlTable("hiringChecklists", {
+  id: int("id").autoincrement().primaryKey(),
+  employeeId: int("employeeId").notNull().unique(),
+  stage: int("stage").default(1).notNull(),
+  progressPercentage: int("progressPercentage").default(0).notNull(),
+  status: mysqlEnum("status", ["In Progress", "Pending Approval", "Completed"]).default("In Progress").notNull(),
+  hrApproved: boolean("hrApproved").default(false).notNull(),
+  hrApprovedBy: varchar("hrApprovedBy", { length: 200 }),
+  hrApprovedDate: timestamp("hrApprovedDate"),
+  managerApproved: boolean("managerApproved").default(false).notNull(),
+  managerApprovedBy: varchar("managerApprovedBy", { length: 200 }),
+  managerApprovedDate: timestamp("managerApprovedDate"),
+  items: json("items").notNull(), // JSON array of checklist items
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type HiringChecklist = typeof hiringChecklists.$inferSelect;
+export type InsertHiringChecklist = typeof hiringChecklists.$inferInsert;
+
+// Roles table
+export const roles = mysqlTable("roles", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull().unique(),
+  description: text("description"),
+  isSystemRole: boolean("isSystemRole").default(false).notNull(),
+  permissions: json("permissions").notNull(), // JSON array of permission objects
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Role = typeof roles.$inferSelect;
+export type InsertRole = typeof roles.$inferInsert;
+
+// User Roles table
+export const userRoles = mysqlTable("userRoles", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  roleId: int("roleId").notNull(),
+  effectiveDate: timestamp("effectiveDate"),
+  assignedBy: varchar("assignedBy", { length: 200 }).notNull(),
+  assignedAt: timestamp("assignedAt").defaultNow().notNull(),
+});
+
+export type UserRole = typeof userRoles.$inferSelect;
+export type InsertUserRole = typeof userRoles.$inferInsert;
+
+// Audit Logs table
+export const auditLogs = mysqlTable("auditLogs", {
+  id: int("id").autoincrement().primaryKey(),
+  action: varchar("action", { length: 100 }).notNull(),
+  entityType: varchar("entityType", { length: 100 }).notNull(),
+  entityId: varchar("entityId", { length: 100 }).notNull(),
+  changes: json("changes"), // JSON object of changes
+  performedBy: varchar("performedBy", { length: 200 }).notNull(),
+  performedAt: timestamp("performedAt").defaultNow().notNull(),
+});
+
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type InsertAuditLog = typeof auditLogs.$inferInsert;

@@ -25,15 +25,15 @@ export default function TimesheetsPage() {
         return;
       }
       
-      const userId = employees[0].id;
+      const userId = employees[0].id.toString();
       setCurrentUserId(userId);
 
       const data = await timesheetService.getMyTimesheets(userId, week);
       // If no data, initialize with empty rows
       if (data.length === 0) {
         setEntries([
-          { id: 'new-1', employee_id: userId, week, project: 'Project Alpha', hours: { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0, Sun: 0 }, status: 'Draft', total_hours: 0 },
-          { id: 'new-2', employee_id: userId, week, project: 'Internal Ops', hours: { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0, Sun: 0 }, status: 'Draft', total_hours: 0 }
+          { id: 'new-1', employee_id: userId.toString(), week, project: 'Project Alpha', hours: { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0, Sun: 0 }, status: 'Draft', total_hours: 0 },
+          { id: 'new-2', employee_id: userId.toString(), week, project: 'Internal Ops', hours: { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0, Sun: 0 }, status: 'Draft', total_hours: 0 }
         ]);
       } else {
         setEntries(data);

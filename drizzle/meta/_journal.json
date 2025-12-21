@@ -8,6 +8,13 @@
       "when": 1766321783252,
       "tag": "0000_living_norrin_radd",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1766323212157,
+      "tag": "0001_mixed_lady_deathstrike",
+      "breakpoints": true
     }
   ]
 }

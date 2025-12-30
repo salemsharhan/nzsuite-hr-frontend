@@ -15,6 +15,13 @@
       "when": 1766323212157,
       "tag": "0001_mixed_lady_deathstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1767101320506,
+      "tag": "0002_neat_union_jack",
+      "breakpoints": true
     }
   ]
 }

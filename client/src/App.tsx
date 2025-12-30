@@ -25,6 +25,7 @@ import RolesPermissionsPage from "./pages/RolesPermissionsPage";
 import EmployeeDashboard from "./pages/EmployeeDashboard";
 import MyRequestsPage from "./pages/MyRequestsPage";
 import MyPayslipsPage from "./pages/MyPayslipsPage";
+import LeaveManagementPage from "./pages/LeaveManagementPage";
 import './utils/i18n';
 
 // Placeholder pages for routes not yet implemented
@@ -46,7 +47,7 @@ function Router() {
         <Route path="/attendance" component={AttendancePage} />
         <Route path="/payroll" component={PayrollPage} />
         <Route path="/setup" component={SetupPage} />
-        <Route path="/leaves" component={LeavesPage} />
+        <Route path="/leaves" component={LeaveManagementPage} />
         <Route path="/recruitment" component={RecruitmentPage} />
         <Route path="/ess" component={ESSPage} />
         <Route path="/self-service" component={EmployeeDashboard} />

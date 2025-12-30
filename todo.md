@@ -191,3 +191,110 @@
 - [x] GET /self-service/requests
 - [x] GET /payroll/payslips
 - [x] POST /self-service/requests
+
+
+## 🐛 Current Issues
+
+- [ ] Fix blank page rendering issue - application not displaying in browser
+- [ ] Check for JavaScript runtime errors
+- [ ] Verify all routes are working correctly
+
+
+## 🏖️ Complete Leave Management Module (Admin Only)
+
+### A) Leave Dashboard
+- [x] Create overview statistics cards (Total Requests, Pending Approvals, Approved This Month, Rejected)
+- [x] Add leave type breakdown chart (Annual, Sick, Emergency, etc.)
+- [x] Show upcoming leaves calendar widget
+- [x] Display recent leave requests table
+- [x] Add quick action buttons (Approve/Reject pending requests)
+
+### B) Leave Requests Management
+- [x] Create comprehensive requests list with filters:
+  - [x] Filter by status (Pending, Approved, Rejected, Cancelled)
+  - [x] Filter by leave type
+  - [x] Filter by employee/department
+  - [x] Filter by date range
+- [x] Add search functionality (by employee name, request ID)
+- [x] Implement bulk actions (Approve/Reject multiple)
+- [x] Create request detail modal with:
+  - [x] Employee information
+  - [x] Leave details (type, dates, duration, reason)
+  - [x] Attachments (medical certificates, etc.)
+  - [x] Approval history/timeline
+  - [x] Comments section
+  - [x] Approve/Reject actions with reason field
+- [ ] Add manual leave request creation for employees
+
+### C) Leave Policies Configuration
+- [ ] Create leave types management:
+  - [ ] Annual Leave
+  - [ ] Sick Leave
+  - [ ] Emergency Leave
+  - [ ] Maternity/Paternity Leave
+  - [ ] Unpaid Leave
+  - [ ] Compassionate Leave
+  - [ ] Study Leave
+  - [ ] Custom leave types
+- [ ] Configure policy rules for each type:
+  - [ ] Annual entitlement (days per year)
+  - [ ] Accrual method (monthly, yearly, joining date)
+  - [ ] Carry forward rules
+  - [ ] Maximum carry forward days
+  - [ ] Encashment rules
+  - [ ] Minimum/maximum days per request
+  - [ ] Advance notice required (days)
+  - [ ] Requires approval (yes/no)
+  - [ ] Requires attachment (yes/no)
+  - [ ] Applicable to (all employees, specific departments, roles)
+- [ ] Set public holidays calendar
+- [ ] Configure working days (weekends)
+
+### D) Leave Balance Management
+- [ ] View all employees' leave balances
+- [ ] Filter by department/employee
+- [ ] Show balance breakdown:
+  - [ ] Total entitled
+  - [ ] Used
+  - [ ] Remaining
+  - [ ] Pending approval
+  - [ ] Carried forward from previous year
+- [ ] Manual balance adjustment with reason
+- [ ] Bulk balance import/export (Excel)
+- [ ] Balance history/audit trail
+
+### E) Leave Calendar View
+- [ ] Monthly calendar showing all leaves
+- [ ] Color-coded by leave type
+- [ ] Filter by department/employee
+- [ ] Show employee availability
+- [ ] Identify leave conflicts/overlaps
+- [ ] Export calendar to PDF
+
+### F) Leave Reports
+- [ ] Leave summary report (by employee, department, leave type)
+- [ ] Leave trends analysis
+- [ ] Absenteeism report
+- [ ] Leave encashment report
+- [ ] Carry forward report
+- [ ] Export to Excel/PDF
+
+### G) Approval Workflows
+- [ ] Configure approval chains (Manager → HR → Admin)
+- [ ] Auto-approval rules (e.g., auto-approve if < 2 days)
+- [ ] Delegation settings (when approver is on leave)
+- [ ] Email notifications for:
+  - [ ] New leave request
+  - [ ] Request approved
+  - [ ] Request rejected
+  - [ ] Request cancelled
+  - [ ] Balance low warning
+
+### H) Database Schema
+- [x] leave_types table
+- [x] leave_policies table
+- [x] leave_requests table
+- [x] leave_balances table
+- [x] leave_approvals table (approval history)
+- [x] public_holidays table
+- [x] leave_adjustments table (manual adjustments)

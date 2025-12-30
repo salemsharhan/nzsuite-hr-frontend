@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, decimal } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, decimal, date } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -45,6 +45,127 @@ export const employees = mysqlTable("employees", {
 
 export type Employee = typeof employees.$inferSelect;
 export type InsertEmployee = typeof employees.$inferInsert;
+
+// Leave Types table
+export const leaveTypes = mysqlTable("leave_types", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull().unique(),
+  code: varchar("code", { length: 20 }).notNull().unique(),
+  description: text("description"),
+  color: varchar("color", { length: 7 }).default("#3b82f6"),
+  icon: varchar("icon", { length: 50 }),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type LeaveType = typeof leaveTypes.$inferSelect;
+export type InsertLeaveType = typeof leaveTypes.$inferInsert;
+
+// Leave Policies table
+export const leavePolicies = mysqlTable("leave_policies", {
+  id: int("id").autoincrement().primaryKey(),
+  leaveTypeId: int("leaveTypeId").notNull().references(() => leaveTypes.id),
+  annualEntitlement: int("annualEntitlement").notNull(), // days per year
+  accrualMethod: mysqlEnum("accrualMethod", ["monthly", "yearly", "joining_date"]).default("yearly").notNull(),
+  carryForwardEnabled: boolean("carryForwardEnabled").default(false).notNull(),
+  maxCarryForwardDays: int("maxCarryForwardDays").default(0),
+  encashmentEnabled: boolean("encashmentEnabled").default(false).notNull(),
+  minDaysPerRequest: int("minDaysPerRequest").default(1),
+  maxDaysPerRequest: int("maxDaysPerRequest"),
+  advanceNoticeRequired: int("advanceNoticeRequired").default(0), // days
+  requiresApproval: boolean("requiresApproval").default(true).notNull(),
+  requiresAttachment: boolean("requiresAttachment").default(false).notNull(),
+  applicableTo: json("applicableTo"), // {departments: [], roles: [], employmentTypes: []}
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type LeavePolicy = typeof leavePolicies.$inferSelect;
+export type InsertLeavePolicy = typeof leavePolicies.$inferInsert;
+
+// Leave Balances table
+export const leaveBalances = mysqlTable("leave_balances", {
+  id: int("id").autoincrement().primaryKey(),
+  employeeId: int("employeeId").notNull().references(() => employees.id),
+  leaveTypeId: int("leaveTypeId").notNull().references(() => leaveTypes.id),
+  year: int("year").notNull(),
+  totalEntitled: decimal("totalEntitled", { precision: 5, scale: 2 }).notNull(),
+  used: decimal("used", { precision: 5, scale: 2 }).default("0").notNull(),
+  pending: decimal("pending", { precision: 5, scale: 2 }).default("0").notNull(),
+  carriedForward: decimal("carriedForward", { precision: 5, scale: 2 }).default("0").notNull(),
+  remaining: decimal("remaining", { precision: 5, scale: 2 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type LeaveBalance = typeof leaveBalances.$inferSelect;
+export type InsertLeaveBalance = typeof leaveBalances.$inferInsert;
+
+// Leave Requests table
+export const leaveRequests = mysqlTable("leave_requests", {
+  id: int("id").autoincrement().primaryKey(),
+  requestId: varchar("requestId", { length: 50 }).notNull().unique(),
+  employeeId: int("employeeId").notNull().references(() => employees.id),
+  leaveTypeId: int("leaveTypeId").notNull().references(() => leaveTypes.id),
+  startDate: date("startDate").notNull(),
+  endDate: date("endDate").notNull(),
+  duration: decimal("duration", { precision: 5, scale: 2 }).notNull(), // in days
+  reason: text("reason"),
+  attachments: json("attachments"), // [{name, url, type, size}]
+  status: mysqlEnum("status", ["Pending", "Approved", "Rejected", "Cancelled"]).default("Pending").notNull(),
+  submittedAt: timestamp("submittedAt").defaultNow().notNull(),
+  reviewedAt: timestamp("reviewedAt"),
+  reviewedBy: int("reviewedBy").references(() => users.id),
+  reviewComments: text("reviewComments"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type LeaveRequest = typeof leaveRequests.$inferSelect;
+export type InsertLeaveRequest = typeof leaveRequests.$inferInsert;
+
+// Leave Approvals table (approval history/timeline)
+export const leaveApprovals = mysqlTable("leave_approvals", {
+  id: int("id").autoincrement().primaryKey(),
+  leaveRequestId: int("leaveRequestId").notNull().references(() => leaveRequests.id),
+  approverRole: varchar("approverRole", { length: 50 }).notNull(), // Manager, HR, Admin
+  approverId: int("approverId").references(() => users.id),
+  action: mysqlEnum("action", ["Approved", "Rejected", "Pending"]).notNull(),
+  comments: text("comments"),
+  actionAt: timestamp("actionAt").defaultNow().notNull(),
+});
+
+export type LeaveApproval = typeof leaveApprovals.$inferSelect;
+export type InsertLeaveApproval = typeof leaveApprovals.$inferInsert;
+
+// Public Holidays table
+export const publicHolidays = mysqlTable("public_holidays", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 200 }).notNull(),
+  date: date("date").notNull(),
+  isRecurring: boolean("isRecurring").default(false).notNull(),
+  applicableTo: json("applicableTo"), // {departments: [], locations: []}
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PublicHoliday = typeof publicHolidays.$inferSelect;
+export type InsertPublicHoliday = typeof publicHolidays.$inferInsert;
+
+// Leave Adjustments table (manual balance adjustments)
+export const leaveAdjustments = mysqlTable("leave_adjustments", {
+  id: int("id").autoincrement().primaryKey(),
+  leaveBalanceId: int("leaveBalanceId").notNull().references(() => leaveBalances.id),
+  adjustmentType: mysqlEnum("adjustmentType", ["Add", "Deduct"]).notNull(),
+  amount: decimal("amount", { precision: 5, scale: 2 }).notNull(),
+  reason: text("reason").notNull(),
+  adjustedBy: int("adjustedBy").notNull().references(() => users.id),
+  adjustedAt: timestamp("adjustedAt").defaultNow().notNull(),
+});
+
+export type LeaveAdjustment = typeof leaveAdjustments.$inferSelect;
+export type InsertLeaveAdjustment = typeof leaveAdjustments.$inferInsert;
 
 // Attendance table
 export const attendance = mysqlTable("attendance", {

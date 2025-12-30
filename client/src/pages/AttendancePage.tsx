@@ -11,6 +11,7 @@ import {
   Plus
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, Button, Badge, Input } from '../components/common/UIComponents';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import Modal from '../components/common/Modal';
 import { attendanceService, AttendanceLog } from '../services/attendanceService';
 import { employeeService, Employee } from '../services/employeeService';
@@ -129,19 +130,22 @@ export default function AttendancePage() {
         <form onSubmit={handleAddPunch} className="space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">Employee</label>
-            <select 
-              className="w-full h-10 bg-white/5 border border-white/10 rounded-md px-3 text-sm focus:outline-none focus:border-primary"
-              value={newPunch.employee_id}
-              onChange={e => setNewPunch({...newPunch, employee_id: e.target.value})}
+            <Select 
+              value={newPunch.employee_id} 
+              onValueChange={(value) => setNewPunch({...newPunch, employee_id: value})}
               required
             >
-              <option value="">Select Employee</option>
-              {employees.map(emp => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.first_name} {emp.last_name} ({emp.employee_id})
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select Employee" />
+              </SelectTrigger>
+              <SelectContent>
+                {employees.map(emp => (
+                  <SelectItem key={emp.id} value={emp.id}>
+                    {emp.first_name || emp.firstName} {emp.last_name || emp.lastName} ({emp.employee_id || emp.employeeId})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">

@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useRoute } from 'wouter';
-import { User, FileText, Clock, DollarSign, Shield, ArrowLeft, Upload, Download } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { User, FileText, Clock, DollarSign, Shield, ArrowLeft, Upload, Download, MapPin, Phone, Mail, Calendar, Briefcase, Building2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, Button, Badge, Tabs, TabsList, TabsTrigger, TabsContent } from '../components/common/UIComponents';
 import { employeeService, Employee } from '../services/employeeService';
 
 export default function EmployeeDetailPage() {
+  const { t } = useTranslation();
   const [match, params] = useRoute('/employees/:id');
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [activeTab, setActiveTab] = useState('personal');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (params?.id) {
@@ -17,17 +20,21 @@ export default function EmployeeDetailPage() {
 
   const loadEmployee = async (id: string) => {
     try {
-      // In a real app, we would fetch by ID. For now, we'll simulate it or fetch all and find.
-      // Since our mock/service might not support getById perfectly in fallback mode:
+      setLoading(true);
       const all = await employeeService.getAll();
       const found = all.find(e => e.id.toString() === id || (e.employee_id || e.employeeId) === id);
       if (found) setEmployee(found);
     } catch (error) {
       console.error('Failed to load employee details', error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  if (!employee) return <div className="p-8 text-center">Loading profile...</div>;
+  if (loading) return <div className="p-8 text-center">{t('common.loading')}</div>;
+  if (!employee) return <div className="p-8 text-center">{t('common.noData')}</div>;
+
+  const emp = employee; // Shorthand
 
   return (
     <div className="space-y-6">
@@ -40,28 +47,30 @@ export default function EmployeeDetailPage() {
           <Card className="border-primary/20 bg-primary/5">
             <CardContent className="p-6 flex items-center gap-6">
               <div className="w-24 h-24 rounded-full bg-primary/20 flex items-center justify-center text-3xl font-bold text-primary border-2 border-primary/30">
-                {(employee.first_name || employee.firstName || 'U')[0]}{(employee.last_name || employee.lastName || 'N')[0]}
+                {(emp.first_name || emp.firstName || 'U')[0]}{(emp.last_name || emp.lastName || 'N')[0]}
               </div>
               <div className="flex-1">
                 <div className="flex justify-between items-start">
                   <div>
-                    <h1 className="text-3xl font-bold font-heading">{employee.first_name || employee.firstName} {employee.last_name || employee.lastName}</h1>
-                    <p className="text-lg text-muted-foreground">{employee.designation} • {employee.department}</p>
+                    <h1 className="text-3xl font-bold font-heading">{emp.first_name || emp.firstName} {emp.last_name || emp.lastName}</h1>
+                    <p className="text-lg text-muted-foreground">{emp.designation || emp.position} • {emp.department}</p>
                   </div>
-                  <Badge variant={employee.status === 'Active' ? 'success' : 'warning'} className="text-lg px-4 py-1">
-                    {employee.status}
+                  <Badge variant={emp.status === 'Active' ? 'success' : 'warning'} className="text-lg px-4 py-1">
+                    {emp.status}
                   </Badge>
                 </div>
                 <div className="flex gap-6 mt-4 text-sm text-muted-foreground">
                   <div className="flex items-center gap-2">
-                    <User size={16} /> {employee.employee_id}
+                    <User size={16} /> {emp.employee_id || emp.employeeId}
                   </div>
                   <div className="flex items-center gap-2">
-                    <Clock size={16} /> Joined {employee.join_date || employee.hireDate ? new Date(employee.join_date || employee.hireDate!).toLocaleDateString() : 'N/A'}
+                    <Clock size={16} /> {t('employees.joinDate')}: {emp.join_date || emp.hireDate ? new Date(emp.join_date || emp.hireDate!).toLocaleDateString() : 'N/A'}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Shield size={16} /> Manager: Sarah Connor
-                  </div>
+                  {emp.reporting_manager_id && (
+                    <div className="flex items-center gap-2">
+                      <Shield size={16} /> {t('employees.manager')}
+                    </div>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -71,34 +80,224 @@ export default function EmployeeDetailPage() {
 
       {/* Tabs Navigation */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-4 bg-white/5 p-1 rounded-lg">
-          <TabsTrigger value="personal" className="data-[state=active]:bg-primary data-[state=active]:text-white">Personal Info</TabsTrigger>
-          <TabsTrigger value="documents" className="data-[state=active]:bg-primary data-[state=active]:text-white">Documents</TabsTrigger>
-          <TabsTrigger value="history" className="data-[state=active]:bg-primary data-[state=active]:text-white">Job History</TabsTrigger>
-          <TabsTrigger value="payroll" className="data-[state=active]:bg-primary data-[state=active]:text-white">Payroll Info</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-5 bg-white/5 p-1 rounded-lg">
+          <TabsTrigger value="personal" className="data-[state=active]:bg-primary data-[state=active]:text-white">{t('employees.personalInfo')}</TabsTrigger>
+          <TabsTrigger value="contact" className="data-[state=active]:bg-primary data-[state=active]:text-white">{t('employees.contactInfo')}</TabsTrigger>
+          <TabsTrigger value="employment" className="data-[state=active]:bg-primary data-[state=active]:text-white">{t('employees.employmentDetails')}</TabsTrigger>
+          <TabsTrigger value="working-hours" className="data-[state=active]:bg-primary data-[state=active]:text-white">{t('employees.workingHours')}</TabsTrigger>
+          <TabsTrigger value="documents" className="data-[state=active]:bg-primary data-[state=active]:text-white">{t('employees.documents')}</TabsTrigger>
         </TabsList>
 
         {/* Personal Info Tab */}
         <TabsContent value="personal" className="mt-6 space-y-6">
           <Card>
-            <CardHeader><CardTitle>Contact Information</CardTitle></CardHeader>
+            <CardHeader><CardTitle>{t('employees.personalInfo')}</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-2 gap-6">
               <div>
-                <label className="text-xs text-muted-foreground uppercase font-bold">Email Address</label>
-                <p className="text-lg">{employee.email}</p>
+                <label className="text-xs text-muted-foreground uppercase font-bold">{t('common.firstName')}</label>
+                <p className="text-lg">{emp.first_name || emp.firstName}</p>
               </div>
               <div>
-                <label className="text-xs text-muted-foreground uppercase font-bold">Phone Number</label>
-                <p className="text-lg">{employee.phone || '+965 5555 1234'}</p>
+                <label className="text-xs text-muted-foreground uppercase font-bold">{t('common.lastName')}</label>
+                <p className="text-lg">{emp.last_name || emp.lastName}</p>
               </div>
               <div>
-                <label className="text-xs text-muted-foreground uppercase font-bold">Nationality</label>
-                <p className="text-lg">Kuwaiti</p>
+                <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.dateOfBirth')}</label>
+                <p className="text-lg">{emp.date_of_birth ? new Date(emp.date_of_birth).toLocaleDateString() : 'N/A'}</p>
               </div>
               <div>
-                <label className="text-xs text-muted-foreground uppercase font-bold">Civil ID</label>
-                <p className="text-lg">290123456789</p>
+                <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.gender')}</label>
+                <p className="text-lg">{emp.gender || 'N/A'}</p>
               </div>
+              <div>
+                <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.maritalStatus')}</label>
+                <p className="text-lg">{emp.marital_status || 'N/A'}</p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.nationality')}</label>
+                <p className="text-lg">{emp.nationality || 'N/A'}</p>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Contact Information Tab */}
+        <TabsContent value="contact" className="mt-6 space-y-6">
+          <Card>
+            <CardHeader><CardTitle>{t('employees.contactInfo')}</CardTitle></CardHeader>
+            <CardContent className="grid grid-cols-2 gap-6">
+              <div>
+                <label className="text-xs text-muted-foreground uppercase font-bold flex items-center gap-2">
+                  <Mail size={14} /> {t('common.email')}
+                </label>
+                <p className="text-lg mt-1">{emp.email}</p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground uppercase font-bold flex items-center gap-2">
+                  <Phone size={14} /> {t('employees.phone')}
+                </label>
+                <p className="text-lg mt-1">{emp.phone || 'N/A'}</p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.alternatePhone')}</label>
+                <p className="text-lg">{emp.alternate_phone || 'N/A'}</p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground uppercase font-bold flex items-center gap-2">
+                  <MapPin size={14} /> {t('employees.address')}
+                </label>
+                <p className="text-lg mt-1">{emp.address || 'N/A'}</p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.city')}</label>
+                <p className="text-lg">{emp.city || 'N/A'}</p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.state')}</label>
+                <p className="text-lg">{emp.state || 'N/A'}</p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.country')}</label>
+                <p className="text-lg">{emp.country || 'N/A'}</p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.postalCode')}</label>
+                <p className="text-lg">{emp.postal_code || 'N/A'}</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Emergency Contact */}
+          <Card>
+            <CardHeader><CardTitle>{t('employees.emergencyContact')}</CardTitle></CardHeader>
+            <CardContent className="grid grid-cols-2 gap-6">
+              <div>
+                <label className="text-xs text-muted-foreground uppercase font-bold">{t('common.name')}</label>
+                <p className="text-lg">{emp.emergency_contact_name || 'N/A'}</p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.phone')}</label>
+                <p className="text-lg">{emp.emergency_contact_phone || 'N/A'}</p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.relationship')}</label>
+                <p className="text-lg">{emp.emergency_contact_relationship || 'N/A'}</p>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Employment Details Tab */}
+        <TabsContent value="employment" className="mt-6 space-y-6">
+          <Card>
+            <CardHeader><CardTitle>{t('employees.employmentDetails')}</CardTitle></CardHeader>
+            <CardContent className="grid grid-cols-2 gap-6">
+              <div>
+                <label className="text-xs text-muted-foreground uppercase font-bold flex items-center gap-2">
+                  <Building2 size={14} /> {t('employees.department')}
+                </label>
+                <p className="text-lg mt-1">{emp.department || 'N/A'}</p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground uppercase font-bold flex items-center gap-2">
+                  <Briefcase size={14} /> {t('common.role')}
+                </label>
+                <p className="text-lg mt-1">{emp.role_id ? 'Role ID: ' + emp.role_id : 'N/A'}</p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground uppercase font-bold">{t('common.job')}</label>
+                <p className="text-lg">{emp.position || emp.designation || 'N/A'}</p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.employmentType')}</label>
+                <p className="text-lg">{emp.employment_type || emp.employmentType || 'N/A'}</p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground uppercase font-bold flex items-center gap-2">
+                  <Calendar size={14} /> {t('employees.joinDate')}
+                </label>
+                <p className="text-lg mt-1">{emp.join_date || emp.hireDate ? new Date(emp.join_date || emp.hireDate!).toLocaleDateString() : 'N/A'}</p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground uppercase font-bold flex items-center gap-2">
+                  <DollarSign size={14} /> {t('employees.salary')}
+                </label>
+                <p className="text-lg mt-1">{emp.salary ? `${emp.salary}` : 'N/A'}</p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.workLocation')}</label>
+                <p className="text-lg">{emp.work_location || 'N/A'}</p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.reportingManager')}</label>
+                <p className="text-lg">{emp.reporting_manager_id ? 'Manager ID: ' + emp.reporting_manager_id : 'N/A'}</p>
+              </div>
+              {emp.notes && (
+                <div className="col-span-2">
+                  <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.notes')}</label>
+                  <p className="text-lg mt-1">{emp.notes}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Working Hours Tab */}
+        <TabsContent value="working-hours" className="mt-6">
+          <Card>
+            <CardHeader><CardTitle>{t('employees.workingHours')}</CardTitle></CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div>
+                  <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.monday')}</label>
+                  <p className="text-lg">{emp.working_hours_monday ?? 0} {t('employees.hours')}</p>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.tuesday')}</label>
+                  <p className="text-lg">{emp.working_hours_tuesday ?? 0} {t('employees.hours')}</p>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.wednesday')}</label>
+                  <p className="text-lg">{emp.working_hours_wednesday ?? 0} {t('employees.hours')}</p>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.thursday')}</label>
+                  <p className="text-lg">{emp.working_hours_thursday ?? 0} {t('employees.hours')}</p>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.friday')}</label>
+                  <p className="text-lg">{emp.working_hours_friday ?? 0} {t('employees.hours')}</p>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.saturday')}</label>
+                  <p className="text-lg">{emp.working_hours_saturday ?? 0} {t('employees.hours')}</p>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.sunday')}</label>
+                  <p className="text-lg">{emp.working_hours_sunday ?? 0} {t('employees.hours')}</p>
+                </div>
+              </div>
+              {emp.flexible_hours && (
+                <div className="pt-4 border-t border-white/10 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline">{t('employees.flexibleHours')}</Badge>
+                  </div>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.startTime')}</label>
+                      <p className="text-lg">{emp.start_time || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.endTime')}</label>
+                      <p className="text-lg">{emp.end_time || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.breakDuration')}</label>
+                      <p className="text-lg">{emp.break_duration_minutes || 0} {t('common.minutes') || 'minutes'}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -107,8 +306,8 @@ export default function EmployeeDetailPage() {
         <TabsContent value="documents" className="mt-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Employee Documents</CardTitle>
-              <Button size="sm" className="gap-2"><Upload size={16}/> Upload Document</Button>
+              <CardTitle>{t('employees.documents')}</CardTitle>
+              <Button size="sm" className="gap-2"><Upload size={16}/> {t('common.upload') || 'Upload'} {t('employees.documents')}</Button>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -125,72 +324,12 @@ export default function EmployeeDetailPage() {
                       </div>
                       <div>
                         <p className="font-bold">{doc.name}</p>
-                        <p className="text-xs text-muted-foreground">{doc.type} • Uploaded {doc.date}</p>
+                        <p className="text-xs text-muted-foreground">{doc.type} • {t('common.uploaded') || 'Uploaded'} {doc.date}</p>
                       </div>
                     </div>
                     <Button variant="ghost" size="icon"><Download size={18}/></Button>
                   </div>
                 ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* History Tab */}
-        <TabsContent value="history" className="mt-6">
-          <Card>
-            <CardHeader><CardTitle>Career Timeline</CardTitle></CardHeader>
-            <CardContent>
-              <div className="relative border-l-2 border-white/10 ml-4 space-y-8 py-4">
-                <div className="relative pl-8">
-                  <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-primary border-4 border-background"></div>
-                  <h3 className="font-bold text-lg">Promoted to Senior Engineer</h3>
-                  <p className="text-sm text-muted-foreground">Jan 15, 2024</p>
-                  <p className="mt-2 text-sm">Performance review score: 4.8/5. Salary adjustment applied.</p>
-                </div>
-                <div className="relative pl-8">
-                  <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-white/20 border-4 border-background"></div>
-                  <h3 className="font-bold text-lg">Joined as Software Engineer</h3>
-                  <p className="text-sm text-muted-foreground">Jan 15, 2023</p>
-                  <p className="mt-2 text-sm">Onboarded to Engineering Department.</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Payroll Tab */}
-        <TabsContent value="payroll" className="mt-6">
-          <Card>
-            <CardHeader><CardTitle>Salary Structure</CardTitle></CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <h3 className="font-bold text-muted-foreground uppercase text-xs mb-4">Earnings</h3>
-                  <div className="flex justify-between p-3 bg-emerald-500/10 rounded border border-emerald-500/20">
-                    <span>Basic Salary</span>
-                    <span className="font-mono font-bold">1,200.000 KD</span>
-                  </div>
-                  <div className="flex justify-between p-3 bg-emerald-500/10 rounded border border-emerald-500/20">
-                    <span>Housing Allowance</span>
-                    <span className="font-mono font-bold">250.000 KD</span>
-                  </div>
-                  <div className="flex justify-between p-3 bg-emerald-500/10 rounded border border-emerald-500/20">
-                    <span>Transport Allowance</span>
-                    <span className="font-mono font-bold">100.000 KD</span>
-                  </div>
-                </div>
-                <div className="space-y-4">
-                  <h3 className="font-bold text-muted-foreground uppercase text-xs mb-4">Deductions</h3>
-                  <div className="flex justify-between p-3 bg-red-500/10 rounded border border-red-500/20">
-                    <span>Social Security (GOSI)</span>
-                    <span className="font-mono font-bold">105.000 KD</span>
-                  </div>
-                </div>
-              </div>
-              <div className="mt-8 pt-6 border-t border-white/10 flex justify-between items-center">
-                <span className="text-xl font-bold">Net Salary</span>
-                <span className="text-2xl font-bold font-mono text-primary">1,445.000 KD</span>
               </div>
             </CardContent>
           </Card>

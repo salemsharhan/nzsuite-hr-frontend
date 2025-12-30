@@ -1,13 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Folder, FileText, MoreVertical, Search, Upload, Grid, List, Trash2, Download } from 'lucide-react';
+import { Folder, FileText, MoreVertical, Search, Upload, Grid, List, Trash2, Download, Plus, X } from 'lucide-react';
 import { Card, CardContent, Button, Input } from '../components/common/UIComponents';
-import { documentService, Document } from '../services/documentService';
+import Modal from '../components/common/Modal';
+import { documentService, Document, Folder as FolderType } from '../services/documentService';
 
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
+  const [folders, setFolders] = useState<FolderType[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [showCreateFolder, setShowCreateFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [newFolderDescription, setNewFolderDescription] = useState('');
+  const [newFolderColor, setNewFolderColor] = useState('#3b82f6');
 
   useEffect(() => {
     loadData();
@@ -15,22 +21,69 @@ export default function DocumentsPage() {
 
   const loadData = async () => {
     try {
-      const data = await documentService.getAll();
-      setDocuments(data);
+      const [docsData, foldersData] = await Promise.all([
+        documentService.getAll(),
+        documentService.getFolders()
+      ]);
+      setDocuments(docsData);
+      setFolders(foldersData);
     } catch (error) {
-      console.error('Failed to load documents:', error);
+      console.error('Failed to load data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) {
+      alert('Please enter a folder name');
+      return;
+    }
+
+    try {
+      const newFolder = await documentService.createFolder({
+        name: newFolderName.trim(),
+        description: newFolderDescription.trim() || undefined,
+        color: newFolderColor
+      });
+      setFolders([...folders, newFolder]);
+      setShowCreateFolder(false);
+      setNewFolderName('');
+      setNewFolderDescription('');
+      setNewFolderColor('#3b82f6');
+    } catch (error: any) {
+      console.error('Failed to create folder:', error);
+      alert(error.response?.data?.message || 'Failed to create folder. It may already exist.');
+    }
+  };
+
+  const handleDeleteFolder = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to delete the folder "${name}"? This will not delete the files inside.`)) return;
+    try {
+      await documentService.deleteFolder(id);
+      setFolders(folders.filter(f => f.id !== id));
+      if (selectedFolderId === id) {
+        setSelectedFolderId(null);
+      }
+    } catch (error) {
+      console.error('Failed to delete folder:', error);
+      alert('Failed to delete folder');
     }
   };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       try {
-        const newDoc = await documentService.upload(e.target.files[0], selectedFolder || 'General');
+        const selectedFolder = folders.find(f => f.id === selectedFolderId);
+        const newDoc = await documentService.upload(
+          e.target.files[0], 
+          selectedFolderId, 
+          selectedFolder?.name
+        );
         setDocuments([newDoc, ...documents]);
       } catch (error) {
         console.error('Failed to upload:', error);
+        alert('Failed to upload file');
       }
     }
   };
@@ -42,11 +95,13 @@ export default function DocumentsPage() {
       setDocuments(documents.filter(d => d.id !== id));
     } catch (error) {
       console.error('Failed to delete:', error);
+      alert('Failed to delete file');
     }
   };
 
+  const selectedFolder = folders.find(f => f.id === selectedFolderId);
   const filteredDocs = documents.filter(doc => 
-    (selectedFolder ? doc.folder === selectedFolder : true) &&
+    (selectedFolderId ? doc.folder_id === selectedFolderId : true) &&
     doc.name.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -82,19 +137,116 @@ export default function DocumentsPage() {
 
       {/* Folders */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        {['Contracts', 'Policies', 'Visas', 'Payroll', 'Onboarding', 'Templates'].map((folder, i) => (
+        {folders.map((folder) => (
           <Card 
-            key={i} 
-            className={`cursor-pointer transition-colors group ${selectedFolder === folder ? 'bg-primary/10 border-primary' : 'hover:bg-white/5'}`}
-            onClick={() => setSelectedFolder(selectedFolder === folder ? null : folder)}
+            key={folder.id} 
+            className={`cursor-pointer transition-colors group relative ${selectedFolderId === folder.id ? 'bg-primary/10 border-primary' : 'hover:bg-white/5'}`}
+            onClick={() => setSelectedFolderId(selectedFolderId === folder.id ? null : folder.id)}
           >
             <CardContent className="p-4 flex flex-col items-center text-center gap-3">
-              <Folder size={48} className={`transition-colors ${selectedFolder === folder ? 'text-primary' : 'text-blue-400 group-hover:text-blue-300'}`} />
-              <span className="font-medium text-sm">{folder}</span>
+              <div className="relative">
+                <Folder 
+                  size={48} 
+                  className={`transition-colors ${selectedFolderId === folder.id ? 'text-primary' : ''}`}
+                  style={{ color: selectedFolderId === folder.id ? undefined : folder.color || '#3b82f6' }}
+                />
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteFolder(folder.id, folder.name);
+                  }}
+                  className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-destructive text-white rounded-full p-1 hover:bg-destructive/80"
+                  title="Delete folder"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+              <span className="font-medium text-sm">{folder.name}</span>
+              {folder.description && (
+                <span className="text-xs text-muted-foreground line-clamp-1">{folder.description}</span>
+              )}
             </CardContent>
           </Card>
         ))}
+        
+        {/* Add Folder Button */}
+        <Card 
+          className="cursor-pointer transition-colors hover:bg-white/5 border-dashed"
+          onClick={() => setShowCreateFolder(true)}
+        >
+          <CardContent className="p-4 flex flex-col items-center text-center gap-3">
+            <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center">
+              <Plus size={24} className="text-muted-foreground" />
+            </div>
+            <span className="font-medium text-sm text-muted-foreground">Add Folder</span>
+          </CardContent>
+        </Card>
       </div>
+
+      {/* Create Folder Modal */}
+      <Modal
+        isOpen={showCreateFolder}
+        onClose={() => {
+          setShowCreateFolder(false);
+          setNewFolderName('');
+          setNewFolderDescription('');
+          setNewFolderColor('#3b82f6');
+        }}
+        title="Create New Folder"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-2">Folder Name *</label>
+            <Input
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              placeholder="e.g., Contracts, Policies..."
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-2">Description</label>
+            <Input
+              value={newFolderDescription}
+              onChange={(e) => setNewFolderDescription(e.target.value)}
+              placeholder="Optional description..."
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-2">Color</label>
+            <div className="flex gap-2">
+              <Input
+                type="color"
+                value={newFolderColor}
+                onChange={(e) => setNewFolderColor(e.target.value)}
+                className="w-20 h-10"
+              />
+              <Input
+                value={newFolderColor}
+                onChange={(e) => setNewFolderColor(e.target.value)}
+                placeholder="#3b82f6"
+                className="flex-1"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setShowCreateFolder(false);
+                setNewFolderName('');
+                setNewFolderDescription('');
+                setNewFolderColor('#3b82f6');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleCreateFolder}>
+              Create Folder
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Recent Files */}
       <Card>

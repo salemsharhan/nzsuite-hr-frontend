@@ -7,9 +7,19 @@ interface ModalProps {
   onClose: () => void;
   title: string;
   children: React.ReactNode;
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'full';
 }
 
-export default function Modal({ isOpen, onClose, title, children }: ModalProps) {
+const sizeClasses = {
+  sm: 'max-w-md',
+  md: 'max-w-lg',
+  lg: 'max-w-2xl',
+  xl: 'max-w-4xl',
+  '2xl': 'max-w-6xl',
+  full: 'max-w-[95vw]'
+};
+
+export default function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalProps) {
   return (
     <Transition appear show={isOpen} as={Fragment}>
       <Dialog as="div" className="relative z-50" onClose={onClose}>
@@ -36,16 +46,16 @@ export default function Modal({ isOpen, onClose, title, children }: ModalProps) 
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-[#0f172a] border border-white/10 p-6 text-left align-middle shadow-xl transition-all">
-                <div className="flex justify-between items-center mb-4">
-                  <Dialog.Title as="h3" className="text-lg font-medium leading-6 text-white">
+              <Dialog.Panel className={`w-full ${sizeClasses[size]} transform overflow-hidden rounded-2xl bg-[#0f172a] border border-white/10 p-6 text-left align-middle shadow-xl transition-all max-h-[90vh] flex flex-col`}>
+                <div className="flex justify-between items-center mb-6 pb-4 border-b border-white/10">
+                  <Dialog.Title as="h3" className="text-xl font-semibold leading-6 text-white">
                     {title}
                   </Dialog.Title>
-                  <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
+                  <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors p-1 hover:bg-white/10 rounded-md">
                     <X size={20} />
                   </button>
                 </div>
-                <div className="mt-2">
+                <div className="mt-2 overflow-y-auto flex-1 pr-2">
                   {children}
                 </div>
               </Dialog.Panel>

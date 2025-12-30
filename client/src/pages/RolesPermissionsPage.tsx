@@ -11,12 +11,13 @@ import {
   History
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, Button, Badge, Input } from '../components/common/UIComponents';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import Modal from '../components/common/Modal';
 import { 
   rolesPermissionsService, 
   Role, 
   UserRole, 
-  Permission,
+  Permission, 
   PermissionAction,
   SYSTEM_ROLES 
 } from '../services/rolesPermissionsService';
@@ -360,36 +361,42 @@ export default function RolesPermissionsPage() {
         <form onSubmit={handleAssignRole} className="space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">Select User</label>
-            <select 
-              className="w-full h-10 bg-white/5 border border-white/10 rounded-md px-3 text-sm focus:outline-none focus:border-primary"
-              value={selectedUserId}
-              onChange={e => setSelectedUserId(e.target.value)}
+            <Select 
+              value={selectedUserId} 
+              onValueChange={(value) => setSelectedUserId(value)}
               required
             >
-              <option value="">Choose a user...</option>
-              {employees.map(emp => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.first_name} {emp.last_name} ({emp.email})
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Choose a user..." />
+              </SelectTrigger>
+              <SelectContent>
+                {employees.map(emp => (
+                  <SelectItem key={emp.id} value={emp.id}>
+                    {emp.first_name || emp.firstName} {emp.last_name || emp.lastName} ({emp.email})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">
             <label className="text-sm font-medium">Select Role</label>
-            <select 
-              className="w-full h-10 bg-white/5 border border-white/10 rounded-md px-3 text-sm focus:outline-none focus:border-primary"
-              value={selectedRoleId}
-              onChange={e => setSelectedRoleId(e.target.value)}
+            <Select 
+              value={selectedRoleId} 
+              onValueChange={(value) => setSelectedRoleId(value)}
               required
             >
-              <option value="">Choose a role...</option>
-              {roles.map(role => (
-                <option key={role.id} value={role.id}>
-                  {role.name}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Choose a role..." />
+              </SelectTrigger>
+              <SelectContent>
+                {roles.map(role => (
+                  <SelectItem key={role.id} value={role.id}>
+                    {role.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">

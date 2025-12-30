@@ -11,6 +11,7 @@ import {
   User
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, Button, Badge, Input } from '../components/common/UIComponents';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import Modal from '../components/common/Modal';
 import { hiringChecklistService, HiringChecklist, CHECKLIST_TEMPLATE } from '../services/hiringChecklistService';
 import { employeeService, Employee } from '../services/employeeService';
@@ -130,19 +131,22 @@ export default function HiringChecklistPage() {
         <form onSubmit={handleCreateChecklist} className="space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">Select Employee</label>
-            <select 
-              className="w-full h-10 bg-white/5 border border-white/10 rounded-md px-3 text-sm focus:outline-none focus:border-primary"
-              value={selectedEmployeeId}
-              onChange={e => setSelectedEmployeeId(e.target.value)}
+            <Select 
+              value={selectedEmployeeId} 
+              onValueChange={(value) => setSelectedEmployeeId(value)}
               required
             >
-              <option value="">Choose an employee...</option>
-              {employeesWithoutChecklist.map(emp => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.first_name} {emp.last_name} ({emp.employee_id})
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Choose an employee..." />
+              </SelectTrigger>
+              <SelectContent>
+                {employeesWithoutChecklist.map(emp => (
+                  <SelectItem key={emp.id} value={emp.id}>
+                    {emp.first_name || emp.firstName} {emp.last_name || emp.lastName} ({emp.employee_id || emp.employeeId})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="pt-4 flex justify-end gap-3">

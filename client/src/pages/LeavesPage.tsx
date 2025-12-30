@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar as CalendarIcon, CheckCircle, XCircle, Clock, Plus, Filter } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, Button, Badge, Input } from '../components/common/UIComponents';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import Modal from '../components/common/Modal';
 import { useTranslation } from 'react-i18next';
 import { leaveService, LeaveRequest } from '../services/leaveService';
@@ -89,31 +90,38 @@ export default function LeavesPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">{t('employees.name')}</label>
-            <select 
-              className="w-full h-10 bg-white/5 border border-white/10 rounded-md px-3 text-sm focus:outline-none focus:border-primary"
-              value={newRequest.employee_id}
-              onChange={e => setNewRequest({...newRequest, employee_id: e.target.value})}
+            <Select 
+              value={newRequest.employee_id} 
+              onValueChange={(value) => setNewRequest({...newRequest, employee_id: value})}
               required
             >
-              <option value="">Select Employee</option>
-              {employees.map(emp => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.first_name} {emp.last_name}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select Employee" />
+              </SelectTrigger>
+              <SelectContent>
+                {employees.map(emp => (
+                  <SelectItem key={emp.id} value={emp.id}>
+                    {emp.first_name || emp.firstName} {emp.last_name || emp.lastName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Leave Type</label>
-            <select 
-              className="w-full h-10 bg-white/5 border border-white/10 rounded-md px-3 text-sm focus:outline-none focus:border-primary"
-              value={newRequest.leave_type}
-              onChange={e => setNewRequest({...newRequest, leave_type: e.target.value})}
+            <Select 
+              value={newRequest.leave_type} 
+              onValueChange={(value) => setNewRequest({...newRequest, leave_type: value})}
             >
-              <option>{t('leaves.annualLeave')}</option>
-              <option>{t('leaves.sickLeave')}</option>
-              <option>{t('leaves.unpaidLeave')}</option>
-            </select>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select leave type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={t('leaves.annualLeave')}>{t('leaves.annualLeave')}</SelectItem>
+                <SelectItem value={t('leaves.sickLeave')}>{t('leaves.sickLeave')}</SelectItem>
+                <SelectItem value={t('leaves.unpaidLeave')}>{t('leaves.unpaidLeave')}</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">

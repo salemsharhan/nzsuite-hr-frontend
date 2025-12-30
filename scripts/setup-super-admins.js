@@ -1,0 +1,95 @@
+import axios from 'axios';
+
+const PROJECT_REF = process.env.SUPABASE_PROJECT_REF || 'wqfbltrnlwngyohvxjjq';
+const ACCESS_TOKEN = process.env.SUPABASE_ACCESS_TOKEN || 'sbp_47af015c2abbbcdd29a82d806b62b3a1e47a569e';
+
+async function executeSQL(sql) {
+  try {
+    const response = await axios.post(
+      `https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query`,
+      { query: sql },
+      {
+        headers: {
+          'Authorization': `Bearer ${ACCESS_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    return { success: true, data: response.data };
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error.response?.data?.message || error.message 
+    };
+  }
+}
+
+async function setupSuperAdmins() {
+  console.log('🚀 Setting up Super Admin users...\n');
+  
+  // Super Admin 1
+  const sql1 = `
+    INSERT INTO user_roles (user_id, email, role, is_active)
+    VALUES 
+      ('6a871b7a-7a5d-4279-a0d8-ed08a86ddb14', 'superadmin1@system.com', 'super_admin', TRUE)
+    ON CONFLICT (user_id) DO UPDATE 
+    SET email = EXCLUDED.email, role = EXCLUDED.role, is_active = EXCLUDED.is_active;
+  `;
+  
+  console.log('⏳ Setting up Super Admin 1...');
+  const result1 = await executeSQL(sql1);
+  if (result1.success) {
+    console.log('✅ Super Admin 1 setup successful\n');
+  } else {
+    console.log(`⚠️  Super Admin 1 setup failed: ${result1.error}\n`);
+  }
+  
+  // Super Admin 2
+  const sql2 = `
+    INSERT INTO user_roles (user_id, email, role, is_active)
+    VALUES 
+      ('9bc41165-a26f-4662-ad4c-0222a541f99b', 'superadmin2@system.com', 'super_admin', TRUE)
+    ON CONFLICT (user_id) DO UPDATE 
+    SET email = EXCLUDED.email, role = EXCLUDED.role, is_active = EXCLUDED.is_active;
+  `;
+  
+  console.log('⏳ Setting up Super Admin 2...');
+  const result2 = await executeSQL(sql2);
+  if (result2.success) {
+    console.log('✅ Super Admin 2 setup successful\n');
+  } else {
+    console.log(`⚠️  Super Admin 2 setup failed: ${result2.error}\n`);
+  }
+  
+  // Verify
+  const verifySQL = `
+    SELECT email, role, is_active, created_at
+    FROM user_roles
+    WHERE role = 'super_admin'
+    ORDER BY email;
+  `;
+  
+  console.log('📋 Verifying Super Admin users...');
+  const verifyResult = await executeSQL(verifySQL);
+  if (verifyResult.success && verifyResult.data) {
+    console.log('\n✅ Super Admin Users:');
+    console.table(verifyResult.data);
+  }
+  
+  console.log('\n' + '='.repeat(60));
+  console.log('✅ Super Admin setup completed!');
+  console.log('\n📋 Next Steps:');
+  console.log('1. Go to Supabase Dashboard → Authentication → Users');
+  console.log('2. Create users with these emails:');
+  console.log('   - superadmin1@system.com');
+  console.log('   - superadmin2@system.com');
+  console.log('3. Use the User IDs provided (or create new users and update the IDs)');
+  console.log('4. Login at /login with email and password');
+  console.log('='.repeat(60));
+}
+
+setupSuperAdmins().catch(error => {
+  console.error('❌ Setup failed:', error.message);
+  process.exit(1);
+});
+

@@ -5,6 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import LeaveRequestsTab from '@/components/leave/LeaveRequestsTab';
+import LeavePoliciesTab from '@/components/leave/LeavePoliciesTab';
+import LeaveBalancesTab from '@/components/leave/LeaveBalancesTab';
+import LeaveCalendarTab from '@/components/leave/LeaveCalendarTab';
+import LeaveReportsTab from '@/components/leave/LeaveReportsTab';
 
 // Mock data for demonstration
 const mockStats = {
@@ -316,27 +320,19 @@ export default function LeaveManagementPage() {
         </TabsContent>
 
         <TabsContent value="policies">
-          <Card className="p-6">
-            <p className="text-muted-foreground">Leave Policies configuration will be implemented here.</p>
-          </Card>
+          <LeavePoliciesTab />
         </TabsContent>
 
         <TabsContent value="balances">
-          <Card className="p-6">
-            <p className="text-muted-foreground">Leave Balances management will be implemented here.</p>
-          </Card>
+          <LeaveBalancesTab />
         </TabsContent>
 
         <TabsContent value="calendar">
-          <Card className="p-6">
-            <p className="text-muted-foreground">Leave Calendar view will be implemented here.</p>
-          </Card>
+          <LeaveCalendarTab />
         </TabsContent>
 
         <TabsContent value="reports">
-          <Card className="p-6">
-            <p className="text-muted-foreground">Leave Reports and analytics will be implemented here.</p>
-          </Card>
+          <LeaveReportsTab />
         </TabsContent>
       </Tabs>
     </div>

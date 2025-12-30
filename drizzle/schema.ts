@@ -37,6 +37,8 @@ export const employees = mysqlTable("employees", {
   position: varchar("position", { length: 100 }),
   hireDate: timestamp("hireDate"),
   salary: decimal("salary", { precision: 10, scale: 2 }),
+  governmentRegisteredSalary: decimal("governmentRegisteredSalary", { precision: 10, scale: 2 }),
+  defaultReturnAmount: decimal("defaultReturnAmount", { precision: 10, scale: 2 }),
   status: mysqlEnum("status", ["Active", "Inactive", "On Leave"]).default("Active").notNull(),
   employmentType: mysqlEnum("employmentType", ["Full Time", "Part Time", "Consultant"]).default("Full Time").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

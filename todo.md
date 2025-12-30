@@ -368,3 +368,13 @@
 - [x] Fix Payroll Generation button not working (button appears when employees are selected)
 - [x] Add manual return amount control in Generate Payroll form (editable input field)
 - [ ] Test payroll generation flow end-to-end
+
+
+## 💼 Employee Default Return Amount Feature
+
+- [x] Add `default_return_amount` and `government_registered_salary` fields to employees table
+- [x] Update Employee Profile page to include return amount fields
+- [x] Update EmployeeListPage add/edit form with return amount fields
+- [x] Modify payroll generation to use employee default return amounts
+- [x] Add warning indicator when return amount is manually overridden
+- [x] Test end-to-end flow from employee profile to payroll generation

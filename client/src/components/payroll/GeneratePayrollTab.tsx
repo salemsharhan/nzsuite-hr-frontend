@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, Download, Plus, DollarSign, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,7 @@ const mockEmployees = [
     totalDeductions: 900,
     netSalary: 5100,
     governmentRegisteredAmount: 7000,
+    defaultReturnAmount: 1900, // From employee profile
     returnAmount: 1900,
     bankTransferAmount: 7000,
     finalNetPayroll: 5100,
@@ -44,6 +45,7 @@ const mockEmployees = [
     totalDeductions: 750,
     netSalary: 4250,
     governmentRegisteredAmount: 6000,
+    defaultReturnAmount: 1750, // From employee profile
     returnAmount: 1750,
     bankTransferAmount: 6000,
     finalNetPayroll: 4250,
@@ -62,6 +64,7 @@ const mockEmployees = [
     totalDeductions: 803,
     netSalary: 4547,
     governmentRegisteredAmount: 6500,
+    defaultReturnAmount: 1953, // From employee profile
     returnAmount: 1953,
     bankTransferAmount: 6500,
     finalNetPayroll: 4547,
@@ -77,6 +80,15 @@ export default function GeneratePayrollTab() {
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [customReturnAmounts, setCustomReturnAmounts] = useState<Record<number, number>>({});
+
+  // Initialize custom return amounts with employee defaults
+  useEffect(() => {
+    const defaults: Record<number, number> = {};
+    mockEmployees.forEach(emp => {
+      defaults[emp.id] = emp.defaultReturnAmount || emp.returnAmount;
+    });
+    setCustomReturnAmounts(defaults);
+  }, []);
 
   // Filter employees
   const filteredEmployees = mockEmployees.filter((emp) => {
@@ -256,15 +268,20 @@ export default function GeneratePayrollTab() {
                   <td className="py-3 px-4 text-right font-semibold text-blue-600">${emp.bankTransferAmount.toLocaleString()}</td>
                   <td className="py-3 px-4">
                     {selectedEmployees.includes(emp.id) ? (
-                      <Input
-                        type="number"
-                        value={displayReturnAmount}
-                        onChange={(e) => {
-                          const value = parseFloat(e.target.value) || 0;
-                          setCustomReturnAmounts({ ...customReturnAmounts, [emp.id]: value });
-                        }}
-                        className="w-28 text-right font-semibold text-amber-600"
-                      />
+                      <div className="flex flex-col gap-1">
+                        <Input
+                          type="number"
+                          value={displayReturnAmount}
+                          onChange={(e) => {
+                            const value = parseFloat(e.target.value) || 0;
+                            setCustomReturnAmounts({ ...customReturnAmounts, [emp.id]: value });
+                          }}
+                          className="w-28 text-right font-semibold text-amber-600"
+                        />
+                        {displayReturnAmount !== emp.defaultReturnAmount && (
+                          <span className="text-xs text-amber-600">⚠ Modified</span>
+                        )}
+                      </div>
                     ) : (
                       <span className="text-right font-semibold text-amber-600">${emp.returnAmount.toLocaleString()}</span>
                     )}

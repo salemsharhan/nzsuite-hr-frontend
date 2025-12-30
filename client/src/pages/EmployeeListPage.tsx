@@ -30,6 +30,8 @@ export default function EmployeeListPage() {
     department: 'Engineering',
     position: '',
     salary: 0,
+    government_registered_salary: 0,
+    default_return_amount: 0,
     joining_date: new Date().toISOString().split('T')[0],
     employment_type: 'Full Time'
   });
@@ -79,6 +81,8 @@ export default function EmployeeListPage() {
         department: 'Engineering',
         position: '',
         salary: 0,
+        government_registered_salary: 0,
+        default_return_amount: 0,
         joining_date: new Date().toISOString().split('T')[0],
         employment_type: 'Full Time'
       });
@@ -195,13 +199,41 @@ export default function EmployeeListPage() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Salary</label>
+              <label className="text-sm font-medium">Net Salary</label>
               <Input 
                 type="number"
                 value={newEmployee.salary}
                 onChange={e => setNewEmployee({...newEmployee, salary: Number(e.target.value)})}
                 placeholder="5000" 
               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Government Registered Salary</label>
+              <Input 
+                type="number"
+                value={newEmployee.government_registered_salary}
+                onChange={e => {
+                  const govSalary = Number(e.target.value);
+                  const returnAmt = govSalary - newEmployee.salary;
+                  setNewEmployee({...newEmployee, government_registered_salary: govSalary, default_return_amount: returnAmt});
+                }}
+                placeholder="7000" 
+              />
+              <p className="text-xs text-muted-foreground">Official salary registered with government</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Default Return Amount</label>
+              <Input 
+                type="number"
+                value={newEmployee.default_return_amount}
+                onChange={e => setNewEmployee({...newEmployee, default_return_amount: Number(e.target.value)})}
+                placeholder="2000"
+                className="bg-amber-500/10 border-amber-500/30" 
+              />
+              <p className="text-xs text-muted-foreground">Amount employee must return monthly</p>
             </div>
           </div>
 

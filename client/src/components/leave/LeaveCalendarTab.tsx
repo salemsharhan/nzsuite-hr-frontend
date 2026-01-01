@@ -1,31 +1,151 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Filter } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { leaveService, LeaveRequest } from '@/services/leaveService';
+import { useAuth } from '@/contexts/AuthContext';
+import { employeeService } from '@/services/employeeService';
 
-// Mock calendar data
-const mockLeaveEvents = [
-  { id: 1, employee: 'John Doe', leaveType: 'Annual Leave', color: '#3b82f6', startDate: '2025-01-05', endDate: '2025-01-10', days: 5 },
-  { id: 2, employee: 'Jane Smith', leaveType: 'Sick Leave', color: '#ef4444', startDate: '2025-01-03', endDate: '2025-01-04', days: 2 },
-  { id: 3, employee: 'Mike Johnson', leaveType: 'Emergency Leave', color: '#f59e0b', startDate: '2025-01-02', endDate: '2025-01-02', days: 1 },
-  { id: 4, employee: 'Sarah Williams', leaveType: 'Annual Leave', color: '#3b82f6', startDate: '2025-01-15', endDate: '2025-01-20', days: 5 },
-  { id: 5, employee: 'Tom Brown', leaveType: 'Annual Leave', color: '#3b82f6', startDate: '2025-01-08', endDate: '2025-01-12', days: 4 },
-];
-
-const mockPublicHolidays = [
-  { id: 1, name: 'New Year', date: '2025-01-01' },
-  { id: 2, name: 'National Day', date: '2025-01-25' },
-];
+interface CalendarEvent {
+  id: string;
+  employee: string;
+  leaveType: string;
+  color: string;
+  startDate: string;
+  endDate: string;
+  days: number;
+  status: 'Pending' | 'Approved' | 'Rejected';
+  department?: string;
+}
 
 export default function LeaveCalendarTab() {
-  const [currentDate, setCurrentDate] = useState(new Date(2025, 0, 1)); // January 2025
+  const { user } = useAuth();
+  const [currentDate, setCurrentDate] = useState(new Date());
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [leaveTypeFilter, setLeaveTypeFilter] = useState('all');
+  const [leaveEvents, setLeaveEvents] = useState<CalendarEvent[]>([]);
+  const [departments, setDepartments] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  useEffect(() => {
+    loadCalendarData();
+  }, [currentDate, departmentFilter, leaveTypeFilter, user?.company_id]);
+
+  const loadCalendarData = async () => {
+    if (!user?.company_id) return;
+    
+    try {
+      setLoading(true);
+      
+      // Calculate date range for the current month view
+      // We need to fetch leaves that overlap with the month, so we'll fetch a wider range
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth();
+      const monthStart = new Date(year, month, 1);
+      const monthEnd = new Date(year, month + 1, 0);
+      
+      // Fetch leaves that might overlap with the current month
+      // Use extended range to catch leaves that span across months
+      const extendedStart = new Date(year, month - 1, 1); // Previous month start
+      const extendedEnd = new Date(year, month + 2, 0); // Next month end
+      
+      const filters = {
+        status: 'all' as const, // Get both approved and pending for calendar
+        date_from: extendedStart.toISOString().split('T')[0],
+        date_to: extendedEnd.toISOString().split('T')[0],
+      };
+      
+      const [leaveRequests, employeesData] = await Promise.all([
+        leaveService.getAll(filters),
+        employeeService.getAll(user.company_id)
+      ]);
+      
+      // Get unique departments
+      const uniqueDepartments = Array.from(new Set(
+        employeesData.map(emp => emp.department).filter(Boolean)
+      )) as string[];
+      setDepartments(uniqueDepartments);
+      
+      // Map leave requests to calendar events
+      const events: CalendarEvent[] = leaveRequests
+        .filter(req => {
+          // Only show approved and pending leaves on calendar
+          if (req.status === 'Rejected') return false;
+          
+          // Check if leave overlaps with the current month
+          const leaveStart = new Date(req.start_date);
+          const leaveEnd = new Date(req.end_date);
+          const year = currentDate.getFullYear();
+          const month = currentDate.getMonth();
+          const monthStart = new Date(year, month, 1);
+          const monthEnd = new Date(year, month + 1, 0);
+          
+          // Leave overlaps if it starts before or during month and ends during or after month
+          const overlaps = leaveStart <= monthEnd && leaveEnd >= monthStart;
+          if (!overlaps) return false;
+          
+          // Filter by leave type
+          if (leaveTypeFilter !== 'all' && req.leave_type !== leaveTypeFilter) {
+            return false;
+          }
+          
+          // Filter by department
+          if (departmentFilter !== 'all') {
+            const employee = employeesData.find(emp => emp.id === req.employee_id);
+            if (employee?.department !== departmentFilter) {
+              return false;
+            }
+          }
+          
+          return true;
+        })
+        .map(req => {
+          const employee = employeesData.find(emp => emp.id === req.employee_id);
+          const employeeName = employee 
+            ? `${employee.firstName || employee.first_name || ''} ${employee.lastName || employee.last_name || ''}`.trim() || 'Unknown'
+            : 'Unknown';
+          
+          const getLeaveTypeColor = (type: string) => {
+            switch (type) {
+              case 'Annual Leave': return '#3b82f6';
+              case 'Sick Leave': return '#ef4444';
+              case 'Emergency Leave': return '#f59e0b';
+              case 'Maternity Leave': return '#8b5cf6';
+              case 'Unpaid Leave': return '#6b7280';
+              default: return '#6b7280';
+            }
+          };
+          
+          const start = new Date(req.start_date);
+          const end = new Date(req.end_date);
+          const diffTime = Math.abs(end.getTime() - start.getTime());
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+          
+          return {
+            id: req.id,
+            employee: employeeName,
+            leaveType: req.leave_type,
+            color: getLeaveTypeColor(req.leave_type),
+            startDate: req.start_date,
+            endDate: req.end_date,
+            days: diffDays,
+            status: req.status,
+            department: employee?.department
+          };
+        });
+      
+      setLeaveEvents(events);
+    } catch (error) {
+      console.error('Error loading calendar data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
@@ -49,14 +169,15 @@ export default function LeaveCalendarTab() {
 
   const getEventsForDate = (day: number) => {
     const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return mockLeaveEvents.filter((event) => {
+    return leaveEvents.filter((event) => {
       return dateStr >= event.startDate && dateStr <= event.endDate;
     });
   };
 
   const isPublicHoliday = (day: number) => {
+    // TODO: Fetch public holidays from company settings
     const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return mockPublicHolidays.find((holiday) => holiday.date === dateStr);
+    return null; // Placeholder for future public holidays feature
   };
 
   const daysInMonth = getDaysInMonth(currentDate);
@@ -96,19 +217,23 @@ export default function LeaveCalendarTab() {
           </div>
 
           <div className="flex gap-2">
-            <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+            <Select value={departmentFilter} onValueChange={(value) => {
+              setDepartmentFilter(value);
+            }}>
               <SelectTrigger className="w-[150px]">
                 <SelectValue placeholder="Department" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Departments</SelectItem>
-                <SelectItem value="Engineering">Engineering</SelectItem>
-                <SelectItem value="Sales">Sales</SelectItem>
-                <SelectItem value="Marketing">Marketing</SelectItem>
+                {departments.map(dept => (
+                  <SelectItem key={dept} value={dept}>{dept}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
 
-            <Select value={leaveTypeFilter} onValueChange={setLeaveTypeFilter}>
+            <Select value={leaveTypeFilter} onValueChange={(value) => {
+              setLeaveTypeFilter(value);
+            }}>
               <SelectTrigger className="w-[150px]">
                 <SelectValue placeholder="Leave Type" />
               </SelectTrigger>
@@ -117,6 +242,8 @@ export default function LeaveCalendarTab() {
                 <SelectItem value="Annual Leave">Annual Leave</SelectItem>
                 <SelectItem value="Sick Leave">Sick Leave</SelectItem>
                 <SelectItem value="Emergency Leave">Emergency Leave</SelectItem>
+                <SelectItem value="Maternity Leave">Maternity Leave</SelectItem>
+                <SelectItem value="Unpaid Leave">Unpaid Leave</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -197,11 +324,18 @@ export default function LeaveCalendarTab() {
                   {events.slice(0, 3).map((event) => (
                     <div
                       key={event.id}
-                      className="text-xs p-1 rounded truncate cursor-pointer hover:opacity-80 transition-opacity"
+                      className="text-xs p-1 rounded truncate cursor-pointer hover:opacity-80 transition-opacity flex items-center gap-1"
                       style={{ backgroundColor: `${event.color}20`, color: event.color }}
-                      title={`${event.employee} - ${event.leaveType}`}
+                      title={`${event.employee} - ${event.leaveType} (${event.status})`}
                     >
-                      {event.employee.split(' ')[0]}
+                      <div 
+                        className="w-2 h-2 rounded-full flex-shrink-0" 
+                        style={{ backgroundColor: event.color }}
+                      />
+                      <span className="truncate">{event.employee.split(' ')[0]}</span>
+                      {event.status === 'Pending' && (
+                        <span className="text-[10px] opacity-75">(P)</span>
+                      )}
                     </div>
                   ))}
                   {events.length > 3 && (
@@ -216,36 +350,39 @@ export default function LeaveCalendarTab() {
 
       {/* Upcoming Leaves Summary */}
       <Card className="p-6">
-        <h4 className="font-semibold mb-4">Upcoming Leaves This Month</h4>
-        <div className="space-y-2">
-          {mockLeaveEvents
-            .filter((event) => {
-              const eventDate = new Date(event.startDate);
-              return (
-                eventDate.getMonth() === currentDate.getMonth() &&
-                eventDate.getFullYear() === currentDate.getFullYear()
-              );
-            })
-            .map((event) => (
-              <div key={event.id} className="flex items-center justify-between p-3 rounded-lg border">
-                <div className="flex items-center gap-3">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: event.color }} />
-                  <div>
-                    <p className="font-medium text-sm">{event.employee}</p>
-                    <p className="text-xs text-muted-foreground">{event.leaveType}</p>
+        <h4 className="font-semibold mb-4">Leaves This Month</h4>
+        {loading ? (
+          <div className="text-center py-8 text-muted-foreground">Loading...</div>
+        ) : leaveEvents.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">No leaves scheduled for this month</div>
+        ) : (
+          <div className="space-y-2">
+            {leaveEvents
+              .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
+              .map((event) => (
+                <div key={event.id} className="flex items-center justify-between p-3 rounded-lg border">
+                  <div className="flex items-center gap-3">
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: event.color }} />
+                    <div>
+                      <p className="font-medium text-sm">{event.employee}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {event.leaveType}
+                        {event.department && ` • ${event.department}`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-medium">
+                      {new Date(event.startDate).toLocaleDateString()} to {new Date(event.endDate).toLocaleDateString()}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {event.days} {event.days === 1 ? 'day' : 'days'} • {event.status}
+                    </p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-medium">
-                    {event.startDate} to {event.endDate}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {event.days} {event.days === 1 ? 'day' : 'days'}
-                  </p>
-                </div>
-              </div>
-            ))}
-        </div>
+              ))}
+          </div>
+        )}
       </Card>
     </div>
   );

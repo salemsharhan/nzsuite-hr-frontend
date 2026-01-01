@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Search, Download, Plus, Edit, History } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Search, Download, Edit, History, AlertCircle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,45 +7,21 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
-
-// Mock employee balances data
-const mockBalances = [
-  {
-    id: 1,
-    employee: { id: 1, name: 'John Doe', department: 'Engineering', employeeId: 'EMP001' },
-    balances: [
-      { leaveType: 'Annual Leave', code: 'AL', color: '#3b82f6', entitled: 21, used: 5, pending: 2, available: 14 },
-      { leaveType: 'Sick Leave', code: 'SL', color: '#ef4444', entitled: 10, used: 2, pending: 0, available: 8 },
-      { leaveType: 'Emergency Leave', code: 'EL', color: '#f59e0b', entitled: 3, used: 1, pending: 0, available: 2 },
-    ],
-  },
-  {
-    id: 2,
-    employee: { id: 2, name: 'Jane Smith', department: 'Sales', employeeId: 'EMP002' },
-    balances: [
-      { leaveType: 'Annual Leave', code: 'AL', color: '#3b82f6', entitled: 21, used: 12, pending: 3, available: 6 },
-      { leaveType: 'Sick Leave', code: 'SL', color: '#ef4444', entitled: 10, used: 4, pending: 1, available: 5 },
-      { leaveType: 'Emergency Leave', code: 'EL', color: '#f59e0b', entitled: 3, used: 0, pending: 0, available: 3 },
-    ],
-  },
-  {
-    id: 3,
-    employee: { id: 3, name: 'Mike Johnson', department: 'Marketing', employeeId: 'EMP003' },
-    balances: [
-      { leaveType: 'Annual Leave', code: 'AL', color: '#3b82f6', entitled: 21, used: 8, pending: 1, available: 12 },
-      { leaveType: 'Sick Leave', code: 'SL', color: '#ef4444', entitled: 10, used: 1, pending: 0, available: 9 },
-      { leaveType: 'Emergency Leave', code: 'EL', color: '#f59e0b', entitled: 3, used: 2, pending: 0, available: 1 },
-    ],
-  },
-];
+import { Badge } from '@/components/ui/badge';
+import { useAuth } from '../../contexts/AuthContext';
+import { getLeaveBalances, LeaveBalance } from '../../services/leaveBalanceService';
+import { useTranslation } from 'react-i18next';
 
 export default function LeaveBalancesTab() {
-  const [balances, setBalances] = useState(mockBalances);
+  const { t } = useTranslation();
+  const { user } = useAuth();
+  const [balances, setBalances] = useState<LeaveBalance[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [adjustModalOpen, setAdjustModalOpen] = useState(false);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
-  const [selectedEmployee, setSelectedEmployee] = useState<any>(null);
+  const [selectedEmployee, setSelectedEmployee] = useState<LeaveBalance | null>(null);
   const [selectedLeaveType, setSelectedLeaveType] = useState('');
   const [adjustmentData, setAdjustmentData] = useState({
     type: 'add',
@@ -53,16 +29,39 @@ export default function LeaveBalancesTab() {
     reason: '',
   });
 
+  useEffect(() => {
+    if (user?.company_id) {
+      loadBalances();
+    }
+  }, [user?.company_id]);
+
+  const loadBalances = async () => {
+    if (!user?.company_id) return;
+    
+    setLoading(true);
+    try {
+      const data = await getLeaveBalances(user.company_id);
+      setBalances(data);
+    } catch (error) {
+      console.error('Error loading leave balances:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Get unique departments for filter
+  const departments = Array.from(new Set(balances.map(b => b.department))).filter(Boolean);
+
   // Filter balances
   const filteredBalances = balances.filter((balance) => {
     const matchesSearch =
-      balance.employee.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      balance.employee.employeeId.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesDepartment = departmentFilter === 'all' || balance.employee.department === departmentFilter;
+      balance.employee_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      balance.employee_code.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesDepartment = departmentFilter === 'all' || balance.department === departmentFilter;
     return matchesSearch && matchesDepartment;
   });
 
-  const handleAdjust = (employee: any, leaveType: string) => {
+  const handleAdjust = (employee: LeaveBalance, leaveType: string) => {
     setSelectedEmployee(employee);
     setSelectedLeaveType(leaveType);
     setAdjustmentData({ type: 'add', days: 0, reason: '' });
@@ -70,35 +69,38 @@ export default function LeaveBalancesTab() {
   };
 
   const handleSaveAdjustment = () => {
-    // Update balance
-    setBalances(
-      balances.map((b) => {
-        if (b.employee.id === selectedEmployee.id) {
-          return {
-            ...b,
-            balances: b.balances.map((bal) => {
-              if (bal.leaveType === selectedLeaveType) {
-                const adjustment = adjustmentData.type === 'add' ? adjustmentData.days : -adjustmentData.days;
-                return {
-                  ...bal,
-                  entitled: bal.entitled + adjustment,
-                  available: bal.available + adjustment,
-                };
-              }
-              return bal;
-            }),
-          };
-        }
-        return b;
-      })
-    );
+    // TODO: Implement adjustment API call
+    console.log('Adjustment:', { selectedEmployee, selectedLeaveType, adjustmentData });
     setAdjustModalOpen(false);
+    // Reload balances after adjustment
+    loadBalances();
   };
 
-  const handleViewHistory = (employee: any) => {
+  const handleViewHistory = (employee: LeaveBalance) => {
     setSelectedEmployee(employee);
     setHistoryModalOpen(true);
   };
+
+  const getLeaveTypeInfo = (type: string) => {
+    switch (type) {
+      case 'Annual Leave':
+        return { code: 'AL', color: '#3b82f6', label: t('leaves.annualLeave') || 'Annual Leave' };
+      case 'Sick Leave':
+        return { code: 'SL', color: '#ef4444', label: t('leaves.sickLeave') || 'Sick Leave' };
+      case 'Emergency Leave':
+        return { code: 'EL', color: '#f59e0b', label: t('leaves.emergencyLeave') || 'Emergency Leave' };
+      default:
+        return { code: type.substring(0, 2).toUpperCase(), color: '#6b7280', label: type };
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-12">
+        <p className="text-muted-foreground">{t('common.loading') || 'Loading...'}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -109,7 +111,7 @@ export default function LeaveBalancesTab() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Search by employee name or ID..."
+                placeholder={t('leaves.searchEmployee') || 'Search by employee name or ID...'}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10"
@@ -119,26 +121,20 @@ export default function LeaveBalancesTab() {
 
           <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
             <SelectTrigger className="w-full lg:w-[200px]">
-              <SelectValue placeholder="Department" />
+              <SelectValue placeholder={t('common.department') || 'Department'} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Departments</SelectItem>
-              <SelectItem value="Engineering">Engineering</SelectItem>
-              <SelectItem value="Sales">Sales</SelectItem>
-              <SelectItem value="Marketing">Marketing</SelectItem>
-              <SelectItem value="HR">HR</SelectItem>
-              <SelectItem value="Finance">Finance</SelectItem>
+              <SelectItem value="all">{t('common.all') || 'All Departments'}</SelectItem>
+              {departments.map(dept => (
+                <SelectItem key={dept} value={dept}>{dept}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
 
           <div className="flex gap-2">
             <Button variant="outline">
               <Download className="w-4 h-4 mr-2" />
-              Export
-            </Button>
-            <Button>
-              <Plus className="w-4 h-4 mr-2" />
-              Bulk Adjust
+              {t('common.export') || 'Export'}
             </Button>
           </div>
         </div>
@@ -146,42 +142,56 @@ export default function LeaveBalancesTab() {
 
       {/* Balances Table */}
       <div className="space-y-4">
-        {filteredBalances.map((balance) => (
-          <Card key={balance.id} className="p-6">
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <h4 className="font-semibold">{balance.employee.name}</h4>
-                <p className="text-sm text-muted-foreground">
-                  {balance.employee.employeeId} • {balance.employee.department}
-                </p>
-              </div>
-              <Button size="sm" variant="outline" onClick={() => handleViewHistory(balance.employee)}>
-                <History className="w-4 h-4 mr-2" />
-                History
-              </Button>
-            </div>
+        {filteredBalances.map((balance) => {
+          const annualInfo = getLeaveTypeInfo('Annual Leave');
+          const sickInfo = getLeaveTypeInfo('Sick Leave');
+          const emergencyInfo = getLeaveTypeInfo('Emergency Leave');
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {balance.balances.map((bal, index) => (
-                <div key={index} className="p-4 rounded-lg border">
+          return (
+            <Card key={balance.employee_id} className="p-6">
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <h4 className="font-semibold">{balance.employee_name}</h4>
+                  <p className="text-sm text-muted-foreground">
+                    {balance.employee_code} • {balance.department}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {t('employees.joinDate') || 'Join Date'}: {new Date(balance.join_date).toLocaleDateString()}
+                  </p>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => handleViewHistory(balance)}>
+                  <History className="w-4 h-4 mr-2" />
+                  {t('leaves.history') || 'History'}
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Annual Leave */}
+                <div className="p-4 rounded-lg border">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <div
                         className="w-3 h-3 rounded-full"
-                        style={{ backgroundColor: bal.color }}
+                        style={{ backgroundColor: annualInfo.color }}
                       />
-                      <span className="font-medium text-sm">{bal.leaveType}</span>
+                      <span className="font-medium text-sm">{annualInfo.label}</span>
                       <span
-                        className="text-xs px-1.5 py-0.5 rounded"
-                        style={{ backgroundColor: bal.color, color: 'white' }}
+                        className="text-xs px-1.5 py-0.5 rounded text-white"
+                        style={{ backgroundColor: annualInfo.color }}
                       >
-                        {bal.code}
+                        {annualInfo.code}
                       </span>
+                      {!balance.annual_leave.eligible && (
+                        <Badge variant="outline" className="text-xs">
+                          <AlertCircle className="w-3 h-3 mr-1" />
+                          {t('leaves.notEligible') || 'Not Eligible'}
+                        </Badge>
+                      )}
                     </div>
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => handleAdjust(balance.employee, bal.leaveType)}
+                      onClick={() => handleAdjust(balance, 'Annual Leave')}
                     >
                       <Edit className="w-3 h-3" />
                     </Button>
@@ -189,51 +199,208 @@ export default function LeaveBalancesTab() {
 
                   <div className="grid grid-cols-2 gap-2 text-sm">
                     <div>
-                      <p className="text-muted-foreground">Entitled</p>
-                      <p className="font-semibold">{bal.entitled} days</p>
+                      <p className="text-muted-foreground">{t('leaves.accrued') || 'Accrued'}</p>
+                      <p className="font-semibold">{balance.annual_leave.accrued.toFixed(2)} {t('common.days') || 'days'}</p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Used</p>
-                      <p className="font-semibold text-red-600">{bal.used} days</p>
+                      <p className="text-muted-foreground">{t('leaves.used') || 'Used'}</p>
+                      <p className="font-semibold text-red-600">{balance.annual_leave.used} {t('common.days') || 'days'}</p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Pending</p>
-                      <p className="font-semibold text-amber-600">{bal.pending} days</p>
+                      <p className="text-muted-foreground">{t('leaves.pending') || 'Pending'}</p>
+                      <p className="font-semibold text-amber-600">{balance.annual_leave.pending} {t('common.days') || 'days'}</p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Available</p>
-                      <p className="font-semibold text-green-600">{bal.available} days</p>
+                      <p className="text-muted-foreground">{t('leaves.available') || 'Available'}</p>
+                      <p className="font-semibold text-green-600">{balance.annual_leave.available.toFixed(2)} {t('common.days') || 'days'}</p>
+                    </div>
+                  </div>
+
+                  {!balance.annual_leave.eligible && (
+                    <div className="mt-2 p-2 bg-amber-50 dark:bg-amber-900/20 rounded text-xs text-amber-700 dark:text-amber-400">
+                      {t('leaves.annualLeaveRestriction') || 'Annual leave available after 9 months of service'}
+                    </div>
+                  )}
+
+                  {/* Kuwait Labor Law: 2-Year Expiry Warning */}
+                  {balance.annual_leave.expired && balance.annual_leave.expired > 0 && (
+                    <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 rounded text-xs text-red-700 dark:text-red-400">
+                      ⚠️ {t('leaves.expiredLeave') || 'Expired Leave'}: {balance.annual_leave.expired.toFixed(2)} {t('common.days') || 'days'} - {t('leaves.expiredLeaveDesc') || 'According to Kuwait labor law, unused annual leave expires after 2 years'}
+                    </div>
+                  )}
+                  {balance.annual_leave.expiringSoon && balance.annual_leave.expiringSoon > 0 && (
+                    <div className="mt-2 p-2 bg-orange-50 dark:bg-orange-900/20 rounded text-xs text-orange-700 dark:text-orange-400">
+                      ⏰ {t('leaves.expiringSoon') || 'Expiring Soon'}: {balance.annual_leave.expiringSoon.toFixed(2)} {t('common.days') || 'days'} - {t('leaves.expiringSoonDesc') || 'This leave will expire within 3 months. Please use it before it expires.'}
+                    </div>
+                  )}
+                  {balance.annual_leave.maxAccumulation && balance.annual_leave.accrued >= balance.annual_leave.maxAccumulation * 0.9 && (
+                    <div className="mt-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded text-xs text-yellow-700 dark:text-yellow-400">
+                      📊 {t('leaves.nearMaxAccumulation') || 'Near Maximum'}: {(t('leaves.maxAccumulationDesc') || 'Maximum accumulation is {max} days (2 years worth). Please plan your leave accordingly.').replace('{max}', balance.annual_leave.maxAccumulation.toString())}
+                    </div>
+                  )}
+
+                  {/* Progress Bar */}
+                  {balance.annual_leave.accrued > 0 && (
+                    <div className="mt-3">
+                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                        <div className="h-full flex">
+                          <div
+                            className="bg-red-500"
+                            style={{ width: `${(balance.annual_leave.used / balance.annual_leave.accrued) * 100}%` }}
+                          />
+                          <div
+                            className="bg-amber-500"
+                            style={{ width: `${(balance.annual_leave.pending / balance.annual_leave.accrued) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {((balance.annual_leave.used / balance.annual_leave.accrued) * 100).toFixed(0)}% {t('leaves.utilized') || 'utilized'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Sick Leave */}
+                <div className="p-4 rounded-lg border">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-3 h-3 rounded-full"
+                        style={{ backgroundColor: sickInfo.color }}
+                      />
+                      <span className="font-medium text-sm">{sickInfo.label}</span>
+                      <span
+                        className="text-xs px-1.5 py-0.5 rounded text-white"
+                        style={{ backgroundColor: sickInfo.color }}
+                      >
+                        {sickInfo.code}
+                      </span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleAdjust(balance, 'Sick Leave')}
+                    >
+                      <Edit className="w-3 h-3" />
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">{t('leaves.accrued') || 'Accrued'}</p>
+                      <p className="font-semibold">{balance.sick_leave.accrued.toFixed(2)} {t('common.days') || 'days'}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">{t('leaves.used') || 'Used'}</p>
+                      <p className="font-semibold text-red-600">{balance.sick_leave.used} {t('common.days') || 'days'}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">{t('leaves.pending') || 'Pending'}</p>
+                      <p className="font-semibold text-amber-600">{balance.sick_leave.pending} {t('common.days') || 'days'}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">{t('leaves.available') || 'Available'}</p>
+                      <p className="font-semibold text-green-600">{balance.sick_leave.available.toFixed(2)} {t('common.days') || 'days'}</p>
                     </div>
                   </div>
 
                   {/* Progress Bar */}
-                  <div className="mt-3">
-                    <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <div className="h-full flex">
-                        <div
-                          className="bg-red-500"
-                          style={{ width: `${(bal.used / bal.entitled) * 100}%` }}
-                        />
-                        <div
-                          className="bg-amber-500"
-                          style={{ width: `${(bal.pending / bal.entitled) * 100}%` }}
-                        />
+                  {balance.sick_leave.accrued > 0 && (
+                    <div className="mt-3">
+                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                        <div className="h-full flex">
+                          <div
+                            className="bg-red-500"
+                            style={{ width: `${(balance.sick_leave.used / balance.sick_leave.accrued) * 100}%` }}
+                          />
+                          <div
+                            className="bg-amber-500"
+                            style={{ width: `${(balance.sick_leave.pending / balance.sick_leave.accrued) * 100}%` }}
+                          />
+                        </div>
                       </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {((balance.sick_leave.used / balance.sick_leave.accrued) * 100).toFixed(0)}% {t('leaves.utilized') || 'utilized'}
+                      </p>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {((bal.used / bal.entitled) * 100).toFixed(0)}% utilized
-                    </p>
-                  </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          </Card>
-        ))}
+
+                {/* Emergency Leave */}
+                <div className="p-4 rounded-lg border">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-3 h-3 rounded-full"
+                        style={{ backgroundColor: emergencyInfo.color }}
+                      />
+                      <span className="font-medium text-sm">{emergencyInfo.label}</span>
+                      <span
+                        className="text-xs px-1.5 py-0.5 rounded text-white"
+                        style={{ backgroundColor: emergencyInfo.color }}
+                      >
+                        {emergencyInfo.code}
+                      </span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleAdjust(balance, 'Emergency Leave')}
+                    >
+                      <Edit className="w-3 h-3" />
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">{t('leaves.accrued') || 'Accrued'}</p>
+                      <p className="font-semibold">{balance.emergency_leave.accrued.toFixed(2)} {t('common.days') || 'days'}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">{t('leaves.used') || 'Used'}</p>
+                      <p className="font-semibold text-red-600">{balance.emergency_leave.used} {t('common.days') || 'days'}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">{t('leaves.pending') || 'Pending'}</p>
+                      <p className="font-semibold text-amber-600">{balance.emergency_leave.pending} {t('common.days') || 'days'}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">{t('leaves.available') || 'Available'}</p>
+                      <p className="font-semibold text-green-600">{balance.emergency_leave.available.toFixed(2)} {t('common.days') || 'days'}</p>
+                    </div>
+                  </div>
+
+                  {/* Progress Bar */}
+                  {balance.emergency_leave.accrued > 0 && (
+                    <div className="mt-3">
+                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                        <div className="h-full flex">
+                          <div
+                            className="bg-red-500"
+                            style={{ width: `${(balance.emergency_leave.used / balance.emergency_leave.accrued) * 100}%` }}
+                          />
+                          <div
+                            className="bg-amber-500"
+                            style={{ width: `${(balance.emergency_leave.pending / balance.emergency_leave.accrued) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {((balance.emergency_leave.used / balance.emergency_leave.accrued) * 100).toFixed(0)}% {t('leaves.utilized') || 'utilized'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Card>
+          );
+        })}
       </div>
 
-      {filteredBalances.length === 0 && (
+      {filteredBalances.length === 0 && !loading && (
         <Card className="p-12 text-center">
-          <p className="text-muted-foreground">No employee balances found</p>
+          <p className="text-muted-foreground">{t('leaves.noBalances') || 'No employee balances found'}</p>
         </Card>
       )}
 
@@ -241,21 +408,21 @@ export default function LeaveBalancesTab() {
       <Dialog open={adjustModalOpen} onOpenChange={setAdjustModalOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Adjust Leave Balance</DialogTitle>
+            <DialogTitle>{t('leaves.adjustBalance') || 'Adjust Leave Balance'}</DialogTitle>
           </DialogHeader>
           {selectedEmployee && (
             <div className="space-y-4">
               <div>
-                <p className="text-sm text-muted-foreground">Employee</p>
-                <p className="font-medium">{selectedEmployee.name}</p>
-                <p className="text-sm text-muted-foreground">{selectedEmployee.employeeId}</p>
+                <p className="text-sm text-muted-foreground">{t('employees.employee') || 'Employee'}</p>
+                <p className="font-medium">{selectedEmployee.employee_name}</p>
+                <p className="text-sm text-muted-foreground">{selectedEmployee.employee_code}</p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Leave Type</p>
+                <p className="text-sm text-muted-foreground">{t('leaves.leaveType') || 'Leave Type'}</p>
                 <p className="font-medium">{selectedLeaveType}</p>
               </div>
               <div>
-                <Label>Adjustment Type *</Label>
+                <Label>{t('leaves.adjustmentType') || 'Adjustment Type'} *</Label>
                 <Select
                   value={adjustmentData.type}
                   onValueChange={(value) => setAdjustmentData({ ...adjustmentData, type: value })}
@@ -264,13 +431,13 @@ export default function LeaveBalancesTab() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="add">Add Days</SelectItem>
-                    <SelectItem value="deduct">Deduct Days</SelectItem>
+                    <SelectItem value="add">{t('leaves.addDays') || 'Add Days'}</SelectItem>
+                    <SelectItem value="deduct">{t('leaves.deductDays') || 'Deduct Days'}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label>Number of Days *</Label>
+                <Label>{t('leaves.numberOfDays') || 'Number of Days'} *</Label>
                 <Input
                   type="number"
                   value={adjustmentData.days}
@@ -280,11 +447,11 @@ export default function LeaveBalancesTab() {
                 />
               </div>
               <div>
-                <Label>Reason *</Label>
+                <Label>{t('leaves.reason') || 'Reason'} *</Label>
                 <Textarea
                   value={adjustmentData.reason}
                   onChange={(e) => setAdjustmentData({ ...adjustmentData, reason: e.target.value })}
-                  placeholder="Enter reason for adjustment..."
+                  placeholder={t('leaves.enterReason') || 'Enter reason for adjustment...'}
                   rows={3}
                 />
               </div>
@@ -292,10 +459,10 @@ export default function LeaveBalancesTab() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setAdjustModalOpen(false)}>
-              Cancel
+              {t('common.cancel') || 'Cancel'}
             </Button>
             <Button onClick={handleSaveAdjustment} disabled={!adjustmentData.reason.trim() || adjustmentData.days === 0}>
-              Save Adjustment
+              {t('leaves.saveAdjustment') || 'Save Adjustment'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -305,39 +472,18 @@ export default function LeaveBalancesTab() {
       <Dialog open={historyModalOpen} onOpenChange={setHistoryModalOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Leave Balance History</DialogTitle>
+            <DialogTitle>{t('leaves.balanceHistory') || 'Leave Balance History'}</DialogTitle>
           </DialogHeader>
           {selectedEmployee && (
             <div className="space-y-4">
               <div>
-                <p className="font-medium">{selectedEmployee.name}</p>
-                <p className="text-sm text-muted-foreground">{selectedEmployee.employeeId}</p>
+                <p className="font-medium">{selectedEmployee.employee_name}</p>
+                <p className="text-sm text-muted-foreground">{selectedEmployee.employee_code}</p>
               </div>
               <div className="space-y-2">
-                <div className="p-3 rounded-lg border">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-medium text-sm">Annual Leave Adjustment</span>
-                    <span className="text-xs text-muted-foreground">2024-12-01</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground">Added 5 days - Year-end bonus</p>
-                  <p className="text-sm font-medium text-green-600">+5 days</p>
-                </div>
-                <div className="p-3 rounded-lg border">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-medium text-sm">Sick Leave Deduction</span>
-                    <span className="text-xs text-muted-foreground">2024-11-15</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground">Deducted 2 days - Exceeded limit</p>
-                  <p className="text-sm font-medium text-red-600">-2 days</p>
-                </div>
-                <div className="p-3 rounded-lg border">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-medium text-sm">Annual Leave Carry Forward</span>
-                    <span className="text-xs text-muted-foreground">2024-01-01</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground">Carried forward from 2023</p>
-                  <p className="text-sm font-medium text-green-600">+3 days</p>
-                </div>
+                <p className="text-sm text-muted-foreground">
+                  {t('leaves.historyComingSoon') || 'Leave balance history will be displayed here once implemented.'}
+                </p>
               </div>
             </div>
           )}

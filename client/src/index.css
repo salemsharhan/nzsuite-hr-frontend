@@ -235,3 +235,14 @@
     }
   }
 }
+
+/* Mobile app safe area support */
+@layer utilities {
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
+}

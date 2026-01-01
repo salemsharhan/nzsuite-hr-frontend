@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Plus, Edit, Trash2, Save, X } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, Edit, Trash2, Save, X, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,177 +8,226 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { useAuth } from '../../contexts/AuthContext';
+import { companySettingsService, CompanySettings } from '../../services/companySettingsService';
+import { useTranslation } from 'react-i18next';
 
-// Mock leave types data
-const mockLeaveTypes = [
-  {
-    id: 1,
-    name: 'Annual Leave',
-    code: 'AL',
-    color: '#3b82f6',
-    icon: '🏖️',
-    description: 'Paid time off for vacation and personal time',
-    isActive: true,
-    policy: {
-      annualEntitlement: 21,
-      accrualMethod: 'yearly',
-      carryForwardEnabled: true,
-      maxCarryForwardDays: 5,
-      encashmentEnabled: true,
-      minDaysPerRequest: 1,
-      maxDaysPerRequest: 14,
-      advanceNoticeRequired: 7,
-      requiresApproval: true,
-      requiresAttachment: false,
-    },
-  },
-  {
-    id: 2,
-    name: 'Sick Leave',
-    code: 'SL',
-    color: '#ef4444',
-    icon: '🤒',
-    description: 'Leave for illness or medical appointments',
-    isActive: true,
-    policy: {
-      annualEntitlement: 10,
-      accrualMethod: 'yearly',
-      carryForwardEnabled: false,
-      maxCarryForwardDays: 0,
-      encashmentEnabled: false,
-      minDaysPerRequest: 1,
-      maxDaysPerRequest: 5,
-      advanceNoticeRequired: 0,
-      requiresApproval: true,
-      requiresAttachment: true,
-    },
-  },
-  {
-    id: 3,
-    name: 'Emergency Leave',
-    code: 'EL',
-    color: '#f59e0b',
-    icon: '🚨',
-    description: 'Urgent personal or family emergencies',
-    isActive: true,
-    policy: {
-      annualEntitlement: 3,
-      accrualMethod: 'yearly',
-      carryForwardEnabled: false,
-      maxCarryForwardDays: 0,
-      encashmentEnabled: false,
-      minDaysPerRequest: 1,
-      maxDaysPerRequest: 2,
-      advanceNoticeRequired: 0,
-      requiresApproval: true,
-      requiresAttachment: false,
-    },
-  },
-  {
-    id: 4,
-    name: 'Maternity Leave',
-    code: 'ML',
-    color: '#8b5cf6',
-    icon: '👶',
-    description: 'Maternity leave for expecting mothers',
-    isActive: true,
-    policy: {
-      annualEntitlement: 90,
-      accrualMethod: 'joining_date',
-      carryForwardEnabled: false,
-      maxCarryForwardDays: 0,
-      encashmentEnabled: false,
-      minDaysPerRequest: 30,
-      maxDaysPerRequest: 90,
-      advanceNoticeRequired: 30,
-      requiresApproval: true,
-      requiresAttachment: true,
-    },
-  },
-  {
-    id: 5,
-    name: 'Unpaid Leave',
-    code: 'UL',
-    color: '#6b7280',
-    icon: '⏸️',
-    description: 'Leave without pay',
-    isActive: true,
-    policy: {
-      annualEntitlement: 0,
-      accrualMethod: 'yearly',
-      carryForwardEnabled: false,
-      maxCarryForwardDays: 0,
-      encashmentEnabled: false,
-      minDaysPerRequest: 1,
-      maxDaysPerRequest: 30,
-      advanceNoticeRequired: 14,
-      requiresApproval: true,
-      requiresAttachment: false,
-    },
-  },
-];
+interface LeavePolicy {
+  id: string;
+  name: string;
+  code: string;
+  color: string;
+  icon: string;
+  description: string;
+  isActive: boolean;
+  policy: {
+    annualEntitlement: number;
+    accrualMethod: 'yearly' | 'monthly' | 'joining_date';
+    carryForwardEnabled: boolean;
+    maxCarryForwardDays: number;
+    encashmentEnabled: boolean;
+    minDaysPerRequest: number;
+    maxDaysPerRequest: number | null;
+    advanceNoticeRequired: number;
+    requiresApproval: boolean;
+    requiresAttachment: boolean;
+  };
+}
 
 export default function LeavePoliciesTab() {
-  const [leaveTypes, setLeaveTypes] = useState(mockLeaveTypes);
+  const { t } = useTranslation();
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
+  const [leaveTypes, setLeaveTypes] = useState<LeavePolicy[]>([]);
   const [editModalOpen, setEditModalOpen] = useState(false);
-  const [selectedLeaveType, setSelectedLeaveType] = useState<any>(null);
+  const [selectedLeaveType, setSelectedLeaveType] = useState<LeavePolicy | null>(null);
   const [formData, setFormData] = useState<any>({});
 
-  const handleEdit = (leaveType: any) => {
+  useEffect(() => {
+    if (user?.company_id) {
+      loadCompanySettings();
+    }
+  }, [user?.company_id]);
+
+  const loadCompanySettings = async () => {
+    if (!user?.company_id) return;
+    
+    setLoading(true);
+    try {
+      const settings = await companySettingsService.getCompanySettings(user.company_id);
+      setCompanySettings(settings);
+      
+      if (settings) {
+        // Map company settings to leave policies
+        const policies: LeavePolicy[] = [
+          {
+            id: 'annual',
+            name: t('leaves.annualLeave') || 'Annual Leave',
+            code: 'AL',
+            color: '#3b82f6',
+            icon: '🏖️',
+            description: t('leaves.annualLeaveDesc') || 'Paid time off for vacation and personal time',
+            isActive: true,
+            policy: {
+              annualEntitlement: settings.annual_leave_days_per_year,
+              accrualMethod: 'monthly', // Based on your requirement
+              carryForwardEnabled: settings.carry_forward_annual_leave,
+              maxCarryForwardDays: settings.max_carry_forward_days,
+              encashmentEnabled: false,
+              minDaysPerRequest: 1,
+              maxDaysPerRequest: 14,
+              advanceNoticeRequired: 7,
+              requiresApproval: true,
+              requiresAttachment: false,
+            },
+          },
+          {
+            id: 'sick',
+            name: t('leaves.sickLeave') || 'Sick Leave',
+            code: 'SL',
+            color: '#ef4444',
+            icon: '🤒',
+            description: t('leaves.sickLeaveDesc') || 'Leave for illness or medical appointments',
+            isActive: true,
+            policy: {
+              annualEntitlement: settings.sick_leave_days_per_year,
+              accrualMethod: 'monthly',
+              carryForwardEnabled: false,
+              maxCarryForwardDays: 0,
+              encashmentEnabled: false,
+              minDaysPerRequest: 1,
+              maxDaysPerRequest: 5,
+              advanceNoticeRequired: 0,
+              requiresApproval: true,
+              requiresAttachment: true,
+            },
+          },
+          {
+            id: 'emergency',
+            name: t('leaves.emergencyLeave') || 'Emergency Leave',
+            code: 'EL',
+            color: '#f59e0b',
+            icon: '🚨',
+            description: t('leaves.emergencyLeaveDesc') || 'Urgent personal or family emergencies',
+            isActive: true,
+            policy: {
+              annualEntitlement: 3, // Default emergency leave
+              accrualMethod: 'monthly',
+              carryForwardEnabled: false,
+              maxCarryForwardDays: 0,
+              encashmentEnabled: false,
+              minDaysPerRequest: 1,
+              maxDaysPerRequest: 2,
+              advanceNoticeRequired: 0,
+              requiresApproval: true,
+              requiresAttachment: false,
+            },
+          },
+        ];
+        setLeaveTypes(policies);
+      }
+    } catch (error) {
+      console.error('Error loading company settings:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEdit = (leaveType: LeavePolicy) => {
     setSelectedLeaveType(leaveType);
     setFormData({ ...leaveType, ...leaveType.policy });
     setEditModalOpen(true);
   };
 
-  const handleSave = () => {
-    if (selectedLeaveType) {
-      setLeaveTypes(
-        leaveTypes.map((lt) =>
-          lt.id === selectedLeaveType.id
-            ? {
-                ...lt,
-                name: formData.name,
-                code: formData.code,
-                color: formData.color,
-                icon: formData.icon,
-                description: formData.description,
-                isActive: formData.isActive,
-                policy: {
-                  annualEntitlement: formData.annualEntitlement,
-                  accrualMethod: formData.accrualMethod,
-                  carryForwardEnabled: formData.carryForwardEnabled,
-                  maxCarryForwardDays: formData.maxCarryForwardDays,
-                  encashmentEnabled: formData.encashmentEnabled,
-                  minDaysPerRequest: formData.minDaysPerRequest,
-                  maxDaysPerRequest: formData.maxDaysPerRequest,
-                  advanceNoticeRequired: formData.advanceNoticeRequired,
-                  requiresApproval: formData.requiresApproval,
-                  requiresAttachment: formData.requiresAttachment,
-                },
-              }
-            : lt
-        )
-      );
+  const handleSave = async () => {
+    if (!selectedLeaveType || !user?.company_id || !companySettings) return;
+
+    try {
+      // Update company settings based on the leave type being edited
+      const updates: Partial<CompanySettings> = {};
+      
+      if (selectedLeaveType.id === 'annual') {
+        updates.annual_leave_days_per_year = formData.annualEntitlement;
+        updates.carry_forward_annual_leave = formData.carryForwardEnabled;
+        updates.max_carry_forward_days = formData.maxCarryForwardDays;
+      } else if (selectedLeaveType.id === 'sick') {
+        updates.sick_leave_days_per_year = formData.annualEntitlement;
+      }
+      // Emergency leave is not stored in company settings, so we'll just update local state
+
+      if (Object.keys(updates).length > 0) {
+        await companySettingsService.updateCompanySettings(user.company_id, updates);
+        await loadCompanySettings(); // Reload to get updated settings
+      } else {
+        // For emergency leave or other types not in company settings, just update local state
+        setLeaveTypes(
+          leaveTypes.map((lt) =>
+            lt.id === selectedLeaveType.id
+              ? {
+                  ...lt,
+                  name: formData.name,
+                  code: formData.code,
+                  color: formData.color,
+                  icon: formData.icon,
+                  description: formData.description,
+                  isActive: formData.isActive,
+                  policy: {
+                    annualEntitlement: formData.annualEntitlement,
+                    accrualMethod: formData.accrualMethod,
+                    carryForwardEnabled: formData.carryForwardEnabled,
+                    maxCarryForwardDays: formData.maxCarryForwardDays,
+                    encashmentEnabled: formData.encashmentEnabled,
+                    minDaysPerRequest: formData.minDaysPerRequest,
+                    maxDaysPerRequest: formData.maxDaysPerRequest,
+                    advanceNoticeRequired: formData.advanceNoticeRequired,
+                    requiresApproval: formData.requiresApproval,
+                    requiresAttachment: formData.requiresAttachment,
+                  },
+                }
+              : lt
+          )
+        );
+      }
+      
       setEditModalOpen(false);
+    } catch (error) {
+      console.error('Error saving leave policy:', error);
+      alert(t('settings.failedToSave') || 'Failed to save changes');
     }
   };
 
-  const handleToggleActive = (id: number) => {
+  const handleToggleActive = (id: string) => {
     setLeaveTypes(leaveTypes.map((lt) => (lt.id === id ? { ...lt, isActive: !lt.isActive } : lt)));
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-12">
+        <Loader2 className="w-6 h-6 animate-spin mr-2" />
+        <p className="text-muted-foreground">{t('common.loading') || 'Loading...'}</p>
+      </div>
+    );
+  }
+
+  if (!companySettings) {
+    return (
+      <div className="flex items-center justify-center p-12">
+        <p className="text-muted-foreground">{t('settings.noCompanySettings') || 'Company settings not found'}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-semibold">Leave Types & Policies</h3>
-          <p className="text-sm text-muted-foreground">Configure leave types and their policy rules</p>
+          <h3 className="text-lg font-semibold">{t('leaves.leaveTypesPolicies') || 'Leave Types & Policies'}</h3>
+          <p className="text-sm text-muted-foreground">
+            {t('leaves.configureLeaveTypes') || 'Configure leave types and their policy rules from company settings'}
+          </p>
         </div>
-        <Button>
-          <Plus className="w-4 h-4 mr-2" />
-          Add Leave Type
-        </Button>
       </div>
 
       {/* Leave Types Grid */}
@@ -220,37 +269,37 @@ export default function LeavePoliciesTab() {
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <p className="text-muted-foreground">Annual Entitlement</p>
-                  <p className="font-medium">{leaveType.policy.annualEntitlement} days</p>
+                  <p className="text-muted-foreground">{t('leaves.annualEntitlement') || 'Annual Entitlement'}</p>
+                  <p className="font-medium">{leaveType.policy.annualEntitlement} {t('common.days') || 'days'}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Accrual Method</p>
+                  <p className="text-muted-foreground">{t('leaves.accrualMethod') || 'Accrual Method'}</p>
                   <p className="font-medium capitalize">{leaveType.policy.accrualMethod.replace('_', ' ')}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Carry Forward</p>
+                  <p className="text-muted-foreground">{t('leaves.carryForward') || 'Carry Forward'}</p>
                   <p className="font-medium">
                     {leaveType.policy.carryForwardEnabled
-                      ? `${leaveType.policy.maxCarryForwardDays} days`
-                      : 'No'}
+                      ? `${leaveType.policy.maxCarryForwardDays} ${t('common.days') || 'days'}`
+                      : t('common.no') || 'No'}
                   </p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Encashment</p>
-                  <p className="font-medium">{leaveType.policy.encashmentEnabled ? 'Yes' : 'No'}</p>
+                  <p className="text-muted-foreground">{t('leaves.encashment') || 'Encashment'}</p>
+                  <p className="font-medium">{leaveType.policy.encashmentEnabled ? (t('common.yes') || 'Yes') : (t('common.no') || 'No')}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Min/Max Days</p>
+                  <p className="text-muted-foreground">{t('leaves.minMaxDays') || 'Min/Max Days'}</p>
                   <p className="font-medium">
                     {leaveType.policy.minDaysPerRequest} - {leaveType.policy.maxDaysPerRequest || '∞'}
                   </p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Advance Notice</p>
+                  <p className="text-muted-foreground">{t('leaves.advanceNotice') || 'Advance Notice'}</p>
                   <p className="font-medium">
                     {leaveType.policy.advanceNoticeRequired === 0
-                      ? 'Not required'
-                      : `${leaveType.policy.advanceNoticeRequired} days`}
+                      ? t('leaves.notRequired') || 'Not required'
+                      : `${leaveType.policy.advanceNoticeRequired} ${t('common.days') || 'days'}`}
                   </p>
                 </div>
               </div>
@@ -261,11 +310,11 @@ export default function LeavePoliciesTab() {
                     leaveType.policy.requiresApproval ? 'bg-amber-500/20 text-amber-700' : 'bg-green-500/20 text-green-700'
                   }`}
                 >
-                  {leaveType.policy.requiresApproval ? 'Requires Approval' : 'Auto-Approved'}
+                  {leaveType.policy.requiresApproval ? (t('leaves.requiresApproval') || 'Requires Approval') : (t('leaves.autoApproved') || 'Auto-Approved')}
                 </span>
                 {leaveType.policy.requiresAttachment && (
                   <span className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-700">
-                    Attachment Required
+                    {t('leaves.attachmentRequired') || 'Attachment Required'}
                   </span>
                 )}
               </div>
@@ -278,33 +327,35 @@ export default function LeavePoliciesTab() {
       <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Edit Leave Type & Policy</DialogTitle>
+            <DialogTitle>{t('leaves.editLeaveType') || 'Edit Leave Type & Policy'}</DialogTitle>
           </DialogHeader>
           {selectedLeaveType && (
             <div className="space-y-6">
               {/* Basic Information */}
               <div>
-                <h4 className="font-semibold mb-3">Basic Information</h4>
+                <h4 className="font-semibold mb-3">{t('leaves.basicInformation') || 'Basic Information'}</h4>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label>Leave Type Name *</Label>
+                    <Label>{t('leaves.leaveTypeName') || 'Leave Type Name'} *</Label>
                     <Input
                       value={formData.name || ''}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      placeholder="e.g., Annual Leave"
+                      placeholder={t('leaves.leaveTypeNamePlaceholder') || 'e.g., Annual Leave'}
+                      disabled={selectedLeaveType.id === 'annual' || selectedLeaveType.id === 'sick' || selectedLeaveType.id === 'emergency'}
                     />
                   </div>
                   <div>
-                    <Label>Code *</Label>
+                    <Label>{t('common.code') || 'Code'} *</Label>
                     <Input
                       value={formData.code || ''}
                       onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                      placeholder="e.g., AL"
+                      placeholder={t('leaves.codePlaceholder') || 'e.g., AL'}
                       maxLength={4}
+                      disabled={selectedLeaveType.id === 'annual' || selectedLeaveType.id === 'sick' || selectedLeaveType.id === 'emergency'}
                     />
                   </div>
                   <div>
-                    <Label>Color</Label>
+                    <Label>{t('leaves.color') || 'Color'}</Label>
                     <Input
                       type="color"
                       value={formData.color || '#3b82f6'}
@@ -312,7 +363,7 @@ export default function LeavePoliciesTab() {
                     />
                   </div>
                   <div>
-                    <Label>Icon (Emoji)</Label>
+                    <Label>{t('leaves.icon') || 'Icon (Emoji)'}</Label>
                     <Input
                       value={formData.icon || ''}
                       onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
@@ -321,11 +372,11 @@ export default function LeavePoliciesTab() {
                     />
                   </div>
                   <div className="col-span-2">
-                    <Label>Description</Label>
+                    <Label>{t('common.description') || 'Description'}</Label>
                     <Textarea
                       value={formData.description || ''}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      placeholder="Brief description of this leave type"
+                      placeholder={t('leaves.descriptionPlaceholder') || 'Brief description of this leave type'}
                       rows={2}
                     />
                   </div>
@@ -334,67 +385,67 @@ export default function LeavePoliciesTab() {
 
               {/* Policy Configuration */}
               <div>
-                <h4 className="font-semibold mb-3">Policy Configuration</h4>
+                <h4 className="font-semibold mb-3">{t('leaves.policyConfiguration') || 'Policy Configuration'}</h4>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label>Annual Entitlement (days) *</Label>
+                    <Label>{t('leaves.annualEntitlement') || 'Annual Entitlement (days)'} *</Label>
                     <Input
                       type="number"
                       value={formData.annualEntitlement || 0}
-                      onChange={(e) => setFormData({ ...formData, annualEntitlement: parseInt(e.target.value) })}
+                      onChange={(e) => setFormData({ ...formData, annualEntitlement: parseInt(e.target.value) || 0 })}
                       min={0}
                     />
                   </div>
                   <div>
-                    <Label>Accrual Method *</Label>
+                    <Label>{t('leaves.accrualMethod') || 'Accrual Method'} *</Label>
                     <Select
-                      value={formData.accrualMethod || 'yearly'}
+                      value={formData.accrualMethod || 'monthly'}
                       onValueChange={(value) => setFormData({ ...formData, accrualMethod: value })}
                     >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="yearly">Yearly</SelectItem>
-                        <SelectItem value="monthly">Monthly</SelectItem>
-                        <SelectItem value="joining_date">From Joining Date</SelectItem>
+                        <SelectItem value="yearly">{t('leaves.yearly') || 'Yearly'}</SelectItem>
+                        <SelectItem value="monthly">{t('leaves.monthly') || 'Monthly'}</SelectItem>
+                        <SelectItem value="joining_date">{t('leaves.fromJoiningDate') || 'From Joining Date'}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div>
-                    <Label>Min Days Per Request</Label>
+                    <Label>{t('leaves.minDaysPerRequest') || 'Min Days Per Request'}</Label>
                     <Input
                       type="number"
                       value={formData.minDaysPerRequest || 1}
-                      onChange={(e) => setFormData({ ...formData, minDaysPerRequest: parseInt(e.target.value) })}
+                      onChange={(e) => setFormData({ ...formData, minDaysPerRequest: parseInt(e.target.value) || 1 })}
                       min={1}
                     />
                   </div>
                   <div>
-                    <Label>Max Days Per Request</Label>
+                    <Label>{t('leaves.maxDaysPerRequest') || 'Max Days Per Request'}</Label>
                     <Input
                       type="number"
                       value={formData.maxDaysPerRequest || ''}
                       onChange={(e) => setFormData({ ...formData, maxDaysPerRequest: parseInt(e.target.value) || null })}
                       min={1}
-                      placeholder="No limit"
+                      placeholder={t('leaves.noLimit') || 'No limit'}
                     />
                   </div>
                   <div>
-                    <Label>Advance Notice Required (days)</Label>
+                    <Label>{t('leaves.advanceNoticeRequired') || 'Advance Notice Required (days)'}</Label>
                     <Input
                       type="number"
                       value={formData.advanceNoticeRequired || 0}
-                      onChange={(e) => setFormData({ ...formData, advanceNoticeRequired: parseInt(e.target.value) })}
+                      onChange={(e) => setFormData({ ...formData, advanceNoticeRequired: parseInt(e.target.value) || 0 })}
                       min={0}
                     />
                   </div>
                   <div>
-                    <Label>Max Carry Forward Days</Label>
+                    <Label>{t('leaves.maxCarryForwardDays') || 'Max Carry Forward Days'}</Label>
                     <Input
                       type="number"
                       value={formData.maxCarryForwardDays || 0}
-                      onChange={(e) => setFormData({ ...formData, maxCarryForwardDays: parseInt(e.target.value) })}
+                      onChange={(e) => setFormData({ ...formData, maxCarryForwardDays: parseInt(e.target.value) || 0 })}
                       min={0}
                       disabled={!formData.carryForwardEnabled}
                     />
@@ -404,12 +455,12 @@ export default function LeavePoliciesTab() {
 
               {/* Policy Switches */}
               <div>
-                <h4 className="font-semibold mb-3">Policy Options</h4>
+                <h4 className="font-semibold mb-3">{t('leaves.policyOptions') || 'Policy Options'}</h4>
                 <div className="space-y-3">
                   <div className="flex items-center justify-between p-3 rounded-lg border">
                     <div>
-                      <p className="font-medium">Carry Forward Enabled</p>
-                      <p className="text-sm text-muted-foreground">Allow unused days to carry to next year</p>
+                      <p className="font-medium">{t('leaves.carryForwardEnabled') || 'Carry Forward Enabled'}</p>
+                      <p className="text-sm text-muted-foreground">{t('leaves.carryForwardDesc') || 'Allow unused days to carry to next year'}</p>
                     </div>
                     <Switch
                       checked={formData.carryForwardEnabled || false}
@@ -418,8 +469,8 @@ export default function LeavePoliciesTab() {
                   </div>
                   <div className="flex items-center justify-between p-3 rounded-lg border">
                     <div>
-                      <p className="font-medium">Encashment Enabled</p>
-                      <p className="text-sm text-muted-foreground">Allow employees to encash unused leave</p>
+                      <p className="font-medium">{t('leaves.encashmentEnabled') || 'Encashment Enabled'}</p>
+                      <p className="text-sm text-muted-foreground">{t('leaves.encashmentDesc') || 'Allow employees to encash unused leave'}</p>
                     </div>
                     <Switch
                       checked={formData.encashmentEnabled || false}
@@ -428,8 +479,8 @@ export default function LeavePoliciesTab() {
                   </div>
                   <div className="flex items-center justify-between p-3 rounded-lg border">
                     <div>
-                      <p className="font-medium">Requires Approval</p>
-                      <p className="text-sm text-muted-foreground">Leave requests need manager approval</p>
+                      <p className="font-medium">{t('leaves.requiresApproval') || 'Requires Approval'}</p>
+                      <p className="text-sm text-muted-foreground">{t('leaves.requiresApprovalDesc') || 'Leave requests need manager approval'}</p>
                     </div>
                     <Switch
                       checked={formData.requiresApproval !== false}
@@ -438,8 +489,8 @@ export default function LeavePoliciesTab() {
                   </div>
                   <div className="flex items-center justify-between p-3 rounded-lg border">
                     <div>
-                      <p className="font-medium">Requires Attachment</p>
-                      <p className="text-sm text-muted-foreground">Supporting documents must be uploaded</p>
+                      <p className="font-medium">{t('leaves.requiresAttachment') || 'Requires Attachment'}</p>
+                      <p className="text-sm text-muted-foreground">{t('leaves.requiresAttachmentDesc') || 'Supporting documents must be uploaded'}</p>
                     </div>
                     <Switch
                       checked={formData.requiresAttachment || false}
@@ -448,8 +499,8 @@ export default function LeavePoliciesTab() {
                   </div>
                   <div className="flex items-center justify-between p-3 rounded-lg border">
                     <div>
-                      <p className="font-medium">Active</p>
-                      <p className="text-sm text-muted-foreground">Leave type is available for requests</p>
+                      <p className="font-medium">{t('common.active') || 'Active'}</p>
+                      <p className="text-sm text-muted-foreground">{t('leaves.activeDesc') || 'Leave type is available for requests'}</p>
                     </div>
                     <Switch
                       checked={formData.isActive !== false}
@@ -463,11 +514,11 @@ export default function LeavePoliciesTab() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditModalOpen(false)}>
               <X className="w-4 h-4 mr-2" />
-              Cancel
+              {t('common.cancel') || 'Cancel'}
             </Button>
             <Button onClick={handleSave}>
               <Save className="w-4 h-4 mr-2" />
-              Save Changes
+              {t('common.save') || 'Save Changes'}
             </Button>
           </DialogFooter>
         </DialogContent>

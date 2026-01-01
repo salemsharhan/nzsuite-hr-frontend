@@ -229,3 +229,4 @@ VALUES
 5. **Audit Logging**: Log all authentication events
 6. **2FA**: Add two-factor authentication (optional)
 
+

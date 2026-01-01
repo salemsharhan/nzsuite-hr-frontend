@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Calendar, Clock, CheckCircle, XCircle, TrendingUp, Users, FileText, Settings } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -6,70 +6,127 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import LeaveRequestsTab from '@/components/leave/LeaveRequestsTab';
 import LeavePoliciesTab from '@/components/leave/LeavePoliciesTab';
-import LeaveBalancesTab from '@/components/leave/LeaveBalancesTab';
+import LeaveBalancesTab from '../components/leave/LeaveBalancesTab';
 import LeaveCalendarTab from '@/components/leave/LeaveCalendarTab';
 import LeaveReportsTab from '@/components/leave/LeaveReportsTab';
-
-// Mock data for demonstration
-const mockStats = {
-  totalRequests: 156,
-  pendingApprovals: 23,
-  approvedThisMonth: 89,
-  rejectedThisMonth: 12,
-};
-
-const mockLeaveTypeBreakdown = [
-  { type: 'Annual Leave', count: 67, color: '#3b82f6' },
-  { type: 'Sick Leave', count: 34, color: '#ef4444' },
-  { type: 'Emergency Leave', count: 18, color: '#f59e0b' },
-  { type: 'Maternity Leave', count: 12, color: '#8b5cf6' },
-  { type: 'Unpaid Leave', count: 25, color: '#6b7280' },
-];
-
-const mockRecentRequests = [
-  {
-    id: 'LR-2025-001',
-    employee: 'John Doe',
-    department: 'Engineering',
-    leaveType: 'Annual Leave',
-    startDate: '2025-01-05',
-    endDate: '2025-01-10',
-    duration: 5,
-    status: 'Pending',
-    submittedAt: '2024-12-28',
-  },
-  {
-    id: 'LR-2025-002',
-    employee: 'Jane Smith',
-    department: 'Sales',
-    leaveType: 'Sick Leave',
-    startDate: '2025-01-03',
-    endDate: '2025-01-04',
-    duration: 2,
-    status: 'Approved',
-    submittedAt: '2024-12-27',
-  },
-  {
-    id: 'LR-2025-003',
-    employee: 'Mike Johnson',
-    department: 'Marketing',
-    leaveType: 'Emergency Leave',
-    startDate: '2025-01-02',
-    endDate: '2025-01-02',
-    duration: 1,
-    status: 'Pending',
-    submittedAt: '2024-12-29',
-  },
-];
-
-const mockUpcomingLeaves = [
-  { employee: 'Sarah Williams', department: 'HR', leaveType: 'Annual Leave', date: '2025-01-05 - 2025-01-12', duration: 7 },
-  { employee: 'Tom Brown', department: 'Finance', leaveType: 'Annual Leave', date: '2025-01-08 - 2025-01-15', duration: 7 },
-  { employee: 'Emily Davis', department: 'IT', leaveType: 'Maternity Leave', date: '2025-01-10 - 2025-04-10', duration: 90 },
-];
+import { leaveService, LeaveRequest } from '@/services/leaveService';
 
 export default function LeaveManagementPage() {
   const [activeTab, setActiveTab] = useState('overview');
+  const [allRequests, setAllRequests] = useState<LeaveRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadRequests();
+  }, []);
+
+  const loadRequests = async () => {
+    try {
+      setLoading(true);
+      const data = await leaveService.getAll();
+      setAllRequests(data);
+    } catch (error) {
+      console.error('Error loading leave requests:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Calculate statistics from real data
+  const currentMonth = new Date().getMonth();
+  const currentYear = new Date().getFullYear();
+  
+  const stats = {
+    totalRequests: allRequests.length,
+    pendingApprovals: allRequests.filter(r => r.status === 'Pending').length,
+    approvedThisMonth: allRequests.filter(r => {
+      if (r.status !== 'Approved') return false;
+      const date = new Date(r.created_at);
+      return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
+    }).length,
+    rejectedThisMonth: allRequests.filter(r => {
+      if (r.status !== 'Rejected') return false;
+      const date = new Date(r.created_at);
+      return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
+    }).length,
+  };
+
+  // Calculate leave type breakdown
+  const leaveTypeBreakdown = allRequests.reduce((acc, req) => {
+    const type = req.leave_type;
+    if (!acc[type]) {
+      acc[type] = { type, count: 0, color: getLeaveTypeColor(type) };
+    }
+    acc[type].count++;
+    return acc;
+  }, {} as Record<string, { type: string; count: number; color: string }>);
+
+  const leaveTypeBreakdownArray = Object.values(leaveTypeBreakdown);
+
+  function getLeaveTypeColor(type: string): string {
+    switch (type) {
+      case 'Annual Leave': return '#3b82f6';
+      case 'Sick Leave': return '#ef4444';
+      case 'Emergency Leave': return '#f59e0b';
+      case 'Maternity Leave': return '#8b5cf6';
+      case 'Unpaid Leave': return '#6b7280';
+      default: return '#6b7280';
+    }
+  }
+
+  // Get recent requests (last 5 pending or recent)
+  const recentRequests = allRequests
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 5)
+    .map(req => {
+      const employeeName = req.employees 
+        ? `${req.employees.first_name || ''} ${req.employees.last_name || ''}`.trim() || 'Unknown'
+        : 'Unknown';
+      const start = new Date(req.start_date);
+      const end = new Date(req.end_date);
+      const diffTime = Math.abs(end.getTime() - start.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+      
+      return {
+        id: req.id,
+        employee: employeeName,
+        department: 'N/A',
+        leaveType: req.leave_type,
+        startDate: req.start_date,
+        endDate: req.end_date,
+        duration: diffDays,
+        status: req.status,
+        submittedAt: new Date(req.created_at).toLocaleDateString(),
+      };
+    });
+
+  // Get upcoming approved leaves
+  const today = new Date();
+  const upcomingLeaves = allRequests
+    .filter(req => {
+      if (req.status !== 'Approved') return false;
+      const startDate = new Date(req.start_date);
+      return startDate >= today;
+    })
+    .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())
+    .slice(0, 3)
+    .map(req => {
+      const employeeName = req.employees 
+        ? `${req.employees.first_name || ''} ${req.employees.last_name || ''}`.trim() || 'Unknown'
+        : 'Unknown';
+      const start = new Date(req.start_date);
+      const end = new Date(req.end_date);
+      const diffTime = Math.abs(end.getTime() - start.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+      
+      return {
+        employee: employeeName,
+        department: 'N/A',
+        leaveType: req.leave_type,
+        date: `${req.start_date} - ${req.end_date}`,
+        duration: diffDays,
+      };
+    });
 
   return (
     <div className="space-y-6">
@@ -99,7 +156,7 @@ export default function LeaveManagementPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-muted-foreground mb-1">Total Requests</p>
-              <p className="text-3xl font-bold">{mockStats.totalRequests}</p>
+              <p className="text-3xl font-bold">{stats.totalRequests}</p>
               <p className="text-xs text-green-600 mt-2 flex items-center gap-1">
                 <TrendingUp className="w-3 h-3" />
                 +12% from last month
@@ -115,7 +172,7 @@ export default function LeaveManagementPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-muted-foreground mb-1">Pending Approvals</p>
-              <p className="text-3xl font-bold">{mockStats.pendingApprovals}</p>
+              <p className="text-3xl font-bold">{stats.pendingApprovals}</p>
               <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
                 <Clock className="w-3 h-3" />
                 Requires attention
@@ -131,7 +188,7 @@ export default function LeaveManagementPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-muted-foreground mb-1">Approved This Month</p>
-              <p className="text-3xl font-bold">{mockStats.approvedThisMonth}</p>
+              <p className="text-3xl font-bold">{stats.approvedThisMonth}</p>
               <p className="text-xs text-green-600 mt-2 flex items-center gap-1">
                 <CheckCircle className="w-3 h-3" />
                 Processing smoothly
@@ -147,7 +204,7 @@ export default function LeaveManagementPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-muted-foreground mb-1">Rejected This Month</p>
-              <p className="text-3xl font-bold">{mockStats.rejectedThisMonth}</p>
+              <p className="text-3xl font-bold">{stats.rejectedThisMonth}</p>
               <p className="text-xs text-muted-foreground mt-2">
                 7.7% rejection rate
               </p>
@@ -176,9 +233,12 @@ export default function LeaveManagementPage() {
             <Card className="p-6">
               <h3 className="text-lg font-semibold mb-4">Leave Type Breakdown</h3>
               <div className="space-y-4">
-                {mockLeaveTypeBreakdown.map((item, index) => {
-                  const total = mockLeaveTypeBreakdown.reduce((sum, i) => sum + i.count, 0);
-                  const percentage = ((item.count / total) * 100).toFixed(1);
+                {leaveTypeBreakdownArray.length === 0 ? (
+                  <p className="text-muted-foreground text-center py-4">No leave requests yet</p>
+                ) : (
+                  leaveTypeBreakdownArray.map((item, index) => {
+                    const total = leaveTypeBreakdownArray.reduce((sum, i) => sum + i.count, 0);
+                    const percentage = total > 0 ? ((item.count / total) * 100).toFixed(1) : '0';
                   return (
                     <div key={index} className="space-y-2">
                       <div className="flex items-center justify-between text-sm">
@@ -204,7 +264,8 @@ export default function LeaveManagementPage() {
                       </div>
                     </div>
                   );
-                })}
+                  })
+                )}
               </div>
             </Card>
 
@@ -212,7 +273,10 @@ export default function LeaveManagementPage() {
             <Card className="p-6">
               <h3 className="text-lg font-semibold mb-4">Upcoming Leaves</h3>
               <div className="space-y-3">
-                {mockUpcomingLeaves.map((leave, index) => (
+                {upcomingLeaves.length === 0 ? (
+                  <p className="text-muted-foreground text-center py-4">No upcoming approved leaves</p>
+                ) : (
+                  upcomingLeaves.map((leave, index) => (
                   <div
                     key={index}
                     className="flex items-start gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
@@ -229,9 +293,10 @@ export default function LeaveManagementPage() {
                       <p className="text-xs text-muted-foreground">{leave.date}</p>
                     </div>
                   </div>
-                ))}
+                  ))
+                )}
               </div>
-              <Button variant="outline" className="w-full mt-4">
+              <Button variant="outline" className="w-full mt-4" onClick={() => setActiveTab('calendar')}>
                 View Full Calendar
               </Button>
             </Card>
@@ -241,7 +306,7 @@ export default function LeaveManagementPage() {
           <Card className="p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">Recent Leave Requests</h3>
-              <Button variant="ghost" size="sm">
+              <Button variant="ghost" size="sm" onClick={() => setActiveTab('requests')}>
                 View All
               </Button>
             </div>
@@ -270,7 +335,20 @@ export default function LeaveManagementPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {mockRecentRequests.map((request) => (
+                  {loading ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-muted-foreground">
+                        Loading...
+                      </td>
+                    </tr>
+                  ) : recentRequests.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-muted-foreground">
+                        No leave requests found
+                      </td>
+                    </tr>
+                  ) : (
+                    recentRequests.map((request) => (
                     <tr key={request.id} className="border-b hover:bg-muted/50 transition-colors">
                       <td className="py-3 px-4 text-sm font-medium">{request.id}</td>
                       <td className="py-3 px-4">
@@ -308,7 +386,8 @@ export default function LeaveManagementPage() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -316,7 +395,7 @@ export default function LeaveManagementPage() {
         </TabsContent>
 
         <TabsContent value="requests">
-          <LeaveRequestsTab />
+          <LeaveRequestsTab onRequestUpdated={loadRequests} />
         </TabsContent>
 
         <TabsContent value="policies">

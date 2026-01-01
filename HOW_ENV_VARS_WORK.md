@@ -82,3 +82,4 @@ console.log('Env check:', {
 - **Template**: `env.template` (reference for all variables)
 
 
+

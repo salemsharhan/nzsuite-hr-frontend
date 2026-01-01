@@ -101,8 +101,18 @@ export default function SettingsPage() {
       loadCompanySettings();
       loadRoleSalaryConfigs();
       loadRolePermissionsConfigs();
+      loadRoles(); // Load roles for salary config dropdown
+      loadJobs(); // Load jobs for salary config dropdown
     }
   }, [activeTab, user?.company_id]);
+
+  // Load roles and jobs when salary config modal opens
+  useEffect(() => {
+    if (isSalaryConfigModalOpen) {
+      loadRoles();
+      loadJobs();
+    }
+  }, [isSalaryConfigModalOpen]);
 
   const loadDepartments = async () => {
     try {
@@ -425,32 +435,25 @@ export default function SettingsPage() {
     e.preventDefault();
     if (!user?.company_id) return;
     
-    // Validate that at least one of role_id or job_id is provided
+    // Validate that BOTH role_id AND job_id are provided
     const roleId = newSalaryConfig.role_id && newSalaryConfig.role_id.trim() !== '' ? newSalaryConfig.role_id : null;
     const jobId = newSalaryConfig.job_id && newSalaryConfig.job_id.trim() !== '' ? newSalaryConfig.job_id : null;
     
-    if (!roleId && !jobId) {
-      alert(t('settings.selectRoleOrJob'));
+    if (!roleId || !jobId) {
+      alert(t('settings.selectRoleAndJob') || 'Please select both Role and Job');
       return;
     }
     
     try {
-      // Convert empty strings to null for UUID fields
+      // Create config with both role_id and job_id (both are required)
       const config = {
         ...newSalaryConfig,
         company_id: user.company_id,
-        role_id: roleId || undefined,
-        job_id: jobId || undefined,
+        role_id: roleId!,
+        job_id: jobId!,
         effective_from: new Date().toISOString().split('T')[0],
         is_active: true
       } as RoleSalaryConfig;
-      
-      // Remove undefined fields to avoid sending them
-      Object.keys(config).forEach(key => {
-        if (config[key as keyof RoleSalaryConfig] === undefined) {
-          delete config[key as keyof RoleSalaryConfig];
-        }
-      });
       
       await companySettingsService.createRoleSalaryConfig(config);
       await loadRoleSalaryConfigs();
@@ -1336,10 +1339,13 @@ export default function SettingsPage() {
         <form onSubmit={handleSaveSalaryConfig} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">{t('common.role')}</label>
+              <label className="text-sm font-medium">{t('common.role')} *</label>
               <Select
                 value={newSalaryConfig.role_id || 'none'}
-                onValueChange={(value) => setNewSalaryConfig({ ...newSalaryConfig, role_id: value === 'none' ? '' : value, job_id: '' })}
+                onValueChange={(value) => {
+                  const newRoleId = value === 'none' ? '' : value;
+                  setNewSalaryConfig({ ...newSalaryConfig, role_id: newRoleId, job_id: '' }); // Clear job when role changes
+                }}
               >
                 <SelectTrigger>
                   <SelectValue placeholder={t('settings.selectRole')} />
@@ -1353,14 +1359,14 @@ export default function SettingsPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">{t('common.job')}</label>
+              <label className="text-sm font-medium">{t('common.job')} *</label>
               <Select
                 value={newSalaryConfig.job_id || 'none'}
-                onValueChange={(value) => setNewSalaryConfig({ ...newSalaryConfig, job_id: value === 'none' ? '' : value, role_id: '' })}
+                onValueChange={(value) => setNewSalaryConfig({ ...newSalaryConfig, job_id: value === 'none' ? '' : value })}
                 disabled={!newSalaryConfig.role_id}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder={t('common.select') + ' ' + t('common.job').toLowerCase()} />
+                  <SelectValue placeholder={newSalaryConfig.role_id ? (t('common.select') + ' ' + t('common.job').toLowerCase()) : (t('common.select') + ' ' + t('common.role').toLowerCase() + ' ' + t('common.first'))} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">{t('common.none')}</SelectItem>

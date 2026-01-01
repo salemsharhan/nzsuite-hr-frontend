@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { Link, useLocation } from 'wouter';
+import React, { useState, useEffect, Suspense } from 'react';
+import { Link, useLocation, useRoute } from 'wouter';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from '../../context/LanguageContext';
+import { useAuth } from '../../contexts/AuthContext';
 import {
   LayoutDashboard, 
   Users, 
@@ -39,27 +40,44 @@ const SidebarItem = ({ icon: Icon, label, href, active, collapsed }: any) => (
 );
 
 export const Sidebar = ({ collapsed, setCollapsed, mobileOpen, setMobileOpen }: any) => {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const { t } = useTranslation();
   const { direction } = useLanguage();
+  const { user, signOut, loading } = useAuth();
 
-  // Mock user role - in a real app this would come from auth context
-  const userRole = 'Admin'; // 'Admin' | 'Consultant' | 'Employee'
+  // Get user role from auth context
+  const userRole = user?.role || 'employee'; // 'super_admin' | 'admin' | 'employee'
+
+  // Helper function to check if user can access menu item
+  const canAccessMenuItem = (allowedRoles: string[]) => {
+    if (!userRole) return false;
+    
+    // Map role values
+    if (userRole === 'super_admin') {
+      // Super admin can access everything
+      return true;
+    }
+    
+    // Check if user role is in allowed roles
+    return allowedRoles.includes(userRole);
+  };
 
   const menuItems = [
-    { icon: LayoutDashboard, label: t('common.dashboard'), href: '/', roles: ['Admin', 'Consultant', 'Employee'] },
-    { icon: Users, label: t('common.employees'), href: '/employees', roles: ['Admin'] },
-    { icon: Clock, label: t('common.attendance'), href: '/attendance', roles: ['Admin', 'Employee'] },
-    { icon: Calendar, label: t('common.leaves'), href: '/leaves', roles: ['Admin', 'Employee'] },
-    { icon: DollarSign, label: t('common.payroll'), href: '/payroll', roles: ['Admin'] },
-    { icon: Users, label: 'Self Service', href: '/self-service', roles: ['Admin', 'Employee', 'Consultant'] },
-    { icon: Clock, label: 'Timesheets', href: '/timesheets', roles: ['Admin', 'Employee', 'Consultant'] },
-    { icon: Briefcase, label: t('common.recruitment'), href: '/recruitment', roles: ['Admin'] },
-    { icon: ClipboardCheck, label: 'Hiring Checklist', href: '/hiring-checklist', roles: ['Admin', 'Employee'] },
-    { icon: FileText, label: t('common.documents'), href: '/documents', roles: ['Admin', 'Consultant'] },
-    { icon: BarChart3, label: t('common.analytics'), href: '/analytics', roles: ['Admin'] },
-    { icon: ShieldCheck, label: t('common.admin'), href: '/admin', roles: ['Admin'] },
-    { icon: Settings, label: t('common.settings'), href: '/settings', roles: ['Admin'] },
+    { icon: LayoutDashboard, label: t('common.dashboard'), href: '/', roles: ['super_admin', 'admin', 'employee'] },
+    { icon: Users, label: t('common.employees'), href: '/employees', roles: ['super_admin', 'admin'] },
+    { icon: Clock, label: t('common.attendance'), href: '/attendance', roles: ['super_admin', 'admin', 'employee'] },
+    { icon: Calendar, label: t('common.leaves'), href: userRole === 'employee' ? '/self-service/leaves' : '/leaves', roles: ['super_admin', 'admin', 'employee'] },
+    { icon: DollarSign, label: t('common.payroll'), href: '/payroll', roles: ['super_admin', 'admin'] },
+    { icon: Users, label: 'Self Service', href: '/self-service', roles: ['super_admin', 'admin', 'employee'] },
+    { icon: Clock, label: 'Timesheets', href: '/timesheets', roles: ['super_admin', 'admin', 'employee'] },
+    { icon: Briefcase, label: t('common.recruitment'), href: '/recruitment', roles: ['super_admin', 'admin'] },
+    { icon: ClipboardCheck, label: 'Hiring Checklist', href: '/hiring-checklist', roles: ['super_admin', 'admin', 'employee'] },
+    { icon: FileText, label: t('common.documents'), href: '/documents', roles: ['super_admin', 'admin', 'employee'] },
+    { icon: FileText, label: 'Document Requests', href: '/document-requests', roles: ['super_admin', 'admin'] },
+    { icon: FileText, label: 'Employee Requests', href: '/employee-requests', roles: ['super_admin', 'admin'] },
+    { icon: BarChart3, label: t('common.analytics'), href: '/analytics', roles: ['super_admin', 'admin'] },
+    { icon: ShieldCheck, label: t('common.admin'), href: '/admin', roles: ['super_admin', 'admin'] },
+    { icon: Settings, label: t('common.settings'), href: '/settings', roles: ['super_admin', 'admin'] },
   ];
 
   return (
@@ -104,7 +122,7 @@ export const Sidebar = ({ collapsed, setCollapsed, mobileOpen, setMobileOpen }: 
         <div className="flex-1 overflow-y-auto py-6 px-3 custom-scrollbar">
           <div className="space-y-1">
             {!collapsed && <div className="px-3 mb-2 text-xs font-semibold text-muted-foreground/50 uppercase tracking-wider">Main Menu</div>}
-            {menuItems.filter(item => item.roles.includes(userRole)).map((item) => (
+            {menuItems.filter(item => canAccessMenuItem(item.roles)).map((item) => (
               <SidebarItem 
                 key={item.href}
                 icon={item.icon}
@@ -119,22 +137,66 @@ export const Sidebar = ({ collapsed, setCollapsed, mobileOpen, setMobileOpen }: 
 
         {/* User Profile */}
         <div className="p-4 border-t border-white/5">
-          <div className={cn(
-            "flex items-center gap-3 p-2 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 transition-colors cursor-pointer",
-            collapsed ? "justify-center" : ""
-          )}>
+          <div 
+            onClick={async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              
+              // Prevent multiple clicks
+              if ((e.currentTarget as any).isLoggingOut) {
+                return;
+              }
+              (e.currentTarget as any).isLoggingOut = true;
+              
+              try {
+                // Sign out from Supabase
+                await signOut();
+              } catch (error) {
+                console.error('Error during signOut:', error);
+              }
+              
+              // Always clear storage and redirect, even if signOut fails
+              try {
+                sessionStorage.clear();
+                localStorage.clear();
+              } catch (storageError) {
+                console.error('Error clearing storage:', storageError);
+              }
+              
+              // Force redirect with full page reload
+              setTimeout(() => {
+                window.location.href = '/login';
+              }, 100);
+            }}
+            className={cn(
+              "flex items-center gap-3 p-2 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 transition-colors cursor-pointer",
+              collapsed ? "justify-center" : ""
+            )}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                e.currentTarget.click();
+              }
+            }}
+          >
             <img 
               src="https://i.pravatar.cc/150?u=admin" 
               alt="User" 
-              className="w-8 h-8 rounded-full border border-white/10"
+              className="w-8 h-8 rounded-full border border-white/10 pointer-events-none"
             />
             {!collapsed && (
-              <div className="flex-1 min-w-0 text-start">
-                <div className="text-sm font-medium truncate text-foreground">Admin User</div>
-                <div className="text-xs text-muted-foreground truncate">admin@thesystem.com</div>
+              <div className="flex-1 min-w-0 text-start pointer-events-none">
+                <div className="text-sm font-medium truncate text-foreground">
+                  {(user as any)?.first_name || (user as any)?.last_name 
+                    ? `${(user as any).first_name || ''} ${(user as any).last_name || ''}`.trim() 
+                    : user?.email?.split('@')[0] || 'User'}
+                </div>
+                <div className="text-xs text-muted-foreground truncate">{user?.email || 'user@example.com'}</div>
               </div>
             )}
-            {!collapsed && <LogOut size={16} className="text-muted-foreground hover:text-destructive transition-colors rtl:rotate-180" />}
+            {!collapsed && <LogOut size={16} className="text-muted-foreground hover:text-destructive transition-colors rtl:rotate-180 pointer-events-none" />}
           </div>
         </div>
       </aside>
@@ -209,6 +271,56 @@ export const MainLayout = ({ children }: { children: React.ReactNode }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const { direction } = useLanguage();
+  const [location, setLocation] = useLocation();
+  const { user, loading } = useAuth();
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!loading && !user) {
+      // Only redirect if not already on login page
+      if (location !== '/login') {
+        // Use hard redirect to ensure complete logout
+        window.location.href = '/login';
+      }
+    }
+  }, [user, loading, location]);
+
+  // Show loading state while checking authentication
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't render layout if user is not authenticated (will redirect)
+  if (!user) {
+    return null;
+  }
+
+  // Use EmployeeLayout for employees, regular layout for admins
+  const isEmployee = user.role === 'employee';
+  const isEmployeeRoute = location.startsWith('/self-service') || 
+                          location === '/attendance' ||
+                          (isEmployee && location === '/');
+
+  if (isEmployee && isEmployeeRoute) {
+    // Dynamic import to avoid circular dependencies
+    const EmployeeLayout = React.lazy(() => import('./EmployeeLayout').then(m => ({ default: m.EmployeeLayout })));
+    return (
+      <Suspense fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+        </div>
+      }>
+        <EmployeeLayout>{children}</EmployeeLayout>
+      </Suspense>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans selection:bg-primary/30" dir={direction}>

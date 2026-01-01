@@ -20,11 +20,12 @@ export const api = axios.create({
 });
 
 // Helper for service role requests (admin only)
+// Note: Both apikey and Authorization should use the service role key to bypass RLS
 export const adminApi = axios.create({
   baseURL: `${SUPABASE_URL}/rest/v1`,
   headers: {
-    'apikey': SUPABASE_ANON_KEY,
-    'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+    'apikey': SUPABASE_SERVICE_KEY || SUPABASE_ANON_KEY, // Use service key if available
+    'Authorization': `Bearer ${SUPABASE_SERVICE_KEY || SUPABASE_ANON_KEY}`,
     'Content-Type': 'application/json',
     'Prefer': 'return=representation'
   }

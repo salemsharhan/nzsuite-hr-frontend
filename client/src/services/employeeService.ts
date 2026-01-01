@@ -32,6 +32,12 @@ interface SupabaseEmployee {
   status?: string;
   employment_type?: string;
   salary?: string;
+  base_salary?: number;
+  housing_allowance?: number;
+  transport_allowance?: number;
+  meal_allowance?: number;
+  medical_allowance?: number;
+  other_allowances?: number;
   work_location?: string;
   reporting_manager_id?: string;
   notes?: string;
@@ -56,6 +62,7 @@ interface SupabaseEmployee {
 export interface Employee {
   id: string; // UUID from Supabase
   employeeId: string;
+  external_id?: string; // Machine code from fingerprint device
   firstName: string;
   lastName: string;
   email: string;
@@ -80,6 +87,12 @@ export interface Employee {
   position?: string;
   hireDate?: string;
   salary?: string;
+  base_salary?: number;
+  housing_allowance?: number;
+  transport_allowance?: number;
+  meal_allowance?: number;
+  medical_allowance?: number;
+  other_allowances?: number;
   work_location?: string;
   reporting_manager_id?: string;
   notes?: string;
@@ -115,6 +128,7 @@ function mapSupabaseToEmployee(supabaseEmp: any): Employee {
   return {
     id: supabaseEmp.id,
     employeeId: supabaseEmp.employee_id,
+    external_id: supabaseEmp.external_id,
     firstName: supabaseEmp.first_name,
     lastName: supabaseEmp.last_name,
     email: supabaseEmp.email,
@@ -139,6 +153,12 @@ function mapSupabaseToEmployee(supabaseEmp: any): Employee {
     position: supabaseEmp.jobs?.name || supabaseEmp.designation,
     hireDate: supabaseEmp.join_date,
     salary: supabaseEmp.salary,
+    base_salary: supabaseEmp.base_salary,
+    housing_allowance: supabaseEmp.housing_allowance,
+    transport_allowance: supabaseEmp.transport_allowance,
+    meal_allowance: supabaseEmp.meal_allowance,
+    medical_allowance: supabaseEmp.medical_allowance,
+    other_allowances: supabaseEmp.other_allowances,
     work_location: supabaseEmp.work_location,
     reporting_manager_id: supabaseEmp.reporting_manager_id,
     notes: supabaseEmp.notes,
@@ -191,6 +211,12 @@ function mapEmployeeToSupabase(employee: any): Partial<SupabaseEmployee & { comp
   if (employee.role_id !== undefined) mapped.role_id = employee.role_id;
   if (employee.job_id !== undefined) mapped.job_id = employee.job_id;
   if (employee.salary !== undefined) mapped.salary = employee.salary;
+  if (employee.base_salary !== undefined) mapped.base_salary = employee.base_salary;
+  if (employee.housing_allowance !== undefined) mapped.housing_allowance = employee.housing_allowance;
+  if (employee.transport_allowance !== undefined) mapped.transport_allowance = employee.transport_allowance;
+  if (employee.meal_allowance !== undefined) mapped.meal_allowance = employee.meal_allowance;
+  if (employee.medical_allowance !== undefined) mapped.medical_allowance = employee.medical_allowance;
+  if (employee.other_allowances !== undefined) mapped.other_allowances = employee.other_allowances;
   if (employee.work_location !== undefined) mapped.work_location = employee.work_location;
   if (employee.reporting_manager_id !== undefined) mapped.reporting_manager_id = employee.reporting_manager_id;
   if (employee.notes !== undefined) mapped.notes = employee.notes;
@@ -208,11 +234,59 @@ function mapEmployeeToSupabase(employee: any): Partial<SupabaseEmployee & { comp
   if (employee.emergency_contact_name !== undefined) mapped.emergency_contact_name = employee.emergency_contact_name;
   if (employee.emergency_contact_phone !== undefined) mapped.emergency_contact_phone = employee.emergency_contact_phone;
   if (employee.emergency_contact_relationship !== undefined) mapped.emergency_contact_relationship = employee.emergency_contact_relationship;
+  if (employee.external_id !== undefined) mapped.external_id = employee.external_id;
   
   return mapped;
 }
 
 export const employeeService = {
+  /**
+   * Check if a fingerprint machine code (external_id or employee_id) already exists
+   * @param machineCode The fingerprint machine code to check
+   * @param excludeEmployeeId Optional employee ID to exclude from check (when editing)
+   * @returns true if code exists, false otherwise
+   */
+  async checkFingerprintCodeExists(machineCode: string, excludeEmployeeId?: string): Promise<boolean> {
+    try {
+      if (!machineCode || machineCode.trim() === '') {
+        return false;
+      }
+
+      const code = machineCode.trim();
+      
+      // Check both external_id and employee_id fields using PostgREST OR syntax
+      // Format: or=(field1.eq.value1,field2.eq.value2)
+      const orFilter = `(external_id.eq.${code},employee_id.eq.${code})`;
+      
+      const response = await adminApi.get('/employees', {
+        params: {
+          select: 'id,external_id,employee_id',
+          or: orFilter,
+          limit: 1
+        }
+      });
+      
+      let foundEmployee = null;
+      if (response.data && response.data.length > 0) {
+        foundEmployee = response.data[0];
+      }
+
+      if (foundEmployee) {
+        // If editing, exclude the current employee from the check
+        if (excludeEmployeeId && foundEmployee.id === excludeEmployeeId) {
+          return false;
+        }
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Error checking fingerprint code:', error);
+      // On error, return false to allow submission (fail open)
+      return false;
+    }
+  },
+
   async getAll(companyId?: string): Promise<Employee[]> {
     try {
       const params: any = {

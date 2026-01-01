@@ -427,6 +427,54 @@ export const REQUEST_CATEGORIES: RequestCategory[] = [
             ]
           }
         ]
+      },
+      {
+        id: 'document-request',
+        title: 'Document Request',
+        description: 'Request any official document',
+        categoryId: 'letters-certificates',
+        workflowRoute: ['HR'],
+        fields: [
+          {
+            key: 'documentType',
+            label: 'Document Type',
+            type: 'select',
+            required: true,
+            options: [
+              { label: 'Salary Certificate', value: 'Salary Certificate' },
+              { label: 'Employment Letter', value: 'Employment Letter' },
+              { label: 'Experience Certificate', value: 'Experience Certificate' },
+              { label: 'No Objection Certificate (NOC)', value: 'No Objection Certificate (NOC)' },
+              { label: 'Visa Letter', value: 'Visa Letter' },
+              { label: 'Bank Letter', value: 'Bank Letter' },
+              { label: 'Other', value: 'Other' }
+            ]
+          },
+          {
+            key: 'language',
+            label: 'Language',
+            type: 'select',
+            required: true,
+            options: [
+              { label: 'Arabic', value: 'ar' },
+              { label: 'English', value: 'en' }
+            ]
+          },
+          {
+            key: 'purpose',
+            label: 'Purpose',
+            type: 'textarea',
+            required: true,
+            placeholder: 'Please specify the purpose for this document (e.g., Visa application, Loan, etc.)'
+          },
+          {
+            key: 'destination',
+            label: 'Destination (Optional)',
+            type: 'text',
+            required: false,
+            placeholder: 'e.g., Embassy, Bank, Government Office'
+          }
+        ]
       }
     ]
   },

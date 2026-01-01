@@ -98,3 +98,4 @@ CREATE TRIGGER hiring_checklists_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION update_hiring_checklists_updated_at();
 
+

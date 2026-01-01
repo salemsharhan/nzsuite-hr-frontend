@@ -105,3 +105,4 @@ All new fields have been added to the `employees` table:
 - Salary field accepts decimal values
 - Emergency contact fields are optional but recommended
 
+

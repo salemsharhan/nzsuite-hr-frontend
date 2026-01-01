@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { 
   Clock, 
@@ -8,20 +8,46 @@ import {
   XCircle,
   Calendar as CalendarIcon,
   Filter,
-  Plus
+  Plus,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  Search
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, Button, Badge, Input } from '../components/common/UIComponents';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import Modal from '../components/common/Modal';
-import { attendanceService, AttendanceLog } from '../services/attendanceService';
+import { attendanceService, AttendanceLog, AttendanceFilters } from '../services/attendanceService';
 import { employeeService, Employee } from '../services/employeeService';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function AttendancePage() {
   const { t } = useTranslation();
-  const [logs, setLogs] = useState<AttendanceLog[]>([]);
+  const { user } = useAuth();
+  const [allLogs, setAllLogs] = useState<AttendanceLog[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  
+  // Check if user is an employee
+  const isEmployee = user?.role === 'employee';
+  
+  // Filter state
+  const [filters, setFilters] = useState({
+    employeeName: '',
+    dateFrom: '',
+    dateTo: '',
+    status: 'all',
+    hasLate: 'all', // 'all', 'yes', 'no'
+    hasOvertime: 'all', // 'all', 'yes', 'no'
+    minLateMinutes: '',
+    minOvertimeMinutes: ''
+  });
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(25);
   
   // Form State
   const [newPunch, setNewPunch] = useState({
@@ -34,23 +60,150 @@ export default function AttendancePage() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [filters, currentPage, itemsPerPage, isEmployee, user?.employee_id]);
 
   const loadData = async () => {
     try {
-      const [logsData, employeesData] = await Promise.all([
-        attendanceService.getAll(),
-        employeeService.getAll()
-      ]);
-      setLogs(logsData);
-      // Filter out Consultants from attendance tracking
-      setEmployees(employeesData.filter(e => e.employment_type !== 'Consultant'));
+      setLoading(true);
+      
+      // If user is an employee, only show their own attendance
+      if (isEmployee && user?.employee_id) {
+        const employeeLogs = await attendanceService.getByEmployee(user.employee_id);
+        setAllLogs(employeeLogs);
+        setLoading(false);
+        return;
+      }
+      
+      // First, get all employees to build employee ID mapping
+      const employeesData = await employeeService.getAll(user?.company_id);
+      const filteredEmployees = employeesData.filter(e => e.employment_type !== 'Consultant');
+      setEmployees(filteredEmployees);
+      
+      // Build filter parameters for API call
+      const apiFilters: AttendanceFilters = {
+        dateFrom: filters.dateFrom || undefined,
+        dateTo: filters.dateTo || undefined,
+        page: currentPage,
+        limit: itemsPerPage
+      };
+      
+      // If employee name filter is set, find matching employee integer IDs
+      if (filters.employeeName) {
+        const searchTerm = filters.employeeName.toLowerCase();
+        const matchingEmployees = filteredEmployees.filter(emp => {
+          const fullName = `${emp.first_name || emp.firstName || ''} ${emp.last_name || emp.lastName || ''}`.toLowerCase();
+          const employeeId = (emp.employee_id || emp.employeeId || '').toLowerCase();
+          return fullName.includes(searchTerm) || employeeId.includes(searchTerm);
+        });
+        
+        // Map employee UUIDs to integer IDs from attendances table
+        // We need to get the integer employee_id for each matching employee
+        // This requires checking external_id or parsing employee_id text
+        const integerIds: number[] = [];
+        matchingEmployees.forEach(emp => {
+          // Try external_id first
+          const externalId = (emp as any).external_id;
+          if (externalId && !isNaN(Number(externalId))) {
+            integerIds.push(Number(externalId));
+          } else {
+            // Try to extract from employee_id text
+            const employeeIdText = emp.employee_id || emp.employeeId || '';
+            const match = employeeIdText.match(/\d+/);
+            if (match) {
+              integerIds.push(parseInt(match[0], 10));
+            } else if (!isNaN(Number(employeeIdText))) {
+              integerIds.push(Number(employeeIdText));
+            }
+          }
+        });
+        
+        if (integerIds.length > 0) {
+          apiFilters.employeeIds = integerIds;
+        } else {
+          // No matching employees found, return empty
+          setAllLogs([]);
+          setLoading(false);
+          return;
+        }
+      }
+      
+      // Fetch attendance records with API filters
+      const response = await attendanceService.getAll(apiFilters);
+      const logsData = response.data || [];
+      setTotalCount(response.totalCount || logsData.length);
+      
+      // Apply client-side filters for late/overtime and status (since these are calculated)
+      let filteredLogs = logsData;
+      
+      // Filter by status
+      if (filters.status && filters.status !== 'all') {
+        filteredLogs = filteredLogs.filter(log => log.status === filters.status);
+      }
+      
+      // Filter by late
+      if (filters.hasLate === 'yes') {
+        filteredLogs = filteredLogs.filter(log => log.late_minutes > 0);
+      } else if (filters.hasLate === 'no') {
+        filteredLogs = filteredLogs.filter(log => log.late_minutes === 0);
+      }
+      
+      // Filter by minimum late minutes
+      if (filters.minLateMinutes) {
+        const minLate = parseInt(filters.minLateMinutes) || 0;
+        filteredLogs = filteredLogs.filter(log => log.late_minutes >= minLate);
+      }
+      
+      // Filter by overtime
+      if (filters.hasOvertime === 'yes') {
+        filteredLogs = filteredLogs.filter(log => log.overtime_minutes > 0);
+      } else if (filters.hasOvertime === 'no') {
+        filteredLogs = filteredLogs.filter(log => log.overtime_minutes === 0);
+      }
+      
+      // Filter by minimum overtime minutes
+      if (filters.minOvertimeMinutes) {
+        const minOvertime = parseInt(filters.minOvertimeMinutes) || 0;
+        filteredLogs = filteredLogs.filter(log => log.overtime_minutes >= minOvertime);
+      }
+      
+      setAllLogs(filteredLogs);
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {
       setLoading(false);
     }
   };
+  
+  // Since filtering is done on the backend, allLogs already contains filtered results
+  // We only need to handle client-side filtering for late/overtime which are calculated fields
+  const filteredLogs = allLogs; // Already filtered by API
+  
+  // Pagination calculations (server-side pagination)
+  const [totalCount, setTotalCount] = useState(0);
+  const totalPages = Math.ceil(totalCount / itemsPerPage) || 1;
+  const paginatedLogs = filteredLogs; // Already paginated by API
+  
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters.employeeName, filters.dateFrom, filters.dateTo]);
+  
+  const clearFilters = () => {
+    setFilters({
+      employeeName: '',
+      dateFrom: '',
+      dateTo: '',
+      status: 'all',
+      hasLate: 'all',
+      hasOvertime: 'all',
+      minLateMinutes: '',
+      minOvertimeMinutes: ''
+    });
+  };
+  
+  const hasActiveFilters = filters.employeeName || filters.dateFrom || filters.dateTo || 
+    filters.status !== 'all' || filters.hasLate !== 'all' || filters.hasOvertime !== 'all' ||
+    filters.minLateMinutes || filters.minOvertimeMinutes;
 
   const handleAddPunch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -111,22 +264,30 @@ export default function AttendancePage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold font-heading tracking-tight text-foreground">{t('attendance.title')}</h1>
-          <p className="text-muted-foreground mt-1">System-controlled punch logs and regularization.</p>
+          <p className="text-muted-foreground mt-1">
+            {isEmployee 
+              ? (t('attendance.myAttendance') || 'View your attendance records')
+              : 'System-controlled punch logs and regularization.'
+            }
+          </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline">
-            <CalendarIcon size={18} className="mr-2 rtl:ml-2 rtl:mr-0" />
-            Dec 2025
-          </Button>
-          <Button variant="primary" onClick={() => setIsModalOpen(true)}>
-            <Plus size={18} className="mr-2 rtl:ml-2 rtl:mr-0" />
-            Add Punch
-          </Button>
-        </div>
+        {!isEmployee && (
+          <div className="flex gap-2">
+            <Button variant="outline">
+              <CalendarIcon size={18} className="mr-2 rtl:ml-2 rtl:mr-0" />
+              Dec 2025
+            </Button>
+            <Button variant="primary" onClick={() => setIsModalOpen(true)}>
+              <Plus size={18} className="mr-2 rtl:ml-2 rtl:mr-0" />
+              Add Punch
+            </Button>
+          </div>
+        )}
       </div>
 
-      {/* Add Punch Modal */}
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Add Manual Punch">
+      {/* Add Punch Modal - Only show for non-employees */}
+      {!isEmployee && (
+        <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Add Manual Punch">
         <form onSubmit={handleAddPunch} className="space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">Employee</label>
@@ -184,6 +345,7 @@ export default function AttendancePage() {
           </div>
         </form>
       </Modal>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -195,7 +357,7 @@ export default function AttendancePage() {
             <div>
               <p className="text-sm text-muted-foreground">Present</p>
               <p className="text-2xl font-bold text-emerald-500">
-                {logs.filter(l => l.status === 'Present').length}
+                {filteredLogs.filter(l => l.status === 'Present').length}
               </p>
             </div>
           </CardContent>
@@ -208,7 +370,7 @@ export default function AttendancePage() {
             <div>
               <p className="text-sm text-muted-foreground">Late</p>
               <p className="text-2xl font-bold text-amber-500">
-                {logs.filter(l => l.status === 'Late').length}
+                {filteredLogs.filter(l => l.status === 'Late').length}
               </p>
             </div>
           </CardContent>
@@ -221,7 +383,7 @@ export default function AttendancePage() {
             <div>
               <p className="text-sm text-muted-foreground">Absent</p>
               <p className="text-2xl font-bold text-destructive">
-                {logs.filter(l => l.status === 'Absent').length}
+                {filteredLogs.filter(l => l.status === 'Absent').length}
               </p>
             </div>
           </CardContent>
@@ -234,23 +396,171 @@ export default function AttendancePage() {
             <div>
               <p className="text-sm text-muted-foreground">On Leave</p>
               <p className="text-2xl font-bold text-blue-500">
-                {logs.filter(l => l.status === 'On Leave').length}
+                {filteredLogs.filter(l => l.status === 'On Leave').length}
               </p>
             </div>
           </CardContent>
         </Card>
       </div>
 
+      {/* Filters Section - Only show for non-employees */}
+      {showFilters && !isEmployee && (
+        <Card className="bg-white/5 border-white/10">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Filter size={18} />
+              {t('attendance.filters') || 'Filters'}
+            </CardTitle>
+            <div className="flex gap-2">
+              {hasActiveFilters && (
+                <Button variant="ghost" size="sm" onClick={clearFilters}>
+                  <X size={16} className="mr-1" />
+                  {t('attendance.clearFilters') || 'Clear'}
+                </Button>
+              )}
+              <Button variant="ghost" size="sm" onClick={() => setShowFilters(false)}>
+                <X size={16} />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Employee Name Search */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">{t('attendance.filterByEmployee') || 'Employee Name'}</label>
+                <div className="relative">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    type="text"
+                    placeholder={t('attendance.searchEmployee') || 'Search employee...'}
+                    value={filters.employeeName}
+                    onChange={e => setFilters({...filters, employeeName: e.target.value})}
+                    className="pl-9"
+                  />
+                </div>
+              </div>
+              
+              {/* Date From */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">{t('attendance.dateFrom') || 'Date From'}</label>
+                <Input
+                  type="date"
+                  value={filters.dateFrom}
+                  onChange={e => setFilters({...filters, dateFrom: e.target.value})}
+                />
+              </div>
+              
+              {/* Date To */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">{t('attendance.dateTo') || 'Date To'}</label>
+                <Input
+                  type="date"
+                  value={filters.dateTo}
+                  onChange={e => setFilters({...filters, dateTo: e.target.value})}
+                />
+              </div>
+              
+              {/* Status Filter */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">{t('attendance.status') || 'Status'}</label>
+                <Select value={filters.status} onValueChange={value => setFilters({...filters, status: value})}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t('attendance.allStatuses') || 'All Statuses'}</SelectItem>
+                    <SelectItem value="Present">{t('attendance.present') || 'Present'}</SelectItem>
+                    <SelectItem value="Late">{t('attendance.late') || 'Late'}</SelectItem>
+                    <SelectItem value="Absent">{t('attendance.absent') || 'Absent'}</SelectItem>
+                    <SelectItem value="On Leave">{t('attendance.onLeave') || 'On Leave'}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Has Late Filter */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">{t('attendance.hasLate') || 'Has Late'}</label>
+                <Select value={filters.hasLate} onValueChange={value => setFilters({...filters, hasLate: value})}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t('attendance.all') || 'All'}</SelectItem>
+                    <SelectItem value="yes">{t('attendance.yes') || 'Yes'}</SelectItem>
+                    <SelectItem value="no">{t('attendance.no') || 'No'}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Min Late Minutes */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">{t('attendance.minLateMinutes') || 'Min Late (min)'}</label>
+                <Input
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  value={filters.minLateMinutes}
+                  onChange={e => setFilters({...filters, minLateMinutes: e.target.value})}
+                />
+              </div>
+              
+              {/* Has Overtime Filter */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">{t('attendance.hasOvertime') || 'Has Overtime'}</label>
+                <Select value={filters.hasOvertime} onValueChange={value => setFilters({...filters, hasOvertime: value})}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t('attendance.all') || 'All'}</SelectItem>
+                    <SelectItem value="yes">{t('attendance.yes') || 'Yes'}</SelectItem>
+                    <SelectItem value="no">{t('attendance.no') || 'No'}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Min Overtime Minutes */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">{t('attendance.minOvertimeMinutes') || 'Min Overtime (min)'}</label>
+                <Input
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  value={filters.minOvertimeMinutes}
+                  onChange={e => setFilters({...filters, minOvertimeMinutes: e.target.value})}
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Punch Log Table */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>{t('attendance.punchLog')}</CardTitle>
+          <div className="flex items-center gap-4">
+            <CardTitle>{t('attendance.punchLog')}</CardTitle>
+            {hasActiveFilters && (
+              <Badge variant="default" className="text-xs">
+                {filteredLogs.length} {t('attendance.of') || 'of'} {allLogs.length} {t('attendance.records') || 'records'}
+              </Badge>
+            )}
+          </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm">
+            <Button 
+              variant={showFilters ? "primary" : "outline"} 
+              size="sm"
+              onClick={() => setShowFilters(!showFilters)}
+            >
               <Filter size={16} className="mr-2 rtl:ml-2 rtl:mr-0" />
-              Filter
+              {t('attendance.filter') || 'Filter'}
+              {hasActiveFilters && (
+                <Badge variant="destructive" className="ml-2 px-1.5 py-0 text-[10px]">
+                  {Object.values(filters).filter(v => v && v !== 'all').length}
+                </Badge>
+              )}
             </Button>
-            <Button variant="outline" size="sm">Export</Button>
+            <Button variant="outline" size="sm">{t('attendance.export') || 'Export'}</Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -258,22 +568,27 @@ export default function AttendancePage() {
             <table className="w-full text-sm text-left rtl:text-right">
               <thead className="text-xs text-muted-foreground uppercase bg-white/5">
                 <tr>
-                  <th className="px-4 py-3 rounded-l-lg rtl:rounded-r-lg rtl:rounded-l-none">Employee</th>
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Check In</th>
-                  <th className="px-4 py-3">Check Out</th>
-                  <th className="px-4 py-3">Late (min)</th>
-                  <th className="px-4 py-3">Overtime (min)</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 rounded-r-lg rtl:rounded-l-lg rtl:rounded-r-none">Action</th>
+                  <th className="px-4 py-3 rounded-l-lg rtl:rounded-r-lg rtl:rounded-l-none">{t('attendance.employee') || 'Employee'}</th>
+                  <th className="px-4 py-3">{t('attendance.date') || 'Date'}</th>
+                  <th className="px-4 py-3">{t('attendance.checkIn') || 'Check In'}</th>
+                  <th className="px-4 py-3">{t('attendance.checkOut') || 'Check Out'}</th>
+                  <th className="px-4 py-3">{t('attendance.late') || 'Late'} (min)</th>
+                  <th className="px-4 py-3">{t('attendance.overtime') || 'Overtime'} (min)</th>
+                  <th className="px-4 py-3">{t('attendance.status') || 'Status'}</th>
+                  <th className="px-4 py-3 rounded-r-lg rtl:rounded-l-lg rtl:rounded-r-none">{t('attendance.action') || 'Action'}</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">Loading logs...</td></tr>
-                ) : logs.length === 0 ? (
-                  <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">No attendance records found.</td></tr>
-                ) : logs.map((record) => (
+                  <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">{t('attendance.loading') || 'Loading logs...'}</td></tr>
+                ) : paginatedLogs.length === 0 ? (
+                  <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">
+                    {hasActiveFilters 
+                      ? (t('attendance.noRecordsMatchFilters') || 'No records match the current filters.')
+                      : (t('attendance.noRecords') || 'No attendance records found.')
+                    }
+                  </td></tr>
+                ) : paginatedLogs.map((record) => (
                   <tr key={record.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                     <td className="px-4 py-3 font-medium">
                       {record.employees ? `${record.employees.first_name} ${record.employees.last_name}` : record.employee_id}
@@ -294,7 +609,7 @@ export default function AttendancePage() {
                     </td>
                     <td className="px-4 py-3">
                       <Button variant="ghost" size="sm" className="text-primary hover:text-primary/80">
-                        Details
+                        {t('attendance.details') || 'Details'}
                       </Button>
                     </td>
                   </tr>
@@ -302,6 +617,83 @@ export default function AttendancePage() {
               </tbody>
             </table>
           </div>
+          
+          {/* Pagination */}
+          {totalCount > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6 pt-4 border-t border-white/10">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span>
+                  {t('attendance.showing') || 'Showing'} {(currentPage - 1) * itemsPerPage + 1} {t('attendance.to') || 'to'} {Math.min(currentPage * itemsPerPage, totalCount)} {t('attendance.of') || 'of'} {totalCount} {t('attendance.records') || 'records'}
+                </span>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <Select value={itemsPerPage.toString()} onValueChange={value => {
+                  setItemsPerPage(parseInt(value));
+                  setCurrentPage(1);
+                }}>
+                  <SelectTrigger className="w-20 h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="25">25</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                  </SelectContent>
+                </Select>
+                
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className="h-9"
+                  >
+                    <ChevronLeft size={16} />
+                  </Button>
+                  
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      let pageNum;
+                      if (totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (currentPage <= 3) {
+                        pageNum = i + 1;
+                      } else if (currentPage >= totalPages - 2) {
+                        pageNum = totalPages - 4 + i;
+                      } else {
+                        pageNum = currentPage - 2 + i;
+                      }
+                      
+                      return (
+                        <Button
+                          key={pageNum}
+                          variant={currentPage === pageNum ? "primary" : "outline"}
+                          size="sm"
+                          onClick={() => setCurrentPage(pageNum)}
+                          className="h-9 min-w-[36px]"
+                        >
+                          {pageNum}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages}
+                    className="h-9"
+                  >
+                    <ChevronRight size={16} />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

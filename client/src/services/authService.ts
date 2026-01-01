@@ -71,10 +71,104 @@ class AuthService {
     }
   }
 
+  /**
+   * Temporary demo solution: Employee login using employee_id or external_id
+   * Default password for all employees is "123456"
+   */
+  async signInAsEmployee(employeeIdOrExternalId: string, password: string = '123456'): Promise<{ user: User | null; error: Error | null }> {
+    try {
+      // Validate password (default is 123456)
+      if (password !== '123456') {
+        return { user: null, error: new Error('Invalid password. Default password is 123456') };
+      }
+
+      // Find employee by employee_id or external_id using API
+      const { adminApi } = await import('./api');
+      
+      let employeeData: any = null;
+      
+      try {
+        // Search by employee_id first
+        const employeeIdResponse = await adminApi.get('/employees', {
+          params: {
+            select: '*',
+            employee_id: `eq.${employeeIdOrExternalId}`,
+            limit: 1
+          }
+        });
+        
+        if (employeeIdResponse.data && employeeIdResponse.data.length > 0) {
+          employeeData = employeeIdResponse.data[0];
+        } else {
+          // Search by external_id
+          const externalIdResponse = await adminApi.get('/employees', {
+            params: {
+              select: '*',
+              external_id: `eq.${employeeIdOrExternalId}`,
+              limit: 1
+            }
+          });
+          
+          if (externalIdResponse.data && externalIdResponse.data.length > 0) {
+            employeeData = externalIdResponse.data[0];
+          }
+        }
+      } catch (searchError) {
+        console.error('Error searching for employee:', searchError);
+        return { user: null, error: new Error('Failed to search for employee. Please try again.') };
+      }
+
+      if (!employeeData) {
+        return { user: null, error: new Error('Employee not found. Please check your Employee ID or External ID.') };
+      }
+
+      if (!employeeData.company_id) {
+        return { user: null, error: new Error('Employee is not associated with a company.') };
+      }
+
+      // Create a temporary user object for employee
+      const user: User = {
+        id: employeeData.id,
+        email: employeeData.email || `${employeeData.employee_id}@employee.local`,
+        role: 'employee' as UserRole,
+        company_id: employeeData.company_id,
+        employee_id: employeeData.id,
+        is_active: employeeData.status === 'Active',
+      };
+
+      // Store user in session storage
+      sessionStorage.setItem('user', JSON.stringify(user));
+      sessionStorage.setItem('employee_data', JSON.stringify(employeeData));
+      
+      // Create a mock session token for demo purposes
+      sessionStorage.setItem('access_token', `demo_token_${employeeData.id}`);
+
+      return { user, error: null };
+    } catch (error) {
+      console.error('Error in employee login:', error);
+      return { user: null, error: error as Error };
+    }
+  }
+
   async signOut(): Promise<void> {
-    await supabase.auth.signOut();
-    sessionStorage.removeItem('user');
-    sessionStorage.removeItem('access_token');
+    try {
+      await supabase.auth.signOut();
+      sessionStorage.removeItem('user');
+      sessionStorage.removeItem('access_token');
+      sessionStorage.removeItem('employee_data');
+      localStorage.removeItem('user');
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('manus-runtime-user-info');
+    } catch (error) {
+      console.error('Error during sign out:', error);
+      // Even if there's an error, clear local storage
+      sessionStorage.removeItem('user');
+      sessionStorage.removeItem('access_token');
+      sessionStorage.removeItem('employee_data');
+      localStorage.removeItem('user');
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('manus-runtime-user-info');
+    }
   }
 
   async getCurrentUser(): Promise<User | null> {

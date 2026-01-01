@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, Filter, Download, Plus, CheckCircle, XCircle, Eye } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,106 +9,161 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { leaveService, LeaveRequest } from '@/services/leaveService';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from 'sonner';
 
-// Mock data
-const mockRequests = [
-  {
-    id: 1,
-    requestId: 'LR-2025-001',
-    employee: { id: 1, name: 'John Doe', department: 'Engineering', avatar: '' },
-    leaveType: { name: 'Annual Leave', color: '#3b82f6' },
-    startDate: '2025-01-05',
-    endDate: '2025-01-10',
-    duration: 5,
-    reason: 'Family vacation',
-    status: 'Pending',
-    submittedAt: '2024-12-28 10:30 AM',
-    attachments: [],
-  },
-  {
-    id: 2,
-    requestId: 'LR-2025-002',
-    employee: { id: 2, name: 'Jane Smith', department: 'Sales', avatar: '' },
-    leaveType: { name: 'Sick Leave', color: '#ef4444' },
-    startDate: '2025-01-03',
-    endDate: '2025-01-04',
-    duration: 2,
-    reason: 'Medical appointment',
-    status: 'Approved',
-    submittedAt: '2024-12-27 02:15 PM',
-    reviewedAt: '2024-12-27 04:30 PM',
-    reviewedBy: 'HR Manager',
-    reviewComments: 'Approved as per policy',
-    attachments: [{ name: 'medical_certificate.pdf', url: '#' }],
-  },
-  {
-    id: 3,
-    requestId: 'LR-2025-003',
-    employee: { id: 3, name: 'Mike Johnson', department: 'Marketing', avatar: '' },
-    leaveType: { name: 'Emergency Leave', color: '#f59e0b' },
-    startDate: '2025-01-02',
-    endDate: '2025-01-02',
-    duration: 1,
-    reason: 'Personal emergency',
-    status: 'Pending',
-    submittedAt: '2024-12-29 09:00 AM',
-    attachments: [],
-  },
-  {
-    id: 4,
-    requestId: 'LR-2024-156',
-    employee: { id: 4, name: 'Sarah Williams', department: 'HR', avatar: '' },
-    leaveType: { name: 'Annual Leave', color: '#3b82f6' },
-    startDate: '2024-12-20',
-    endDate: '2024-12-27',
-    duration: 7,
-    reason: 'Year-end holiday',
-    status: 'Approved',
-    submittedAt: '2024-12-10 11:00 AM',
-    reviewedAt: '2024-12-10 03:00 PM',
-    reviewedBy: 'Admin',
-    reviewComments: 'Approved',
-    attachments: [],
-  },
-  {
-    id: 5,
-    requestId: 'LR-2024-145',
-    employee: { id: 5, name: 'Tom Brown', department: 'Finance', avatar: '' },
-    leaveType: { name: 'Sick Leave', color: '#ef4444' },
-    startDate: '2024-12-15',
-    endDate: '2024-12-16',
-    duration: 2,
-    reason: 'Flu symptoms',
-    status: 'Rejected',
-    submittedAt: '2024-12-14 08:30 AM',
-    reviewedAt: '2024-12-14 10:00 AM',
-    reviewedBy: 'HR Manager',
-    reviewComments: 'Insufficient sick leave balance',
-    attachments: [],
-  },
-];
+// Interface for display
+interface DisplayLeaveRequest {
+  id: string;
+  requestId: string;
+  employee: { 
+    id: string; 
+    name: string; 
+    department: string; 
+    avatar?: string;
+    reportingManager?: {
+      id: string;
+      name: string;
+    };
+  };
+  leaveType: { name: string; color: string };
+  startDate: string;
+  endDate: string;
+  duration: number;
+  reason: string;
+  status: 'Pending' | 'Approved' | 'Rejected';
+  submittedAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  reviewComments?: string;
+  attachments?: Array<{ name: string; url: string }>;
+}
 
-export default function LeaveRequestsTab() {
-  const [requests, setRequests] = useState(mockRequests);
+// Helper function to map API response to display format
+function mapLeaveRequestToDisplay(request: LeaveRequest): DisplayLeaveRequest {
+  const employeeName = request.employees 
+    ? `${request.employees.first_name || ''} ${request.employees.last_name || ''}`.trim() || 'Unknown'
+    : 'Unknown';
+  
+  const reportingManagerName = request.employees?.reporting_manager
+    ? `${request.employees.reporting_manager.first_name || ''} ${request.employees.reporting_manager.last_name || ''}`.trim() || 'N/A'
+    : 'N/A';
+  
+  const getLeaveTypeColor = (type: string) => {
+    switch (type) {
+      case 'Annual Leave': return '#3b82f6';
+      case 'Sick Leave': return '#ef4444';
+      case 'Emergency Leave': return '#f59e0b';
+      case 'Maternity Leave': return '#8b5cf6';
+      case 'Unpaid Leave': return '#6b7280';
+      default: return '#6b7280';
+    }
+  };
+
+  const start = new Date(request.start_date);
+  const end = new Date(request.end_date);
+  const diffTime = Math.abs(end.getTime() - start.getTime());
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // Inclusive
+
+  return {
+    id: request.id,
+    requestId: `LR-${request.id.substring(0, 8).toUpperCase()}`,
+    employee: {
+      id: request.employee_id,
+      name: employeeName,
+      department: request.employees?.department || 'N/A',
+      avatar: request.employees?.avatar_url,
+      reportingManager: request.employees?.reporting_manager ? {
+        id: request.employees.reporting_manager.id,
+        name: reportingManagerName
+      } : undefined
+    },
+    leaveType: {
+      name: request.leave_type,
+      color: getLeaveTypeColor(request.leave_type)
+    },
+    startDate: request.start_date,
+    endDate: request.end_date,
+    duration: diffDays,
+    reason: request.reason || '',
+    status: request.status,
+    submittedAt: new Date(request.created_at).toLocaleString(),
+    attachments: []
+  };
+}
+
+interface LeaveRequestsTabProps {
+  onRequestUpdated?: () => void;
+}
+
+export default function LeaveRequestsTab({ onRequestUpdated }: LeaveRequestsTabProps = {}) {
+  const { user } = useAuth();
+  const [requests, setRequests] = useState<DisplayLeaveRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(25);
+  
+  // Filters
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'Pending' | 'Approved' | 'Rejected' | 'all'>('all');
   const [leaveTypeFilter, setLeaveTypeFilter] = useState('all');
-  const [selectedRequests, setSelectedRequests] = useState<number[]>([]);
+  const [dateFromFilter, setDateFromFilter] = useState('');
+  const [dateToFilter, setDateToFilter] = useState('');
+  
+  const [selectedRequests, setSelectedRequests] = useState<string[]>([]);
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [actionModalOpen, setActionModalOpen] = useState(false);
-  const [selectedRequest, setSelectedRequest] = useState<any>(null);
+  const [selectedRequest, setSelectedRequest] = useState<DisplayLeaveRequest | null>(null);
   const [actionType, setActionType] = useState<'approve' | 'reject'>('approve');
   const [actionComments, setActionComments] = useState('');
 
-  // Filter requests
+  useEffect(() => {
+    loadRequests();
+  }, [currentPage, itemsPerPage, statusFilter, leaveTypeFilter, dateFromFilter, dateToFilter]);
+
+  const loadRequests = async () => {
+    try {
+      setLoading(true);
+      const filters = {
+        status: statusFilter,
+        leave_type: leaveTypeFilter !== 'all' ? leaveTypeFilter : undefined,
+        date_from: dateFromFilter || undefined,
+        date_to: dateToFilter || undefined,
+        page: currentPage,
+        limit: itemsPerPage
+      };
+      
+      const [data, count] = await Promise.all([
+        leaveService.getAll(filters),
+        leaveService.getCount(filters)
+      ]);
+      
+      const mappedRequests = data.map(mapLeaveRequestToDisplay);
+      setRequests(mappedRequests);
+      setTotalCount(count);
+    } catch (error) {
+      console.error('Error loading leave requests:', error);
+      toast.error('Failed to load leave requests');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Client-side search filter (since we're already paginating server-side)
   const filteredRequests = requests.filter((req) => {
-    const matchesSearch =
-      req.employee.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      req.requestId.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || req.status === statusFilter;
-    const matchesLeaveType = leaveTypeFilter === 'all' || req.leaveType.name === leaveTypeFilter;
-    return matchesSearch && matchesStatus && matchesLeaveType;
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      req.employee.name.toLowerCase().includes(query) ||
+      req.requestId.toLowerCase().includes(query) ||
+      req.reason.toLowerCase().includes(query) ||
+      (req.employee.reportingManager?.name.toLowerCase().includes(query) || false)
+    );
   });
+  
+  const totalPages = Math.ceil(totalCount / itemsPerPage);
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -118,7 +173,7 @@ export default function LeaveRequestsTab() {
     }
   };
 
-  const handleSelectRequest = (id: number, checked: boolean) => {
+  const handleSelectRequest = (id: string, checked: boolean) => {
     if (checked) {
       setSelectedRequests([...selectedRequests, id]);
     } else {
@@ -126,60 +181,94 @@ export default function LeaveRequestsTab() {
     }
   };
 
-  const handleViewRequest = (request: any) => {
+  const handleViewRequest = (request: DisplayLeaveRequest) => {
     setSelectedRequest(request);
     setViewModalOpen(true);
   };
 
-  const handleAction = (request: any, type: 'approve' | 'reject') => {
+  const handleAction = (request: DisplayLeaveRequest, type: 'approve' | 'reject') => {
     setSelectedRequest(request);
     setActionType(type);
     setActionComments('');
     setActionModalOpen(true);
   };
 
-  const handleSubmitAction = () => {
-    if (selectedRequest) {
-      // Update request status
+  const handleSubmitAction = async () => {
+    if (!selectedRequest) return;
+    
+    try {
+      const newStatus = actionType === 'approve' ? 'Approved' : 'Rejected';
+      await leaveService.updateStatus(selectedRequest.id, newStatus);
+      
+      // Update local state
       setRequests(
         requests.map((req) =>
           req.id === selectedRequest.id
             ? {
                 ...req,
-                status: actionType === 'approve' ? 'Approved' : 'Rejected',
+                status: newStatus,
                 reviewedAt: new Date().toLocaleString(),
-                reviewedBy: 'Admin User',
+                reviewedBy: user?.email || 'Admin',
                 reviewComments: actionComments,
               }
             : req
         )
       );
+      
+      toast.success(`Leave request ${actionType === 'approve' ? 'approved' : 'rejected'} successfully`);
       setActionModalOpen(false);
       setSelectedRequest(null);
+      setActionComments('');
+      // Notify parent to refresh data
+      if (onRequestUpdated) {
+        onRequestUpdated();
+      }
+    } catch (error) {
+      console.error('Error updating leave status:', error);
+      toast.error(`Failed to ${actionType} leave request`);
     }
   };
 
-  const handleBulkAction = (type: 'approve' | 'reject') => {
+  const handleBulkAction = async (type: 'approve' | 'reject') => {
     const selectedReqs = requests.filter((r) => selectedRequests.includes(r.id) && r.status === 'Pending');
     if (selectedReqs.length === 0) {
-      alert('Please select pending requests');
+      toast.error('Please select pending requests');
       return;
     }
-    // Bulk update
-    setRequests(
-      requests.map((req) =>
-        selectedRequests.includes(req.id) && req.status === 'Pending'
-          ? {
-              ...req,
-              status: type === 'approve' ? 'Approved' : 'Rejected',
-              reviewedAt: new Date().toLocaleString(),
-              reviewedBy: 'Admin User',
-              reviewComments: `Bulk ${type}d`,
-            }
-          : req
-      )
-    );
-    setSelectedRequests([]);
+    
+    try {
+      const newStatus = type === 'approve' ? 'Approved' : 'Rejected';
+      
+      // Update all selected requests
+      await Promise.all(
+        selectedReqs.map(req => leaveService.updateStatus(req.id, newStatus))
+      );
+      
+      // Update local state
+      setRequests(
+        requests.map((req) =>
+          selectedRequests.includes(req.id) && req.status === 'Pending'
+            ? {
+                ...req,
+                status: newStatus,
+                reviewedAt: new Date().toLocaleString(),
+                reviewedBy: user?.email || 'Admin',
+                reviewComments: `Bulk ${type}d`,
+              }
+            : req
+        )
+      );
+      
+      toast.success(`${selectedReqs.length} leave request(s) ${type === 'approve' ? 'approved' : 'rejected'} successfully`);
+      setSelectedRequests([]);
+      // Notify parent to refresh data
+      if (onRequestUpdated) {
+        onRequestUpdated();
+      }
+    } catch (error) {
+      console.error('Error in bulk action:', error);
+      toast.error(`Failed to ${type} selected requests`);
+    }
   };
 
   return (
@@ -201,7 +290,10 @@ export default function LeaveRequestsTab() {
           </div>
 
           {/* Filters */}
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <Select value={statusFilter} onValueChange={(value: any) => {
+            setStatusFilter(value);
+            setCurrentPage(1);
+          }}>
             <SelectTrigger className="w-full lg:w-[180px]">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
@@ -210,11 +302,13 @@ export default function LeaveRequestsTab() {
               <SelectItem value="Pending">Pending</SelectItem>
               <SelectItem value="Approved">Approved</SelectItem>
               <SelectItem value="Rejected">Rejected</SelectItem>
-              <SelectItem value="Cancelled">Cancelled</SelectItem>
             </SelectContent>
           </Select>
 
-          <Select value={leaveTypeFilter} onValueChange={setLeaveTypeFilter}>
+          <Select value={leaveTypeFilter} onValueChange={(value) => {
+            setLeaveTypeFilter(value);
+            setCurrentPage(1);
+          }}>
             <SelectTrigger className="w-full lg:w-[180px]">
               <SelectValue placeholder="Leave Type" />
             </SelectTrigger>
@@ -227,6 +321,31 @@ export default function LeaveRequestsTab() {
               <SelectItem value="Unpaid Leave">Unpaid Leave</SelectItem>
             </SelectContent>
           </Select>
+
+          {/* Date From Filter */}
+          <Input
+            type="date"
+            placeholder="Date From"
+            value={dateFromFilter}
+            onChange={(e) => {
+              setDateFromFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="w-full lg:w-[150px]"
+          />
+
+          {/* Date To Filter */}
+          <Input
+            type="date"
+            placeholder="Date To"
+            value={dateToFilter}
+            onChange={(e) => {
+              setDateToFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="w-full lg:w-[150px]"
+            min={dateFromFilter}
+          />
 
           {/* Action Buttons */}
           <div className="flex gap-2">
@@ -273,78 +392,142 @@ export default function LeaveRequestsTab() {
                 </th>
                 <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Request ID</th>
                 <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Employee</th>
+                <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Reporting Manager</th>
                 <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Leave Type</th>
                 <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Duration</th>
+                <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Reason</th>
+                <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Applied</th>
                 <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Status</th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Submitted</th>
                 <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filteredRequests.map((request) => (
-                <tr key={request.id} className="border-b hover:bg-muted/50 transition-colors">
-                  <td className="py-3 px-4">
-                    <Checkbox
-                      checked={selectedRequests.includes(request.id)}
-                      onCheckedChange={(checked) => handleSelectRequest(request.id, checked as boolean)}
-                    />
-                  </td>
-                  <td className="py-3 px-4 text-sm font-medium">{request.requestId}</td>
-                  <td className="py-3 px-4">
-                    <div>
-                      <p className="text-sm font-medium">{request.employee.name}</p>
-                      <p className="text-xs text-muted-foreground">{request.employee.department}</p>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="w-3 h-3 rounded-full"
-                        style={{ backgroundColor: request.leaveType.color }}
-                      />
-                      <span className="text-sm">{request.leaveType.name}</span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 text-sm">
-                    {request.duration} {request.duration === 1 ? 'day' : 'days'}
-                    <br />
-                    <span className="text-xs text-muted-foreground">
-                      {request.startDate} to {request.endDate}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <StatusBadge status={request.status as any} />
-                  </td>
-                  <td className="py-3 px-4 text-xs text-muted-foreground">{request.submittedAt}</td>
-                  <td className="py-3 px-4">
-                    <div className="flex gap-2">
-                      {request.status === 'Pending' && (
-                        <>
-                          <Button size="sm" onClick={() => handleAction(request, 'approve')}>
-                            <CheckCircle className="w-3 h-3 mr-1" />
-                            Approve
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => handleAction(request, 'reject')}>
-                            <XCircle className="w-3 h-3 mr-1" />
-                            Reject
-                          </Button>
-                        </>
-                      )}
-                      <Button size="sm" variant="ghost" onClick={() => handleViewRequest(request)}>
-                        <Eye className="w-3 h-3 mr-1" />
-                        View
-                      </Button>
-                    </div>
+              {loading ? (
+                <tr>
+                  <td colSpan={10} className="py-8 text-center text-muted-foreground">
+                    Loading leave requests...
                   </td>
                 </tr>
-              ))}
+              ) : filteredRequests.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="py-8 text-center text-muted-foreground">
+                    No leave requests found
+                  </td>
+                </tr>
+              ) : (
+                filteredRequests.map((request) => (
+                  <tr key={request.id} className="border-b hover:bg-muted/50 transition-colors">
+                    <td className="py-3 px-4">
+                      {request.status === 'Pending' && (
+                        <Checkbox
+                          checked={selectedRequests.includes(request.id)}
+                          onCheckedChange={(checked) => handleSelectRequest(request.id, checked as boolean)}
+                        />
+                      )}
+                    </td>
+                    <td className="py-3 px-4 text-sm font-medium">{request.requestId}</td>
+                    <td className="py-3 px-4">
+                      <div>
+                        <p className="text-sm font-medium">{request.employee.name}</p>
+                        <p className="text-xs text-muted-foreground">{request.employee.department}</p>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <p className="text-sm">{request.employee.reportingManager?.name || 'N/A'}</p>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: request.leaveType.color }}
+                        />
+                        <span className="text-sm">{request.leaveType.name}</span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 text-sm">
+                      {request.duration} {request.duration === 1 ? 'day' : 'days'}
+                      <br />
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(request.startDate).toLocaleDateString()} to {new Date(request.endDate).toLocaleDateString()}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-sm max-w-xs truncate" title={request.reason}>
+                      {request.reason || 'N/A'}
+                    </td>
+                    <td className="py-3 px-4 text-xs text-muted-foreground">
+                      {new Date(request.submittedAt).toLocaleString()}
+                    </td>
+                    <td className="py-3 px-4">
+                      <StatusBadge status={request.status as any} />
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex gap-2">
+                        {request.status === 'Pending' && (
+                          <>
+                            <Button size="sm" onClick={() => handleAction(request, 'approve')}>
+                              <CheckCircle className="w-3 h-3 mr-1" />
+                              Approve
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => handleAction(request, 'reject')}>
+                              <XCircle className="w-3 h-3 mr-1" />
+                              Reject
+                            </Button>
+                          </>
+                        )}
+                        <Button size="sm" variant="ghost" onClick={() => handleViewRequest(request)}>
+                          <Eye className="w-3 h-3 mr-1" />
+                          View
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
 
-        {filteredRequests.length === 0 && (
-          <div className="text-center py-12">
-            <p className="text-muted-foreground">No leave requests found</p>
+        {/* Pagination */}
+        {totalCount > 0 && (
+          <div className="mt-4 flex items-center justify-between">
+            <div className="text-sm text-muted-foreground">
+              Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, totalCount)} of {totalCount} requests
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1 || loading}
+              >
+                Previous
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages || loading}
+              >
+                Next
+              </Button>
+              <Select value={itemsPerPage.toString()} onValueChange={(value) => {
+                setItemsPerPage(Number(value));
+                setCurrentPage(1);
+              }}>
+                <SelectTrigger className="w-[100px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="25">25</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         )}
       </Card>
@@ -480,6 +663,7 @@ export default function LeaveRequestsTab() {
             <Button
               onClick={handleSubmitAction}
               disabled={actionType === 'reject' && !actionComments.trim()}
+              variant={actionType === 'reject' ? 'destructive' : 'default'}
             >
               {actionType === 'approve' ? 'Approve' : 'Reject'}
             </Button>

@@ -191,3 +191,4 @@ Updated the "Add Employee" form:
 - Employees retain references even if masters are deleted (SET NULL)
 - Legacy `department` and `designation` fields are maintained for backward compatibility
 
+

@@ -1,4 +1,5 @@
 import { api, adminApi } from './api';
+import { employeeService, Employee } from './employeeService';
 
 export interface CompanySettings {
   id: string;
@@ -38,6 +39,22 @@ export interface EmployeeWorkingHours {
   end_time?: string;
   break_duration_minutes: number;
   break_start_time?: string;
+  effective_from: string;
+  effective_to?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EmployeeShift {
+  id: string;
+  employee_id: string;
+  company_id: string;
+  day_of_week: number; // 0=Sunday, 1=Monday, ..., 6=Saturday
+  shift_name?: string;
+  start_time: string;
+  end_time: string;
+  break_duration_minutes: number;
   effective_from: string;
   effective_to?: string;
   is_active: boolean;
@@ -138,7 +155,7 @@ class CompanySettingsService {
   // Employee Working Hours
   async getEmployeeWorkingHours(employeeId: string): Promise<EmployeeWorkingHours | null> {
     try {
-      const response = await api.get('/employee_working_hours', {
+      const response = await adminApi.get('/employee_working_hours', {
         params: {
           employee_id: `eq.${employeeId}`,
           is_active: 'eq.true',
@@ -175,6 +192,136 @@ class CompanySettingsService {
       return response.data[0];
     }
     return response.data;
+  }
+
+  /**
+   * Maps integer employee_id from attendances table to UUID from employees table
+   * This is needed because attendance records use integer IDs from the machine
+   */
+  private async mapIntegerEmployeeIdToUuid(integerEmployeeId: number): Promise<string | null> {
+    try {
+      // Try to find employee by external_id or employee_id text
+      const employees = await employeeService.getAll();
+      
+      for (const emp of employees) {
+        // Try external_id first
+        const externalId = (emp as any).external_id;
+        if (externalId && !isNaN(Number(externalId)) && Number(externalId) === integerEmployeeId) {
+          return emp.id;
+        }
+        
+        // Try to extract number from employee_id text (e.g., "EMP-1234" -> 1234)
+        const employeeIdText = emp.employee_id || (emp as any).employeeId || '';
+        const match = employeeIdText.match(/\d+/);
+        if (match) {
+          const extractedNumber = parseInt(match[0], 10);
+          if (extractedNumber === integerEmployeeId) {
+            return emp.id;
+          }
+        }
+        
+        // If employee_id is just a number string, try direct match
+        if (!isNaN(Number(employeeIdText)) && Number(employeeIdText) === integerEmployeeId) {
+          return emp.id;
+        }
+      }
+      
+      // If not found, try a direct query
+      try {
+        const response = await adminApi.get(`/employees?select=id,employee_id,external_id&or=(external_id.eq.${integerEmployeeId},employee_id.eq.${integerEmployeeId})&limit=1`);
+        if (response.data && response.data.length > 0) {
+          return response.data[0].id;
+        }
+      } catch (err) {
+        console.warn('Direct query for employee mapping failed:', err);
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error mapping employee ID:', error);
+      return null;
+    }
+  }
+
+  // Employee Shifts (Multiple shifts per day)
+  /**
+   * Get employee shifts by UUID employee_id
+   */
+  async getEmployeeShifts(employeeId: string, dayOfWeek?: number): Promise<EmployeeShift[]> {
+    try {
+      const params: any = {
+        employee_id: `eq.${employeeId}`,
+        is_active: 'eq.true',
+        select: '*',
+        order: 'day_of_week.asc,start_time.asc'
+      };
+      
+      if (dayOfWeek !== undefined) {
+        params.day_of_week = `eq.${dayOfWeek}`;
+      }
+      
+      const response = await adminApi.get('/employee_shifts', { params });
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error) {
+      console.error('Error fetching employee shifts:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get employee shifts by integer employee_id (from attendances table)
+   * This maps the integer ID to UUID first, then fetches shifts
+   */
+  async getEmployeeShiftsByIntegerId(integerEmployeeId: number, dayOfWeek?: number): Promise<EmployeeShift[]> {
+    try {
+      // Map integer employee_id to UUID
+      const uuid = await this.mapIntegerEmployeeIdToUuid(integerEmployeeId);
+      
+      if (!uuid) {
+        console.warn(`Could not find UUID for integer employee_id: ${integerEmployeeId}`);
+        return [];
+      }
+      
+      // Fetch shifts using UUID
+      return await this.getEmployeeShifts(uuid, dayOfWeek);
+    } catch (error) {
+      console.error('Error fetching employee shifts by integer ID:', error);
+      return [];
+    }
+  }
+
+  async createEmployeeShift(shift: Omit<EmployeeShift, 'id' | 'created_at' | 'updated_at'>): Promise<EmployeeShift> {
+    const response = await adminApi.post('/employee_shifts', shift);
+    if (Array.isArray(response.data)) {
+      return response.data[0];
+    }
+    return response.data;
+  }
+
+  async updateEmployeeShift(id: string, shift: Partial<EmployeeShift>): Promise<EmployeeShift> {
+    const response = await adminApi.patch('/employee_shifts', shift, {
+      params: {
+        id: `eq.${id}`
+      }
+    });
+    if (Array.isArray(response.data)) {
+      return response.data[0];
+    }
+    return response.data;
+  }
+
+  async deleteEmployeeShift(id: string): Promise<boolean> {
+    try {
+      await adminApi.delete('/employee_shifts', {
+        params: {
+          id: `eq.${id}`
+        }
+      });
+      return true;
+    } catch (error) {
+      console.error('Error deleting employee shift:', error);
+      return false;
+    }
   }
 
   // Leave Quotas

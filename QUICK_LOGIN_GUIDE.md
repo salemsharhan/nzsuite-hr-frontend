@@ -203,3 +203,4 @@ ORDER BY ur.role, ur.email;
 - Make sure the email in Supabase Auth matches the email in `user_roles` table
 - User IDs must match exactly between Supabase Auth and `user_roles` table
 
+

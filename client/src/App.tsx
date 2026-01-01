@@ -5,6 +5,7 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { LanguageProvider } from "./context/LanguageContext";
+import { AuthProvider } from "./contexts/AuthContext";
 import { MainLayout } from "./components/layout/MainLayout";
 import DashboardPage from "./pages/DashboardPage";
 import EmployeeListPage from "./pages/EmployeeListPage";
@@ -26,6 +27,11 @@ import EmployeeDashboard from "./pages/EmployeeDashboard";
 import MyRequestsPage from "./pages/MyRequestsPage";
 import MyPayslipsPage from "./pages/MyPayslipsPage";
 import LeaveManagementPage from "./pages/LeaveManagementPage";
+import EmployeeLeavesPage from "./pages/EmployeeLeavesPage";
+import EmployeeProfilePage from "./pages/EmployeeProfilePage";
+import DocumentRequestsPage from "./pages/DocumentRequestsPage";
+import EmployeeRequestsPage from "./pages/EmployeeRequestsPage";
+import LoginPage from "./pages/LoginPage";
 import './utils/i18n';
 
 // Placeholder pages for routes not yet implemented
@@ -39,32 +45,41 @@ const PlaceholderPage = ({ title }: { title: string }) => (
 function Router() {
   // make sure to consider if you need authentication for certain routes
   return (
-    <MainLayout>
-      <Switch>
-        <Route path="/" component={DashboardPage} />
-        <Route path="/employees" component={EmployeeListPage} />
-        <Route path="/employees/:id" component={EmployeeDetailPage} />
-        <Route path="/attendance" component={AttendancePage} />
-        <Route path="/payroll" component={PayrollPage} />
-        <Route path="/setup" component={SetupPage} />
-        <Route path="/leaves" component={LeaveManagementPage} />
-        <Route path="/recruitment" component={RecruitmentPage} />
-        <Route path="/ess" component={ESSPage} />
-        <Route path="/self-service" component={EmployeeDashboard} />
-        <Route path="/self-service/requests" component={MyRequestsPage} />
-        <Route path="/self-service/payslips" component={MyPayslipsPage} />
-        <Route path="/timesheets" component={TimesheetsPage} />
-        <Route path="/documents" component={DocumentsPage} />
-        <Route path="/analytics" component={AnalyticsPage} />
-        <Route path="/admin" component={AdminPage} />
-        <Route path="/settings" component={SettingsPage} />
-        <Route path="/hiring-checklist" component={HiringChecklistPage} />
-        <Route path="/roles-permissions" component={RolesPermissionsPage} />
-        
-        {/* Fallback */}
-        <Route component={NotFound} />
-      </Switch>
-    </MainLayout>
+    <Switch>
+      <Route path="/login" component={LoginPage} />
+      <Route>
+        <MainLayout>
+          <Switch>
+            <Route path="/" component={DashboardPage} />
+            <Route path="/employees" component={EmployeeListPage} />
+            <Route path="/employees/:id" component={EmployeeDetailPage} />
+            <Route path="/attendance" component={AttendancePage} />
+            <Route path="/payroll" component={PayrollPage} />
+            <Route path="/setup" component={SetupPage} />
+            <Route path="/leaves" component={LeaveManagementPage} />
+            <Route path="/recruitment" component={RecruitmentPage} />
+            <Route path="/ess" component={ESSPage} />
+            <Route path="/self-service" component={EmployeeDashboard} />
+            <Route path="/self-service/requests" component={MyRequestsPage} />
+            <Route path="/self-service/payslips" component={MyPayslipsPage} />
+            <Route path="/self-service/leaves" component={EmployeeLeavesPage} />
+            <Route path="/self-service/profile" component={EmployeeProfilePage} />
+            <Route path="/timesheets" component={TimesheetsPage} />
+            <Route path="/documents" component={DocumentsPage} />
+            <Route path="/document-requests" component={DocumentRequestsPage} />
+            <Route path="/employee-requests" component={EmployeeRequestsPage} />
+            <Route path="/analytics" component={AnalyticsPage} />
+            <Route path="/admin" component={AdminPage} />
+            <Route path="/settings" component={SettingsPage} />
+            <Route path="/hiring-checklist" component={HiringChecklistPage} />
+            <Route path="/roles-permissions" component={RolesPermissionsPage} />
+            
+            {/* Fallback */}
+            <Route component={NotFound} />
+          </Switch>
+        </MainLayout>
+      </Route>
+    </Switch>
   );
 }
 
@@ -73,10 +88,12 @@ function App() {
     <ErrorBoundary>
       <LanguageProvider>
         <ThemeProvider defaultTheme="dark">
-          <TooltipProvider>
-            <Toaster />
-            <Router />
-          </TooltipProvider>
+          <AuthProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Router />
+            </TooltipProvider>
+          </AuthProvider>
         </ThemeProvider>
       </LanguageProvider>
     </ErrorBoundary>

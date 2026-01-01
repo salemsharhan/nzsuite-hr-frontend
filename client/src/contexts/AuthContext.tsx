@@ -6,6 +6,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signInAsEmployee: (employeeIdOrExternalId: string, password?: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   hasPermission: (requiredRole: 'super_admin' | 'admin' | 'employee' | Array<'super_admin' | 'admin' | 'employee'>) => boolean;
   canAccessCompany: (companyId: string) => boolean;
@@ -78,6 +79,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const signInAsEmployee = async (employeeIdOrExternalId: string, password: string = '123456') => {
+    setLoading(true);
+    try {
+      const { user: signedInUser, error } = await authService.signInAsEmployee(employeeIdOrExternalId, password);
+      if (error) {
+        return { error };
+      }
+      setUser(signedInUser);
+      return { error: null };
+    } catch (error) {
+      return { error: error as Error };
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const signOut = async () => {
     setLoading(true);
     try {
@@ -108,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         loading,
         signIn,
+        signInAsEmployee,
         signOut,
         hasPermission,
         canAccessCompany,

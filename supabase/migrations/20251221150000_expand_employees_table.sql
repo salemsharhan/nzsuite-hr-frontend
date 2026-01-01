@@ -38,3 +38,4 @@ CREATE INDEX IF NOT EXISTS idx_employees_country ON employees(country);
 CREATE INDEX IF NOT EXISTS idx_employees_reporting_manager ON employees(reporting_manager_id);
 CREATE INDEX IF NOT EXISTS idx_employees_work_location ON employees(work_location);
 
+

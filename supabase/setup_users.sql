@@ -108,3 +108,4 @@ LEFT JOIN companies c ON ur.company_id = c.id
 LEFT JOIN employees e ON ur.employee_id = e.id
 ORDER BY ur.role, ur.email;
 
+

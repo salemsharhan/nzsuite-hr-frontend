@@ -4,9 +4,11 @@ import { selfServiceApi, Request, Payslip } from '../services/selfServiceApi';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { EmptyState } from '../components/common/EmptyState';
 import { SubmitRequestModal } from '../components/selfservice/SubmitRequestModal';
+import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'sonner';
 
 export default function EmployeeDashboard() {
+  const { user } = useAuth();
   const [dashboardData, setDashboardData] = useState({
     checkInTime: '--:--' as string | null,
     leaveBalance: 0,
@@ -18,7 +20,12 @@ export default function EmployeeDashboard() {
   const [loading, setLoading] = useState(true);
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
 
-  const employeeFirstName = 'Admin'; // TODO: Get from auth context
+  // Get employee name from session storage or user
+  const employeeFirstName = user ? 
+    (sessionStorage.getItem('employee_data') 
+      ? JSON.parse(sessionStorage.getItem('employee_data') || '{}')?.first_name || 'Employee'
+      : (user as any)?.first_name || 'Employee')
+    : 'Employee';
 
   useEffect(() => {
     loadDashboardData();
@@ -51,13 +58,13 @@ export default function EmployeeDashboard() {
   };
 
   const KPICard = ({ icon: Icon, title, value, trend }: any) => (
-    <div className="bg-card border border-border rounded-xl p-6 hover:border-primary/30 transition-all">
-      <div className="flex items-start justify-between mb-4">
-        <div className="p-3 bg-primary/10 rounded-lg">
-          <Icon className="w-6 h-6 text-primary" />
+    <div className="bg-card border border-border rounded-2xl p-4 hover:border-primary/30 transition-all shadow-sm">
+      <div className="flex items-start justify-between mb-3">
+        <div className="p-2.5 bg-primary/10 rounded-xl">
+          <Icon className="w-5 h-5 text-primary" />
         </div>
         {trend && (
-          <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
             trend.startsWith('+') ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'
           }`}>
             {trend}
@@ -65,8 +72,8 @@ export default function EmployeeDashboard() {
         )}
       </div>
       <div>
-        <p className="text-sm text-muted-foreground mb-1">{title}</p>
-        <p className="text-2xl font-bold text-foreground">{value}</p>
+        <p className="text-xs text-muted-foreground mb-1">{title}</p>
+        <p className="text-xl font-bold text-foreground">{value}</p>
       </div>
     </div>
   );
@@ -80,24 +87,24 @@ export default function EmployeeDashboard() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">My Dashboard</h1>
-          <p className="text-muted-foreground mt-1">Welcome back, {employeeFirstName}</p>
-        </div>
-        <button
-          onClick={() => setIsSubmitModalOpen(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium"
-        >
-          <Plus className="w-5 h-5" />
-          Submit Request
-        </button>
+    <div className="space-y-4">
+      {/* Welcome Header - Mobile App Style */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-foreground mb-1">Welcome back!</h1>
+        <p className="text-muted-foreground text-sm">{employeeFirstName}</p>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Quick Action Button */}
+      <button
+        onClick={() => setIsSubmitModalOpen(true)}
+        className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-colors font-medium shadow-lg shadow-primary/20"
+      >
+        <Plus className="w-5 h-5" />
+        Submit Request
+      </button>
+
+      {/* KPI Cards - Mobile App Style (2 columns) */}
+      <div className="grid grid-cols-2 gap-3">
         <KPICard
           icon={Clock}
           title="Check-in Time"
@@ -122,13 +129,13 @@ export default function EmployeeDashboard() {
         />
       </div>
 
-      {/* Two Panels */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Two Panels - Mobile App Style (Stacked) */}
+      <div className="space-y-4">
         {/* Recent Payslips */}
-        <div className="bg-card border border-border rounded-xl p-6">
+        <div className="bg-card border border-border rounded-2xl p-4 shadow-sm">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-foreground">Recent Payslips</h2>
-            <a href="/self-service/payslips" className="text-sm text-primary hover:underline">
+            <h2 className="text-base font-semibold text-foreground">Recent Payslips</h2>
+            <a href="/self-service/payslips" className="text-xs text-primary hover:underline font-medium">
               View All
             </a>
           </div>
@@ -144,15 +151,15 @@ export default function EmployeeDashboard() {
               {recentPayslips.map(payslip => (
                 <div
                   key={payslip.id}
-                  className="flex items-center justify-between p-3 bg-muted/50 rounded-lg hover:bg-muted transition-colors"
+                  className="flex items-center justify-between p-3 bg-muted/30 rounded-xl hover:bg-muted/50 transition-colors mb-2"
                 >
                   <div>
-                    <p className="font-medium text-foreground">{payslip.month}</p>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="font-medium text-sm text-foreground">{payslip.month}</p>
+                    <p className="text-xs text-muted-foreground">
                       Net: ${payslip.netSalary.toLocaleString()}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     <button
                       onClick={() => window.open(payslip.downloadUrl, '_blank')}
                       className="p-2 hover:bg-background rounded-lg transition-colors"
@@ -175,10 +182,10 @@ export default function EmployeeDashboard() {
         </div>
 
         {/* My Requests */}
-        <div className="bg-card border border-border rounded-xl p-6">
+        <div className="bg-card border border-border rounded-2xl p-4 shadow-sm">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-foreground">My Requests</h2>
-            <a href="/self-service/requests" className="text-sm text-primary hover:underline">
+            <h2 className="text-base font-semibold text-foreground">My Requests</h2>
+            <a href="/self-service/requests" className="text-xs text-primary hover:underline font-medium">
               View All
             </a>
           </div>
@@ -198,12 +205,12 @@ export default function EmployeeDashboard() {
               {recentRequests.map(request => (
                 <div
                   key={request.id}
-                  className="flex items-center justify-between p-3 bg-muted/50 rounded-lg hover:bg-muted transition-colors cursor-pointer"
+                  className="flex items-center justify-between p-3 bg-muted/30 rounded-xl hover:bg-muted/50 transition-colors cursor-pointer mb-2"
                   onClick={() => window.location.href = `/self-service/requests/${request.id}`}
                 >
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-foreground truncate">{request.type}</p>
-                    <p className="text-sm text-muted-foreground">{request.date}</p>
+                    <p className="font-medium text-sm text-foreground truncate">{request.type}</p>
+                    <p className="text-xs text-muted-foreground">{request.date}</p>
                   </div>
                   <StatusBadge status={request.status} />
                 </div>

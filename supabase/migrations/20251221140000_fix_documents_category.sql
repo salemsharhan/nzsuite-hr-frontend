@@ -8,3 +8,4 @@ UPDATE documents SET category = 'General' WHERE category IS NULL;
 -- Optionally, you can also set a default value
 ALTER TABLE documents ALTER COLUMN category SET DEFAULT 'General';
 
+

@@ -6,6 +6,8 @@ import { EmptyState } from '../components/common/EmptyState';
 import { SubmitRequestModal } from '../components/selfservice/SubmitRequestModal';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'sonner';
+import { getEmployeeLeaveBalance } from '../services/leaveBalanceService';
+import { attendanceService } from '../services/attendanceService';
 
 export default function EmployeeDashboard() {
   const { user } = useAuth();
@@ -34,14 +36,60 @@ export default function EmployeeDashboard() {
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-      const [dashboard, requests, payslips] = await Promise.all([
-        selfServiceApi.getDashboardData(),
+      
+      // Get employee ID from user or session storage
+      const employeeId = user?.employee_id || 
+        (sessionStorage.getItem('employee_data') 
+          ? JSON.parse(sessionStorage.getItem('employee_data') || '{}')?.id 
+          : null);
+      
+      const companyId = user?.company_id || 
+        (sessionStorage.getItem('employee_data') 
+          ? JSON.parse(sessionStorage.getItem('employee_data') || '{}')?.company_id 
+          : null);
+
+      if (!employeeId || !companyId) {
+        console.warn('Employee ID or Company ID not found');
+        setLoading(false);
+        return;
+      }
+
+      // Fetch real data
+      const [leaveBalance, attendanceLogs, allRequests, recentRequests, payslips] = await Promise.all([
+        getEmployeeLeaveBalance(employeeId, companyId),
+        attendanceService.getByEmployee(employeeId),
+        selfServiceApi.getAllRequests(),
         selfServiceApi.getRecentRequests(5),
         selfServiceApi.getRecentPayslips(3)
       ]);
 
-      setDashboardData(dashboard);
-      setRecentRequests(requests);
+      // Get today's check-in time
+      const today = new Date().toISOString().split('T')[0];
+      const todayLog = attendanceLogs.find(log => log.date === today);
+      const checkInTime = todayLog?.checkIn 
+        ? new Date(todayLog.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : null;
+
+      // Calculate total leave balance (annual + sick + emergency)
+      const totalLeaveBalance = leaveBalance 
+        ? (leaveBalance.annual_leave.available + leaveBalance.sick_leave.available + leaveBalance.emergency_leave.available)
+        : 0;
+
+      // Count pending requests
+      const pendingRequestsCount = allRequests.filter(r => 
+        r.status === 'Pending' || r.status === 'In Review'
+      ).length;
+
+      // Get next payday (for now, using a placeholder - would need payroll service)
+      const nextPayday = 'TBD'; // TODO: Implement payroll service to get actual next payday
+
+      setDashboardData({
+        checkInTime,
+        leaveBalance: Math.floor(totalLeaveBalance),
+        nextPayday,
+        pendingRequestsCount
+      });
+      setRecentRequests(recentRequests);
       setRecentPayslips(payslips);
     } catch (error) {
       console.error('Failed to load dashboard data:', error);

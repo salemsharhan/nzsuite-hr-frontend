@@ -301,70 +301,90 @@ export default function EmployeeRequestsPage() {
         <CardHeader>
           <CardTitle>All Requests ({totalCount})</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           {loading ? (
             <div className="text-center py-8 text-muted-foreground">Loading...</div>
           ) : filteredRequests.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">No requests found</div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Request ID</th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Employee</th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Type</th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Category</th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Submitted</th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Status</th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Actions</th>
-                  </tr>
-                </thead>
+            <div className="overflow-x-auto -mx-4 md:mx-0">
+              <div className="inline-block min-w-full align-middle">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th className="text-left py-3 px-4 text-xs md:text-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Request ID</th>
+                      <th className="text-left py-3 px-4 text-xs md:text-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Type</th>
+                      <th className="text-left py-3 px-4 text-xs md:text-sm font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell whitespace-nowrap">Employee</th>
+                      <th className="text-left py-3 px-4 text-xs md:text-sm font-semibold text-muted-foreground uppercase tracking-wider hidden lg:table-cell whitespace-nowrap">Category</th>
+                      <th className="text-left py-3 px-4 text-xs md:text-sm font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell whitespace-nowrap">Submitted</th>
+                      <th className="text-left py-3 px-4 text-xs md:text-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Status</th>
+                      <th className="text-left py-3 px-4 text-xs md:text-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Actions</th>
+                    </tr>
+                  </thead>
                 <tbody>
-                  {filteredRequests.map((request) => (
-                    <tr key={request.id} className="border-b hover:bg-muted/50">
+                  {filteredRequests.map((request, index) => (
+                    <tr 
+                      key={request.id} 
+                      className={`border-b hover:bg-muted/30 transition-colors ${
+                        index % 2 === 0 ? 'bg-background' : 'bg-muted/10'
+                      }`}
+                    >
                       <td className="py-3 px-4">
-                        <span className="text-sm font-mono text-muted-foreground">
-                          {request.id.substring(0, 8)}
+                        <span className="text-xs md:text-sm font-mono text-foreground font-medium" title={request.id}>
+                          {request.id.substring(0, 8)}...
                         </span>
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
-                          <User className="w-4 h-4 text-muted-foreground" />
-                          <div>
-                            <div className="font-medium">{request.employee.name}</div>
-                            <div className="text-sm text-muted-foreground">
+                          <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                          <span className="text-xs md:text-sm font-medium text-foreground truncate max-w-[150px]">
+                            {request.type}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 hidden md:table-cell">
+                        <div className="flex items-center gap-2">
+                          <User className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                          <div className="min-w-0">
+                            <div className="text-xs md:text-sm font-medium text-foreground truncate">
+                              {request.employee.name}
+                            </div>
+                            <div className="text-[10px] md:text-xs text-muted-foreground truncate">
                               {request.employee.employee_id}
                             </div>
                           </div>
                         </div>
                       </td>
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-2">
-                          <FileText className="w-4 h-4 text-muted-foreground" />
-                          <span>{request.type}</span>
+                      <td className="py-3 px-4 hidden lg:table-cell">
+                        <Badge variant="outline" className="text-[10px] md:text-xs">
+                          {request.category}
+                        </Badge>
+                      </td>
+                      <td className="py-3 px-4 hidden md:table-cell">
+                        <div className="flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
+                          <span className="text-xs md:text-sm text-muted-foreground">
+                            {new Date(request.submittedAt).toLocaleDateString('en-US', { 
+                              month: 'short', 
+                              day: 'numeric',
+                              year: 'numeric'
+                            })}
+                          </span>
                         </div>
-                      </td>
-                      <td className="py-3 px-4">
-                        <Badge variant="outline">{request.category}</Badge>
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className="text-sm text-muted-foreground">
-                          {new Date(request.submittedAt).toLocaleDateString()}
-                        </span>
                       </td>
                       <td className="py-3 px-4">
                         {getStatusBadge(request.status)}
                       </td>
                       <td className="py-3 px-4">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
                           <Button
                             size="sm"
                             variant="outline"
                             onClick={() => handleViewRequest(request)}
+                            className="h-7 md:h-8 text-[10px] md:text-xs px-2 md:px-3"
                           >
-                            <Eye className="w-4 h-4 mr-1" />
-                            View
+                            <Eye className="w-3 h-3 md:w-4 md:h-4 md:mr-1" />
+                            <span className="hidden md:inline">View</span>
                           </Button>
                           {(request.status === 'Pending' || request.status === 'In Review') && (
                             <>
@@ -372,17 +392,19 @@ export default function EmployeeRequestsPage() {
                                 size="sm"
                                 variant="default"
                                 onClick={() => handleAction(request, 'approve')}
+                                className="h-7 md:h-8 text-[10px] md:text-xs px-2 md:px-3"
                               >
-                                <CheckCircle className="w-4 h-4 mr-1" />
-                                Approve
+                                <CheckCircle className="w-3 h-3 md:w-4 md:h-4 md:mr-1" />
+                                <span className="hidden md:inline">Approve</span>
                               </Button>
                               <Button
                                 size="sm"
                                 variant="destructive"
                                 onClick={() => handleAction(request, 'reject')}
+                                className="h-7 md:h-8 text-[10px] md:text-xs px-2 md:px-3"
                               >
-                                <XCircle className="w-4 h-4 mr-1" />
-                                Reject
+                                <XCircle className="w-3 h-3 md:w-4 md:h-4 md:mr-1" />
+                                <span className="hidden md:inline">Reject</span>
                               </Button>
                             </>
                           )}
@@ -392,6 +414,7 @@ export default function EmployeeRequestsPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </CardContent>

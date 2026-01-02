@@ -41,12 +41,34 @@ export default function MultiAngleFaceCapture({
   const isLastAngle = isVerification || currentAngleIndex === ANGLES.length - 1;
   const allAnglesCaptured = isVerification || capturedAngles.size === ANGLES.length;
 
+  // Debug: Log when cameraReady changes
   useEffect(() => {
+    console.log(`[MultiAngleFaceCapture] cameraReady state changed to: ${cameraReady}`);
+  }, [cameraReady]);
+
+  // Debug: Log when modelsLoading changes and auto-fix if needed
+  useEffect(() => {
+    console.log(`[MultiAngleFaceCapture] modelsLoading state changed to: ${modelsLoading}`);
+    const actuallyLoaded = faceRecognitionService.areModelsLoadedSync();
+    if (modelsLoading && actuallyLoaded) {
+      console.log('[MultiAngleFaceCapture] ⚠️ modelsLoading is true but models are actually loaded! Fixing...');
+      setModelsLoading(false);
+    }
+  }, [modelsLoading]);
+
+  useEffect(() => {
+    console.log('[MultiAngleFaceCapture] Component mounted, initializing...');
     // Load face-api.js models
     loadModels();
     startCamera();
 
     return () => {
+      console.log('[MultiAngleFaceCapture] Component unmounting, cleaning up...');
+      // Clear any model checking intervals
+      if ((window as any).__faceModelCheckInterval) {
+        clearInterval((window as any).__faceModelCheckInterval);
+        (window as any).__faceModelCheckInterval = null;
+      }
       stopCamera();
       if (detectionIntervalRef.current) {
         clearInterval(detectionIntervalRef.current);
@@ -56,7 +78,8 @@ export default function MultiAngleFaceCapture({
 
   useEffect(() => {
     // Restart camera when angle changes
-    if (!isVerification) {
+    if (!isVerification && currentAngleIndex > 0) {
+      console.log(`[MultiAngleFaceCapture] Angle changed to index ${currentAngleIndex}, restarting camera...`);
       stopCamera();
       setTimeout(() => {
         startCamera();
@@ -67,20 +90,79 @@ export default function MultiAngleFaceCapture({
   const loadModels = async () => {
     try {
       setModelsLoading(true);
-      const loaded = await faceRecognitionService.areModelsLoaded();
-      if (!loaded) {
-        toast.warning('Face recognition models are loading. Please wait...');
+      console.log('[MultiAngleFaceCapture] Checking if models are loaded...');
+      
+      // First check synchronously if already loaded
+      if (faceRecognitionService.areModelsLoadedSync()) {
+        console.log('[MultiAngleFaceCapture] Models are already loaded (sync check)');
+        setModelsLoading(false);
+        return;
       }
+      
+      // Trigger model loading (this will load them if not already loading)
+      console.log('[MultiAngleFaceCapture] Models not loaded, triggering load...');
+      
+      // Use a timeout to ensure we don't wait forever
+      const loadPromise = faceRecognitionService.areModelsLoaded();
+      const timeoutPromise = new Promise<boolean>((resolve) => {
+        setTimeout(() => {
+          console.log('[MultiAngleFaceCapture] Model load timeout, will poll instead');
+          resolve(false);
+        }, 5000); // 5 second timeout
+      });
+      
+      const loaded = await Promise.race([loadPromise, timeoutPromise]);
+      console.log(`[MultiAngleFaceCapture] Models loaded check result: ${loaded}`);
+      
+      if (loaded) {
+        console.log('[MultiAngleFaceCapture] ✓ Models loaded successfully!');
+        setModelsLoading(false);
+        return;
+      }
+      
+      console.log('[MultiAngleFaceCapture] Models still loading, polling for completion...');
+      toast.warning('Face recognition models are loading. Please wait...');
+      
+      // Poll for models to be loaded (they're loading in the background)
+      let retryCount = 0;
+      const maxRetries = 60; // 60 * 500ms = 30 seconds max wait
+      
+      const checkModels = setInterval(() => {
+        retryCount++;
+        const isLoaded = faceRecognitionService.areModelsLoadedSync();
+        
+        if (retryCount % 10 === 0 || isLoaded) { // Log every 10th check or when loaded
+          console.log(`[MultiAngleFaceCapture] Model check attempt #${retryCount}: ${isLoaded}`);
+        }
+        
+        if (isLoaded) {
+          console.log('[MultiAngleFaceCapture] ✓ Models loaded successfully!');
+          clearInterval(checkModels);
+          setModelsLoading(false);
+          toast.success('Face recognition models loaded successfully');
+        } else if (retryCount >= maxRetries) {
+          console.error('[MultiAngleFaceCapture] Models failed to load after max retries');
+          clearInterval(checkModels);
+          setModelsLoading(false);
+          toast.error('Failed to load face recognition models. Please refresh the page.');
+        }
+      }, 500); // Check every 500ms
+      
+      // Store interval ref so we can clear it on unmount
+      return () => {
+        clearInterval(checkModels);
+      };
+      
     } catch (error) {
-      console.error('Error loading models:', error);
+      console.error('[MultiAngleFaceCapture] Error loading models:', error);
       toast.error('Failed to load face recognition models');
-    } finally {
       setModelsLoading(false);
     }
   };
 
   const startCamera = async () => {
     try {
+      console.log('[MultiAngleFaceCapture] Requesting camera access...');
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: 'user',
@@ -89,18 +171,98 @@ export default function MultiAngleFaceCapture({
         }
       });
 
+      console.log('[MultiAngleFaceCapture] Camera stream obtained');
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         streamRef.current = stream;
+        console.log('[MultiAngleFaceCapture] Stream assigned to video element');
+
+        // Set up multiple event listeners to catch when video is ready
+        const checkVideoReady = () => {
+          if (videoRef.current) {
+            const width = videoRef.current.videoWidth;
+            const height = videoRef.current.videoHeight;
+            const readyState = videoRef.current.readyState;
+            const paused = videoRef.current.paused;
+            
+            console.log(`[MultiAngleFaceCapture] Video check - width: ${width}, height: ${height}, readyState: ${readyState}, paused: ${paused}`);
+            
+            if (width > 0 && height > 0 && readyState >= 2 && !paused) {
+              console.log('[MultiAngleFaceCapture] ✓ Video is ready! Setting cameraReady to true');
+              setCameraReady(true);
+              // Start detection immediately if not already started
+              if (!detectionIntervalRef.current) {
+                console.log('[MultiAngleFaceCapture] Starting face detection...');
+                startFaceDetection();
+              }
+              return true;
+            }
+          }
+          return false;
+        };
 
         // Wait for video to be ready
         videoRef.current.onloadedmetadata = () => {
-          setCameraReady(true);
-          startFaceDetection();
+          console.log('[MultiAngleFaceCapture] onloadedmetadata event fired');
+          if (videoRef.current) {
+            console.log(`[MultiAngleFaceCapture] Video dimensions: ${videoRef.current.videoWidth}x${videoRef.current.videoHeight}`);
+            if (!checkVideoReady()) {
+              // If not ready yet, try to play
+              videoRef.current.play().then(() => {
+                console.log('[MultiAngleFaceCapture] Video play() promise resolved');
+                setTimeout(() => {
+                  checkVideoReady();
+                }, 100);
+              }).catch((error) => {
+                console.error('[MultiAngleFaceCapture] Error playing video:', error);
+              });
+            }
+          }
         };
+        
+        videoRef.current.oncanplay = () => {
+          console.log('[MultiAngleFaceCapture] oncanplay event fired');
+          checkVideoReady();
+        };
+
+        videoRef.current.oncanplaythrough = () => {
+          console.log('[MultiAngleFaceCapture] oncanplaythrough event fired');
+          checkVideoReady();
+        };
+
+        videoRef.current.onplay = () => {
+          console.log('[MultiAngleFaceCapture] onplay event fired');
+          setTimeout(() => {
+            checkVideoReady();
+          }, 100);
+        };
+
+        videoRef.current.onplaying = () => {
+          console.log('[MultiAngleFaceCapture] onplaying event fired');
+          checkVideoReady();
+        };
+
+        // Also try to play immediately and check periodically
+        if (videoRef.current.readyState >= 2) {
+          console.log('[MultiAngleFaceCapture] Video already has metadata, attempting to play...');
+          videoRef.current.play().then(() => {
+            setTimeout(() => {
+              checkVideoReady();
+            }, 200);
+          });
+        }
+
+        // Fallback: check periodically if video becomes ready
+        let checkCount = 0;
+        const fallbackCheck = setInterval(() => {
+          checkCount++;
+          if (checkVideoReady() || checkCount > 20) {
+            clearInterval(fallbackCheck);
+          }
+        }, 200);
       }
     } catch (error) {
-      console.error('Error starting camera:', error);
+      console.error('[MultiAngleFaceCapture] Error starting camera:', error);
       toast.error('Failed to access camera. Please check permissions.');
     }
   };
@@ -123,17 +285,90 @@ export default function MultiAngleFaceCapture({
       clearInterval(detectionIntervalRef.current);
     }
 
-    // Check for face every 500ms
+    console.log('[MultiAngleFaceCapture] Starting face detection loop...');
+    let detectionCount = 0;
+
+    // Check for face every 300ms (more frequent for better responsiveness)
     detectionIntervalRef.current = window.setInterval(async () => {
-      if (!videoRef.current || !cameraReady) return;
+      detectionCount++;
+      
+      if (!videoRef.current) {
+        console.log(`[MultiAngleFaceCapture] Detection #${detectionCount}: No video ref`);
+        return;
+      }
+      
+      // Check video state directly and fix cameraReady if needed
+      const videoWidth = videoRef.current.videoWidth;
+      const videoHeight = videoRef.current.videoHeight;
+      const readyState = videoRef.current.readyState;
+      const paused = videoRef.current.paused;
+      
+      // If video is actually ready but cameraReady state is false, update it
+      if (videoWidth > 0 && videoHeight > 0 && readyState >= 2 && !paused && !cameraReady) {
+        console.log(`[MultiAngleFaceCapture] Detection #${detectionCount}: Video is ready but cameraReady is false, fixing state...`);
+        setCameraReady(true);
+      }
+      
+      if (!cameraReady && (videoWidth === 0 || videoHeight === 0 || readyState < 2 || paused)) {
+        if (detectionCount % 10 === 0) { // Log every 10th check to reduce spam
+          console.log(`[MultiAngleFaceCapture] Detection #${detectionCount}: Camera not ready - width: ${videoWidth}, height: ${videoHeight}, readyState: ${readyState}, paused: ${paused}, cameraReady state: ${cameraReady}`);
+        }
+        return;
+      }
+      
+      // Check models loading state - if models are actually loaded, fix the state
+      const modelsActuallyLoaded = faceRecognitionService.areModelsLoadedSync();
+      if (modelsLoading && modelsActuallyLoaded) {
+        console.log(`[MultiAngleFaceCapture] Detection #${detectionCount}: Models are loaded but state says loading, fixing...`);
+        setModelsLoading(false);
+      }
+      
+      if (modelsLoading && !modelsActuallyLoaded) {
+        if (detectionCount % 10 === 0) {
+          console.log(`[MultiAngleFaceCapture] Detection #${detectionCount}: Models still loading (sync check: ${modelsActuallyLoaded})`);
+        }
+        return;
+      }
+
+      // Video state already checked above, use those values
+      // Additional validation
+      if (!videoWidth || !videoHeight) {
+        if (detectionCount % 10 === 0) {
+          console.log(`[MultiAngleFaceCapture] Detection #${detectionCount}: Video has no dimensions (${videoWidth}x${videoHeight})`);
+        }
+        return;
+      }
+
+      if (paused) {
+        if (detectionCount % 10 === 0) {
+          console.log(`[MultiAngleFaceCapture] Detection #${detectionCount}: Video is paused`);
+        }
+        return;
+      }
+
+      if (readyState < 2) {
+        if (detectionCount % 10 === 0) {
+          console.log(`[MultiAngleFaceCapture] Detection #${detectionCount}: Video readyState is ${readyState} (need >= 2)`);
+        }
+        return;
+      }
 
       try {
+        if (detectionCount % 5 === 0) { // Log every 5th detection attempt to reduce spam
+          console.log(`[MultiAngleFaceCapture] Detection #${detectionCount}: Attempting face detection...`);
+        }
         const result = await captureFaceFromVideo(videoRef.current);
-        setFaceDetected(result?.detected || false);
+        const wasDetected = result?.detected || false;
+        if (wasDetected || detectionCount % 5 === 0) { // Always log when detected, or every 5th attempt
+          console.log(`[MultiAngleFaceCapture] Detection #${detectionCount}: Result - detected=${wasDetected}`);
+        }
+        setFaceDetected(wasDetected);
       } catch (error) {
-        // Silently handle detection errors
+        // Log error for debugging but don't show to user
+        console.error(`[MultiAngleFaceCapture] Detection #${detectionCount}: Error:`, error);
+        setFaceDetected(false);
       }
-    }, 500);
+    }, 300);
   };
 
   const captureCurrentAngle = async () => {
@@ -212,8 +447,8 @@ export default function MultiAngleFaceCapture({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-card border border-white/20 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pb-24">
+      <div className="bg-card border border-white/20 rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto flex flex-col">
         {/* Header */}
         <div className="p-6 border-b border-white/10">
           <div className="flex items-center justify-between">
@@ -301,6 +536,7 @@ export default function MultiAngleFaceCapture({
                   playsInline
                   muted
                   className="w-full h-full object-cover"
+                  style={{ transform: 'scaleX(-1)' }}
                 />
                 
                 {/* Face Detection Indicator */}
@@ -340,7 +576,7 @@ export default function MultiAngleFaceCapture({
         </div>
 
         {/* Actions */}
-        <div className="p-6 border-t border-white/10 flex items-center justify-between gap-4">
+        <div className="p-6 border-t border-white/10 flex items-center justify-between gap-4 mt-auto sticky bottom-0 bg-card z-10">
           <div className="flex gap-2">
             {!isVerification && currentAngleIndex > 0 && (
               <Button variant="outline" onClick={handlePrevious} disabled={isCapturing}>

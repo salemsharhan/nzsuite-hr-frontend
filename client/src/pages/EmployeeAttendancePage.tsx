@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MapPin, Camera, CheckCircle, XCircle, AlertCircle, Loader2, Clock } from 'lucide-react';
+import { MapPin, Camera, CheckCircle, XCircle, AlertCircle, Loader2, Clock, History, Calendar } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, Button, Badge } from '../components/common/UIComponents';
+import Modal from '../components/common/Modal';
 import { attendanceLocationService, AttendanceLocationSettings } from '../services/attendanceLocationService';
 import { faceRecognitionService, captureFaceFromVideo } from '../services/faceRecognitionService';
-import { attendanceService } from '../services/attendanceService';
+import { attendanceService, AttendanceLog } from '../services/attendanceService';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'sonner';
+import { StatusBadge } from '../components/common/StatusBadge';
+import { StatusBadge } from '../components/common/StatusBadge';
 
 export default function EmployeeAttendancePage() {
   const { t } = useTranslation();
@@ -20,6 +23,10 @@ export default function EmployeeAttendancePage() {
   const [isCapturing, setIsCapturing] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [punchType, setPunchType] = useState<'check_in' | 'check_out' | null>(null);
+  const [isFaceCaptureModalOpen, setIsFaceCaptureModalOpen] = useState<boolean>(false);
+  const [isAttendanceLogModalOpen, setIsAttendanceLogModalOpen] = useState<boolean>(false);
+  const [attendanceLogs, setAttendanceLogs] = useState<AttendanceLog[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState<boolean>(false);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -36,6 +43,16 @@ export default function EmployeeAttendancePage() {
       }
     };
   }, [user?.company_id]);
+
+  useEffect(() => {
+    // Start camera when face capture modal opens
+    if (isFaceCaptureModalOpen) {
+      startCamera();
+    } else {
+      // Stop camera when modal closes
+      stopCamera();
+    }
+  }, [isFaceCaptureModalOpen]);
 
   const loadLocationSettings = async () => {
     if (!user?.company_id) return;
@@ -172,6 +189,7 @@ export default function EmployeeAttendancePage() {
     } catch (error: any) {
       console.error('Error accessing camera:', error);
       toast.error('Failed to access camera. Please allow camera permissions.');
+      setIsFaceCaptureModalOpen(false);
     }
   };
 
@@ -205,7 +223,7 @@ export default function EmployeeAttendancePage() {
 
         setHasFaceImage(true);
         toast.success('Face image saved successfully!');
-        stopCamera();
+        setIsFaceCaptureModalOpen(false);
         return;
       }
 
@@ -225,7 +243,7 @@ export default function EmployeeAttendancePage() {
 
       if (verification.verified) {
         toast.success(`Face verified! Confidence: ${verification.confidence.toFixed(1)}%`);
-        stopCamera();
+        setIsFaceCaptureModalOpen(false);
       } else {
         toast.error(`Face verification failed. Confidence: ${verification.confidence.toFixed(1)}%`);
       }
@@ -235,6 +253,25 @@ export default function EmployeeAttendancePage() {
     } finally {
       setIsCapturing(false);
     }
+  };
+
+  const loadAttendanceLogs = async () => {
+    if (!user?.employee_id) return;
+    try {
+      setLoadingLogs(true);
+      const logs = await attendanceService.getByEmployee(user.employee_id);
+      setAttendanceLogs(logs);
+    } catch (error) {
+      console.error('Error loading attendance logs:', error);
+      toast.error('Failed to load attendance logs');
+    } finally {
+      setLoadingLogs(false);
+    }
+  };
+
+  const openAttendanceLogs = () => {
+    setIsAttendanceLogModalOpen(true);
+    loadAttendanceLogs();
   };
 
   const submitAttendance = async (type: 'check_in' | 'check_out') => {
@@ -424,63 +461,15 @@ export default function EmployeeAttendancePage() {
                   </div>
                 )}
 
-                {/* Video Preview */}
-                {videoRef.current?.srcObject && (
-                  <div className="relative">
-                    <video
-                      ref={videoRef}
-                      autoPlay
-                      playsInline
-                      muted
-                      className="w-full rounded-lg border border-white/10"
-                      style={{ maxHeight: '300px', objectFit: 'cover' }}
-                    />
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <div className="border-2 border-primary rounded-lg" style={{ width: '200px', height: '250px' }} />
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex gap-2">
-                  {!videoRef.current?.srcObject ? (
-                    <Button
-                      onClick={startCamera}
-                      variant="outline"
-                      className="flex-1"
-                      disabled={isSubmitting}
-                    >
-                      <Camera size={18} className="mr-2" />
-                      {hasFaceImage ? 'Start Face Verification' : 'Capture Face Image'}
-                    </Button>
-                  ) : (
-                    <>
-                      <Button
-                        onClick={captureFace}
-                        disabled={isCapturing || isSubmitting}
-                        className="flex-1"
-                      >
-                        {isCapturing ? (
-                          <>
-                            <Loader2 size={18} className="mr-2 animate-spin" />
-                            Processing...
-                          </>
-                        ) : (
-                          <>
-                            <Camera size={18} className="mr-2" />
-                            {hasFaceImage ? 'Verify Face' : 'Capture Face'}
-                          </>
-                        )}
-                      </Button>
-                      <Button
-                        onClick={stopCamera}
-                        variant="outline"
-                        disabled={isSubmitting}
-                      >
-                        Stop
-                      </Button>
-                    </>
-                  )}
-                </div>
+                <Button
+                  onClick={() => setIsFaceCaptureModalOpen(true)}
+                  variant="outline"
+                  className="w-full"
+                  disabled={isSubmitting}
+                >
+                  <Camera size={18} className="mr-2" />
+                  {hasFaceImage ? 'Verify Face' : 'Capture Face Image'}
+                </Button>
               </div>
             )}
 
@@ -524,10 +513,171 @@ export default function EmployeeAttendancePage() {
                   </>
                 )}
               </Button>
+
+              <Button
+                onClick={openAttendanceLogs}
+                variant="outline"
+                className="w-full"
+              >
+                <History size={18} className="mr-2" />
+                View Attendance History
+              </Button>
             </div>
           </div>
         </CardContent>
       </Card>
+
+      {/* Face Capture Modal */}
+      <Modal
+        isOpen={isFaceCaptureModalOpen}
+        onClose={() => {
+          setIsFaceCaptureModalOpen(false);
+          stopCamera();
+        }}
+        title={hasFaceImage ? 'Face Verification' : 'Capture Face Image'}
+        size="lg"
+      >
+        <div className="space-y-4">
+          <div className="relative bg-black rounded-lg overflow-hidden">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full"
+              style={{ maxHeight: '500px', objectFit: 'contain' }}
+            />
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="border-2 border-primary rounded-lg" style={{ width: '250px', height: '300px' }} />
+            </div>
+          </div>
+
+          <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
+            <p className="text-sm text-blue-400">
+              {hasFaceImage 
+                ? 'Position your face within the frame and click "Verify Face" to confirm your identity.'
+                : 'Position your face within the frame. This will be saved for future attendance verification.'}
+            </p>
+          </div>
+
+          <div className="flex gap-3">
+            <Button
+              onClick={captureFace}
+              disabled={isCapturing || !videoRef.current?.srcObject}
+              className="flex-1"
+            >
+              {isCapturing ? (
+                <>
+                  <Loader2 size={18} className="mr-2 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <Camera size={18} className="mr-2" />
+                  {hasFaceImage ? 'Verify Face' : 'Capture Face'}
+                </>
+              )}
+            </Button>
+            <Button
+              onClick={() => {
+                setIsFaceCaptureModalOpen(false);
+                stopCamera();
+              }}
+              variant="outline"
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Attendance Logs Modal */}
+      <Modal
+        isOpen={isAttendanceLogModalOpen}
+        onClose={() => setIsAttendanceLogModalOpen(false)}
+        title="Attendance History"
+        size="xl"
+      >
+        <div className="space-y-4">
+          {loadingLogs ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 size={32} className="animate-spin text-primary" />
+            </div>
+          ) : attendanceLogs.length === 0 ? (
+            <div className="text-center py-12">
+              <Calendar className="mx-auto mb-4 text-muted-foreground" size={48} />
+              <p className="text-muted-foreground">No attendance records found</p>
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+              {attendanceLogs.map((log) => (
+                <Card key={log.id} className="border-white/10">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <Calendar size={16} className="text-muted-foreground" />
+                          <span className="font-semibold">
+                            {new Date(log.date).toLocaleDateString('en-US', {
+                              weekday: 'long',
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric'
+                            })}
+                          </span>
+                        </div>
+                        <StatusBadge status={log.status} />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 mt-4">
+                      {log.check_in && (
+                        <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                          <div className="text-xs text-muted-foreground mb-1">Check In</div>
+                          <div className="font-semibold text-green-400">
+                            {new Date(log.check_in).toLocaleTimeString('en-US', {
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      {log.check_out && (
+                        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                          <div className="text-xs text-muted-foreground mb-1">Check Out</div>
+                          <div className="font-semibold text-red-400">
+                            {new Date(log.check_out).toLocaleTimeString('en-US', {
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {(log.late_minutes > 0 || log.overtime_minutes > 0) && (
+                      <div className="flex gap-4 mt-3 pt-3 border-t border-white/10">
+                        {log.late_minutes > 0 && (
+                          <div className="text-sm">
+                            <span className="text-muted-foreground">Late: </span>
+                            <span className="font-semibold text-orange-400">{log.late_minutes} min</span>
+                          </div>
+                        )}
+                        {log.overtime_minutes > 0 && (
+                          <div className="text-sm">
+                            <span className="text-muted-foreground">Overtime: </span>
+                            <span className="font-semibold text-blue-400">{log.overtime_minutes} min</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }

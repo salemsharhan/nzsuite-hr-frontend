@@ -198,10 +198,9 @@ export const webauthnService = {
   async saveCredential(
     employeeId: string,
     credential: PublicKeyCredential,
-    deviceName: string,
-    challenge: string
+    deviceName: string
   ): Promise<WebAuthnCredential> {
-    const response = credential.response as AuthenticatorAttestationResponse;
+    const response = (credential.response as any) as AuthenticatorAttestationResponse;
 
     // Extract credential data
     const credentialId = arrayBufferToBase64(credential.rawId);
@@ -210,6 +209,7 @@ export const webauthnService = {
     const attestationObject = arrayBufferToBase64(response.attestationObject);
 
     // Send to server
+    // Note: Challenge verification should be done server-side before saving
     const result = await adminApi.post<WebAuthnCredential>('/webauthn_credentials', {
       employee_id: employeeId,
       credential_id: credentialId,
@@ -217,7 +217,6 @@ export const webauthnService = {
       client_data_json: clientDataJSON,
       attestation_object: attestationObject,
       device_name: deviceName,
-      challenge: challenge, // Server will verify this
       counter: 0,
     });
 

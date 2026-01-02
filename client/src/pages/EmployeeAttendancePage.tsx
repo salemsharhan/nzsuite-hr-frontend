@@ -221,8 +221,7 @@ export default function EmployeeAttendancePage() {
       await webauthnService.saveCredential(
         user.employee_id,
         credential,
-        deviceName,
-        '' // Challenge will be handled by server
+        deviceName
       );
 
       toast.success('Device registered successfully! You can now use Face ID/Touch ID for attendance.');

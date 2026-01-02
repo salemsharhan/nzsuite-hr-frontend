@@ -26,7 +26,13 @@ import { departmentService, Department } from '../services/departmentService';
 import { roleService, Role } from '../services/roleService';
 import { jobService, Job } from '../services/jobService';
 import { companySettingsService, EmployeeShift } from '../services/companySettingsService';
+import { employeeEducationService, EmployeeEducation } from '../services/employeeEducationService';
+import { employeeBankDetailsService } from '../services/employeeBankDetailsService';
 import { useAuth } from '../contexts/AuthContext';
+import { Textarea } from '../components/ui/textarea';
+import { Label } from '../components/ui/label';
+import { GraduationCap, CreditCard } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function EmployeeListPage() {
   const { t } = useTranslation();
@@ -112,6 +118,32 @@ export default function EmployeeListPage() {
     
     // Legacy field (kept for backward compatibility)
     flexible_hours: false
+  });
+
+  // Education records state (array of education entries)
+  const [educationRecords, setEducationRecords] = useState<Array<{
+    institution_name: string;
+    place_of_graduation: string;
+    graduation_year: number;
+    degree_type: string;
+    field_of_study: string;
+    grade_or_gpa: string;
+    is_primary: boolean;
+    notes: string;
+  }>>([]);
+
+  // Bank details state
+  const [bankDetails, setBankDetails] = useState({
+    bank_name: '',
+    account_number: '',
+    account_holder_name: '',
+    branch_name: '',
+    branch_code: '',
+    iban: '',
+    swift_code: '',
+    account_type: '',
+    currency: 'USD',
+    notes: ''
   });
   
   // Calculate total salary (base + allowances)
@@ -358,6 +390,73 @@ export default function EmployeeListPage() {
 
     setShifts(loadedShifts);
 
+    // Load education records
+    if (employee.id) {
+      try {
+        const educationData = await employeeEducationService.getByEmployee(employee.id);
+        setEducationRecords(educationData.map(edu => ({
+          institution_name: edu.institution_name,
+          place_of_graduation: edu.place_of_graduation,
+          graduation_year: edu.graduation_year,
+          degree_type: edu.degree_type || '',
+          field_of_study: edu.field_of_study || '',
+          grade_or_gpa: edu.grade_or_gpa || '',
+          is_primary: edu.is_primary || false,
+          notes: edu.notes || ''
+        })));
+      } catch (error) {
+        console.error('Failed to load education records:', error);
+        setEducationRecords([]);
+      }
+
+      // Load bank details
+      try {
+        const bankData = await employeeBankDetailsService.getByEmployee(employee.id);
+        if (bankData) {
+          setBankDetails({
+            bank_name: bankData.bank_name || '',
+            account_number: bankData.account_number || '',
+            account_holder_name: bankData.account_holder_name || '',
+            branch_name: bankData.branch_name || '',
+            branch_code: bankData.branch_code || '',
+            iban: bankData.iban || '',
+            swift_code: bankData.swift_code || '',
+            account_type: bankData.account_type || '',
+            currency: bankData.currency || 'USD',
+            notes: bankData.notes || ''
+          });
+        } else {
+          // Reset to default if no bank details
+          setBankDetails({
+            bank_name: '',
+            account_number: '',
+            account_holder_name: employee.first_name + ' ' + employee.last_name || '',
+            branch_name: '',
+            branch_code: '',
+            iban: '',
+            swift_code: '',
+            account_type: '',
+            currency: 'USD',
+            notes: ''
+          });
+        }
+      } catch (error) {
+        console.error('Failed to load bank details:', error);
+        setBankDetails({
+          bank_name: '',
+          account_number: '',
+          account_holder_name: employee.first_name + ' ' + employee.last_name || '',
+          branch_name: '',
+          branch_code: '',
+          iban: '',
+          swift_code: '',
+          account_type: '',
+          currency: 'USD',
+          notes: ''
+        });
+      }
+    }
+
     // Populate form with employee data
     setNewEmployee({
       first_name: employee.first_name || employee.firstName || '',
@@ -517,6 +616,62 @@ export default function EmployeeListPage() {
           // Don't fail the entire operation if shifts save fails
         }
       }
+
+      // Save education records
+      if (employeeId) {
+        try {
+          // If editing, delete existing education records first
+          if (editingEmployee) {
+            const existingEducation = await employeeEducationService.getByEmployee(employeeId);
+            for (const edu of existingEducation) {
+              await employeeEducationService.delete(edu.id);
+            }
+          }
+
+          // Create new education records
+          for (const edu of educationRecords) {
+            if (edu.institution_name && edu.place_of_graduation && edu.graduation_year) {
+              await employeeEducationService.create({
+                employee_id: employeeId,
+                institution_name: edu.institution_name,
+                place_of_graduation: edu.place_of_graduation,
+                graduation_year: edu.graduation_year,
+                degree_type: edu.degree_type || undefined,
+                field_of_study: edu.field_of_study || undefined,
+                grade_or_gpa: edu.grade_or_gpa || undefined,
+                is_primary: edu.is_primary,
+                notes: edu.notes || undefined
+              });
+            }
+          }
+        } catch (error) {
+          console.error('Failed to save education records:', error);
+          toast.error(editingEmployee ? 'Employee updated but failed to save some education records' : 'Employee created but failed to save some education records');
+        }
+      }
+
+      // Save bank details
+      if (bankDetails.bank_name && bankDetails.account_number && bankDetails.account_holder_name && employeeId) {
+        try {
+          await employeeBankDetailsService.upsert({
+            employee_id: employeeId,
+            bank_name: bankDetails.bank_name,
+            account_number: bankDetails.account_number,
+            account_holder_name: bankDetails.account_holder_name,
+            branch_name: bankDetails.branch_name || undefined,
+            branch_code: bankDetails.branch_code || undefined,
+            iban: bankDetails.iban || undefined,
+            swift_code: bankDetails.swift_code || undefined,
+            account_type: bankDetails.account_type || undefined,
+            currency: bankDetails.currency || 'USD',
+            is_primary: true,
+            notes: bankDetails.notes || undefined
+          });
+        } catch (error) {
+          console.error('Failed to save bank details:', error);
+          toast.error('Employee created but failed to save bank details');
+        }
+      }
       
       setIsModalOpen(false);
       setActiveTab('basic'); // Reset to first tab
@@ -556,6 +711,20 @@ export default function EmployeeListPage() {
         reporting_manager_id: '',
         notes: '',
         flexible_hours: false
+      });
+      // Reset education and bank details
+      setEducationRecords([]);
+      setBankDetails({
+        bank_name: '',
+        account_number: '',
+        account_holder_name: '',
+        branch_name: '',
+        branch_code: '',
+        iban: '',
+        swift_code: '',
+        account_type: '',
+        currency: 'USD',
+        notes: ''
       });
       // Reset shifts
       setShifts({
@@ -609,10 +778,24 @@ export default function EmployeeListPage() {
         setIsModalOpen(false);
         setActiveTab('basic'); // Reset to first tab when closing
         setEditingEmployee(null); // Clear editing state
+        // Reset education and bank details
+        setEducationRecords([]);
+        setBankDetails({
+          bank_name: '',
+          account_number: '',
+          account_holder_name: '',
+          branch_name: '',
+          branch_code: '',
+          iban: '',
+          swift_code: '',
+          account_type: '',
+          currency: 'USD',
+          notes: ''
+        });
       }} title={editingEmployee ? (t('employees.editEmployee') || 'Edit Employee') : t('employees.addEmployee')} size="2xl">
         <form onSubmit={handleAddEmployee} className="space-y-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-5 bg-white/5 p-1 rounded-lg h-11">
+            <TabsList className="grid w-full grid-cols-7 bg-white/5 p-1 rounded-lg h-11">
               <TabsTrigger 
                 value="basic" 
                 className="data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-sm transition-all text-xs"
@@ -642,6 +825,18 @@ export default function EmployeeListPage() {
                 className="data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-sm transition-all text-xs"
               >
                 {t('employees.workingHours')}
+              </TabsTrigger>
+              <TabsTrigger 
+                value="education"
+                className="data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-sm transition-all text-xs"
+              >
+                Education
+              </TabsTrigger>
+              <TabsTrigger 
+                value="bank"
+                className="data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-sm transition-all text-xs"
+              >
+                Bank Details
               </TabsTrigger>
             </TabsList>
 
@@ -1303,6 +1498,314 @@ export default function EmployeeListPage() {
                 </div>
               </div>
             </TabsContent>
+
+            {/* Education Tab */}
+            <TabsContent value="education" className="mt-6 space-y-5">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <GraduationCap size={20} /> Education
+                  </h3>
+                  <p className="text-sm text-muted-foreground mt-1">Add education records (schooling, higher studies, etc.)</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setEducationRecords([...educationRecords, {
+                      institution_name: '',
+                      place_of_graduation: '',
+                      graduation_year: new Date().getFullYear(),
+                      degree_type: '',
+                      field_of_study: '',
+                      grade_or_gpa: '',
+                      is_primary: false,
+                      notes: ''
+                    }]);
+                  }}
+                  className="gap-2"
+                >
+                  <Plus size={16} /> Add Education
+                </Button>
+              </div>
+
+              {educationRecords.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <GraduationCap size={48} className="mx-auto mb-4 opacity-50" />
+                  <p>No education records added. Click "Add Education" to add one.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {educationRecords.map((edu, index) => (
+                    <Card key={index} className="bg-white/5 border-white/10">
+                      <CardContent className="p-4">
+                        <div className="flex justify-between items-start mb-4">
+                          <h4 className="font-semibold">Education #{index + 1}</h4>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              setEducationRecords(educationRecords.filter((_, i) => i !== index));
+                            }}
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                          >
+                            <X size={16} />
+                          </Button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Institution Name *</Label>
+                            <Input
+                              value={edu.institution_name}
+                              onChange={(e) => {
+                                const updated = [...educationRecords];
+                                updated[index].institution_name = e.target.value;
+                                setEducationRecords(updated);
+                              }}
+                              placeholder="University, School, College name"
+                              className="h-10"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Place of Graduation *</Label>
+                            <Input
+                              value={edu.place_of_graduation}
+                              onChange={(e) => {
+                                const updated = [...educationRecords];
+                                updated[index].place_of_graduation = e.target.value;
+                                setEducationRecords(updated);
+                              }}
+                              placeholder="City, Country"
+                              className="h-10"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Graduation Year *</Label>
+                            <Input
+                              type="number"
+                              value={edu.graduation_year}
+                              onChange={(e) => {
+                                const updated = [...educationRecords];
+                                updated[index].graduation_year = parseInt(e.target.value) || new Date().getFullYear();
+                                setEducationRecords(updated);
+                              }}
+                              min="1900"
+                              max={new Date().getFullYear() + 10}
+                              className="h-10"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Degree Type</Label>
+                            <Select
+                              value={edu.degree_type}
+                              onValueChange={(value) => {
+                                const updated = [...educationRecords];
+                                updated[index].degree_type = value;
+                                setEducationRecords(updated);
+                              }}
+                            >
+                              <SelectTrigger className="h-10">
+                                <SelectValue placeholder="Select degree type" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="High School">High School</SelectItem>
+                                <SelectItem value="Diploma">Diploma</SelectItem>
+                                <SelectItem value="Bachelor">Bachelor</SelectItem>
+                                <SelectItem value="Master">Master</SelectItem>
+                                <SelectItem value="PhD">PhD</SelectItem>
+                                <SelectItem value="Certificate">Certificate</SelectItem>
+                                <SelectItem value="Other">Other</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Field of Study</Label>
+                            <Input
+                              value={edu.field_of_study}
+                              onChange={(e) => {
+                                const updated = [...educationRecords];
+                                updated[index].field_of_study = e.target.value;
+                                setEducationRecords(updated);
+                              }}
+                              placeholder="e.g., Computer Science"
+                              className="h-10"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Grade/GPA</Label>
+                            <Input
+                              value={edu.grade_or_gpa}
+                              onChange={(e) => {
+                                const updated = [...educationRecords];
+                                updated[index].grade_or_gpa = e.target.value;
+                                setEducationRecords(updated);
+                              }}
+                              placeholder="e.g., 3.8, A+, 85%"
+                              className="h-10"
+                            />
+                          </div>
+                          <div className="col-span-2 flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              id={`is_primary_${index}`}
+                              checked={edu.is_primary}
+                              onChange={(e) => {
+                                const updated = [...educationRecords];
+                                updated[index].is_primary = e.target.checked;
+                                // If this is marked as primary, unmark others
+                                if (e.target.checked) {
+                                  updated.forEach((ed, i) => {
+                                    if (i !== index) updated[i].is_primary = false;
+                                  });
+                                }
+                                setEducationRecords(updated);
+                              }}
+                              className="w-4 h-4"
+                            />
+                            <Label htmlFor={`is_primary_${index}`} className="cursor-pointer">Mark as primary qualification</Label>
+                          </div>
+                          <div className="col-span-2 space-y-2">
+                            <Label>Notes</Label>
+                            <Textarea
+                              value={edu.notes}
+                              onChange={(e) => {
+                                const updated = [...educationRecords];
+                                updated[index].notes = e.target.value;
+                                setEducationRecords(updated);
+                              }}
+                              placeholder="Additional notes"
+                              rows={2}
+                            />
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            {/* Bank Details Tab */}
+            <TabsContent value="bank" className="mt-6 space-y-5">
+              <div className="mb-4">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <CreditCard size={20} /> Bank Details
+                </h3>
+                <p className="text-sm text-muted-foreground mt-1">Bank account information for payroll</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Bank Name *</Label>
+                  <Input
+                    value={bankDetails.bank_name}
+                    onChange={(e) => setBankDetails({ ...bankDetails, bank_name: e.target.value })}
+                    placeholder="Bank name"
+                    className="h-10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Account Number *</Label>
+                  <Input
+                    value={bankDetails.account_number}
+                    onChange={(e) => setBankDetails({ ...bankDetails, account_number: e.target.value })}
+                    placeholder="Account number"
+                    className="h-10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Account Holder Name *</Label>
+                  <Input
+                    value={bankDetails.account_holder_name}
+                    onChange={(e) => setBankDetails({ ...bankDetails, account_holder_name: e.target.value })}
+                    placeholder="Name on account"
+                    className="h-10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Branch Name</Label>
+                  <Input
+                    value={bankDetails.branch_name}
+                    onChange={(e) => setBankDetails({ ...bankDetails, branch_name: e.target.value })}
+                    placeholder="Branch name"
+                    className="h-10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Branch Code</Label>
+                  <Input
+                    value={bankDetails.branch_code}
+                    onChange={(e) => setBankDetails({ ...bankDetails, branch_code: e.target.value })}
+                    placeholder="Branch code"
+                    className="h-10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>IBAN</Label>
+                  <Input
+                    value={bankDetails.iban}
+                    onChange={(e) => setBankDetails({ ...bankDetails, iban: e.target.value })}
+                    placeholder="International Bank Account Number"
+                    className="h-10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>SWIFT Code</Label>
+                  <Input
+                    value={bankDetails.swift_code}
+                    onChange={(e) => setBankDetails({ ...bankDetails, swift_code: e.target.value })}
+                    placeholder="SWIFT/BIC code"
+                    className="h-10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Account Type</Label>
+                  <Select
+                    value={bankDetails.account_type}
+                    onValueChange={(value) => setBankDetails({ ...bankDetails, account_type: value })}
+                  >
+                    <SelectTrigger className="h-10">
+                      <SelectValue placeholder="Select account type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Savings">Savings</SelectItem>
+                      <SelectItem value="Current">Current</SelectItem>
+                      <SelectItem value="Checking">Checking</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Currency</Label>
+                  <Select
+                    value={bankDetails.currency}
+                    onValueChange={(value) => setBankDetails({ ...bankDetails, currency: value })}
+                  >
+                    <SelectTrigger className="h-10">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="USD">USD</SelectItem>
+                      <SelectItem value="EUR">EUR</SelectItem>
+                      <SelectItem value="GBP">GBP</SelectItem>
+                      <SelectItem value="KWD">KWD</SelectItem>
+                      <SelectItem value="SAR">SAR</SelectItem>
+                      <SelectItem value="AED">AED</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="col-span-2 space-y-2">
+                  <Label>Notes</Label>
+                  <Textarea
+                    value={bankDetails.notes}
+                    onChange={(e) => setBankDetails({ ...bankDetails, notes: e.target.value })}
+                    placeholder="Additional notes"
+                    rows={3}
+                  />
+                </div>
+              </div>
+            </TabsContent>
           </Tabs>
 
           <div className="pt-6 mt-6 flex justify-end gap-3 border-t border-white/10">
@@ -1310,6 +1813,20 @@ export default function EmployeeListPage() {
               setIsModalOpen(false);
               setActiveTab('basic'); // Reset to first tab
               setEditingEmployee(null); // Clear editing state
+              // Reset education and bank details
+              setEducationRecords([]);
+              setBankDetails({
+                bank_name: '',
+                account_number: '',
+                account_holder_name: '',
+                branch_name: '',
+                branch_code: '',
+                iban: '',
+                swift_code: '',
+                account_type: '',
+                currency: 'USD',
+                notes: ''
+              });
             }} className="min-w-[100px]">
               {t('common.cancel')}
             </Button>

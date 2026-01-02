@@ -22,3 +22,4 @@ COMMENT ON COLUMN employees.meal_allowance IS 'Meal allowance amount';
 COMMENT ON COLUMN employees.medical_allowance IS 'Medical allowance amount';
 COMMENT ON COLUMN employees.other_allowances IS 'Other miscellaneous allowances';
 
+

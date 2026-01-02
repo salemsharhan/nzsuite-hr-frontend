@@ -75,6 +75,7 @@ export const Sidebar = ({ collapsed, setCollapsed, mobileOpen, setMobileOpen }: 
     { icon: FileText, label: t('common.documents'), href: '/documents', roles: ['super_admin', 'admin', 'employee'] },
     { icon: FileText, label: 'Document Requests', href: '/document-requests', roles: ['super_admin', 'admin'] },
     { icon: FileText, label: 'Employee Requests', href: '/employee-requests', roles: ['super_admin', 'admin'] },
+    { icon: Globe, label: 'Immigration Management', href: '/immigration', roles: ['super_admin', 'admin'] },
     { icon: BarChart3, label: t('common.analytics'), href: '/analytics', roles: ['super_admin', 'admin'] },
     { icon: ShieldCheck, label: t('common.admin'), href: '/admin', roles: ['super_admin', 'admin'] },
     { icon: Settings, label: t('common.settings'), href: '/settings', roles: ['super_admin', 'admin'] },

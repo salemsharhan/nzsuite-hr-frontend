@@ -259,3 +259,4 @@ A default company is automatically created for existing employees:
 For API integration support, refer to `API_INTEGRATION_GUIDE.md` for detailed documentation and examples.
 
 
+

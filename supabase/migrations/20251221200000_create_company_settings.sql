@@ -282,3 +282,4 @@ WHERE id NOT IN (SELECT company_id FROM company_settings)
 ON CONFLICT (company_id) DO NOTHING;
 
 
+

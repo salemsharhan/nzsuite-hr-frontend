@@ -107,3 +107,4 @@ After applying the migration, verify the table exists:
    - created_at (timestamptz)
    - updated_at (timestamptz)
 
+

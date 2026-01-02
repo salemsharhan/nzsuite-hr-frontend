@@ -45,3 +45,4 @@ CREATE POLICY "documents_service_role" ON documents
   USING (true)
   WITH CHECK (true);
 
+

@@ -17,3 +17,4 @@ ALTER TABLE documents ALTER COLUMN uploaded_by DROP NOT NULL;
 
 COMMENT ON COLUMN documents.uploaded_by IS 'UUID of the user who uploaded the document (from auth.users, not employees)';
 
+

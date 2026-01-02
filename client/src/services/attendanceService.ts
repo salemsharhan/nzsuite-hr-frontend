@@ -919,8 +919,20 @@ export const attendanceService = {
 
   /**
    * Create a manual punch (still uses attendance_logs table for manual entries)
+   * Now supports geo-location and face verification
    */
-  async createPunch(log: Partial<AttendanceLog>) {
+  async createPunch(log: Partial<AttendanceLog> & {
+    latitude?: number;
+    longitude?: number;
+    location_verified?: boolean;
+    distance_from_location_meters?: number;
+    face_verified?: boolean;
+    face_image_url?: string;
+    face_match_confidence?: number;
+    verification_method?: string;
+    device_info?: string;
+    ip_address?: string;
+  }) {
     try {
       const response = await adminApi.post('/attendance_logs', log);
       if (response.data && response.data.length > 0) {

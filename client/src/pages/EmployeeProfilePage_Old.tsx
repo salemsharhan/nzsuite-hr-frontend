@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useRoute } from 'wouter';
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { User, FileText, Clock, DollarSign, Shield, ArrowLeft, Upload, Download, MapPin, Phone, Mail, Calendar, Briefcase, Building2, X, Trash2, GraduationCap, CreditCard, Plus, Edit2, Globe, FileCheck, AlertCircle } from 'lucide-react';
+import { User, FileText, Clock, DollarSign, Shield, MapPin, Phone, Mail, Calendar, Briefcase, Building2, GraduationCap, CreditCard, Globe, FileCheck, AlertCircle, Download } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, Button, Badge, Tabs, TabsList, TabsTrigger, TabsContent } from '../components/common/UIComponents';
 import { employeeService, Employee } from '../services/employeeService';
 import { documentService, Document } from '../services/documentService';
@@ -14,97 +13,43 @@ import { documentRequestService, DocumentRequest } from '../services/documentReq
 import { leaveService, LeaveRequest } from '../services/leaveService';
 import { companySettingsService, EmployeeShift, EmployeeWorkingHours } from '../services/companySettingsService';
 import { useAuth } from '../contexts/AuthContext';
-import Modal from '../components/common/Modal';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Input } from '../components/ui/input';
-import { Label } from '../components/ui/label';
-import { Textarea } from '../components/ui/textarea';
-import { toast } from 'sonner';
 import { StatusBadge } from '../components/common/StatusBadge';
-import { Calendar as CalendarIcon, FileText as FileTextIcon, Clock as ClockIcon } from 'lucide-react';
+import { Calendar as CalendarIcon, FileText as FileTextIcon, ChevronDown, ChevronUp } from 'lucide-react';
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '../components/ui/accordion';
 
-export default function EmployeeDetailPage() {
+export default function EmployeeProfilePage() {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const [match, params] = useRoute('/employees/:id');
   const [employee, setEmployee] = useState<Employee | null>(null);
-  const [activeTab, setActiveTab] = useState('personal');
   const [loading, setLoading] = useState(true);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [documentsLoading, setDocumentsLoading] = useState(false);
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<string>('General');
   const [educationRecords, setEducationRecords] = useState<EmployeeEducation[]>([]);
   const [bankDetails, setBankDetails] = useState<EmployeeBankDetails | null>(null);
   const [immigration, setImmigration] = useState<EmployeeImmigration | null>(null);
-  const [isImmigrationModalOpen, setIsImmigrationModalOpen] = useState(false);
-  const [isRenewalModalOpen, setIsRenewalModalOpen] = useState(false);
-  const [immigrationForm, setImmigrationForm] = useState<Partial<EmployeeImmigration>>({});
-  const [renewalType, setRenewalType] = useState<'work_permit' | 'residence_permit' | 'health_insurance' | 'passport' | 'civil_id'>('work_permit');
   const [leaveBalance, setLeaveBalance] = useState<LeaveBalance | null>(null);
   const [employeeRequests, setEmployeeRequests] = useState<EmployeeRequest[]>([]);
   const [documentRequests, setDocumentRequests] = useState<DocumentRequest[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [employeeShifts, setEmployeeShifts] = useState<EmployeeShift[]>([]);
   const [workingHours, setWorkingHours] = useState<EmployeeWorkingHours | null>(null);
-  const [isEducationModalOpen, setIsEducationModalOpen] = useState(false);
-  const [isBankModalOpen, setIsBankModalOpen] = useState(false);
-  const [editingEducation, setEditingEducation] = useState<EmployeeEducation | null>(null);
-  const [educationForm, setEducationForm] = useState({
-    institution_name: '',
-    place_of_graduation: '',
-    graduation_year: new Date().getFullYear(),
-    degree_type: '',
-    field_of_study: '',
-    grade_or_gpa: '',
-    is_primary: false,
-    notes: ''
-  });
-  const [bankForm, setBankForm] = useState({
-    bank_name: '',
-    account_number: '',
-    account_holder_name: '',
-    branch_name: '',
-    branch_code: '',
-    iban: '',
-    swift_code: '',
-    account_type: '',
-    currency: 'USD',
-    notes: ''
-  });
 
   useEffect(() => {
-    if (params?.id) {
-      loadEmployee(params.id);
-    }
-  }, [params?.id]);
+    loadEmployee();
+  }, []);
 
   useEffect(() => {
-    if (employee?.id && activeTab === 'documents') {
+    if (employee?.id) {
+      // Load all data when employee is available
       loadDocuments();
-    }
-    if (employee?.id && activeTab === 'education') {
       loadEducation();
-    }
-    if (employee?.id && activeTab === 'bank') {
       loadBankDetails();
-    }
-    if (employee?.id && activeTab === 'immigration') {
       loadImmigration();
-    }
-    if (employee?.id && activeTab === 'leave-balance') {
       loadLeaveBalance();
-    }
-    if (employee?.id && activeTab === 'requests') {
       loadRequests();
-    }
-    if (employee?.id && activeTab === 'working-hours') {
       loadWorkingHours();
     }
-  }, [employee?.id, activeTab]);
+  }, [employee?.id]);
 
   useEffect(() => {
     if (employee?.id && user?.company_id) {
@@ -112,12 +57,27 @@ export default function EmployeeDetailPage() {
     }
   }, [employee?.id, user?.company_id]);
 
-  const loadEmployee = async (id: string) => {
+  const loadEmployee = async () => {
     try {
       setLoading(true);
-      const all = await employeeService.getAll();
-      const found = all.find(e => e.id.toString() === id || (e.employee_id || e.employeeId) === id);
-      if (found) setEmployee(found);
+      // Try to get employee ID from user context or sessionStorage
+      let employeeId: string | null = null;
+      
+      if (user?.employee_id) {
+        employeeId = user.employee_id;
+      } else {
+        const employeeDataStr = sessionStorage.getItem('employee_data');
+        if (employeeDataStr) {
+          const data = JSON.parse(employeeDataStr);
+          employeeId = data.id;
+        }
+      }
+
+      if (employeeId) {
+        const all = await employeeService.getAll();
+        const found = all.find(e => e.id.toString() === employeeId || (e.employee_id || e.employeeId) === employeeId);
+        if (found) setEmployee(found);
+      }
     } catch (error) {
       console.error('Failed to load employee details', error);
     } finally {
@@ -138,88 +98,6 @@ export default function EmployeeDetailPage() {
     }
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setSelectedFile(file);
-    }
-  };
-
-  const handleUpload = async () => {
-    if (!selectedFile || !employee?.id) return;
-    
-    try {
-      setUploading(true);
-      
-      // Upload document (handles storage errors gracefully)
-      await documentService.upload(
-        selectedFile,
-        null, // folderId
-        selectedCategory, // folderName/category
-        employee.id // employeeId
-        // Note: uploadedBy is not passed to avoid foreign key constraint issues
-        // since user?.id is from auth.users, not employees
-      );
-      
-      // Reload documents
-      await loadDocuments();
-      
-      // Reset form
-      setSelectedFile(null);
-      setSelectedCategory('General');
-      setIsUploadModalOpen(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-      
-      // Show success message
-      // Note: Document is saved even if storage bucket doesn't exist
-    } catch (error: any) {
-      // Only show error if it's not a storage bucket error
-      const isStorageError = 
-        error?.message?.includes('Bucket not found') ||
-        error?.statusCode === 404 ||
-        error?.error === 'Bucket not found';
-      
-      if (!isStorageError) {
-        console.error('Failed to upload document', error);
-        alert(t('documents.uploadError') || 'Failed to upload document. Please try again.');
-      } else {
-        // Storage bucket error - document was still saved, just show info
-        console.info('Document saved (storage bucket not configured yet)');
-        // Still reload and close modal since document was saved
-        await loadDocuments();
-        setSelectedFile(null);
-        setSelectedCategory('General');
-        setIsUploadModalOpen(false);
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
-      }
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleDeleteDocument = async (docId: string) => {
-    if (!confirm(t('documents.confirmDelete') || 'Are you sure you want to delete this document?')) {
-      return;
-    }
-    
-    try {
-      await documentService.delete(docId);
-      await loadDocuments();
-    } catch (error) {
-      console.error('Failed to delete document', error);
-      alert(t('documents.deleteError') || 'Failed to delete document. Please try again.');
-    }
-  };
-
-  const handleDownload = (url: string, name: string) => {
-    // Open in new tab for download
-    window.open(url, '_blank');
-  };
-
   const loadEducation = async () => {
     if (!employee?.id) return;
     try {
@@ -227,7 +105,6 @@ export default function EmployeeDetailPage() {
       setEducationRecords(records);
     } catch (error) {
       console.error('Failed to load education records', error);
-      toast.error('Failed to load education records');
     }
   };
 
@@ -236,37 +113,8 @@ export default function EmployeeDetailPage() {
     try {
       const details = await employeeBankDetailsService.getByEmployee(employee.id);
       setBankDetails(details);
-      if (details) {
-        setBankForm({
-          bank_name: details.bank_name || '',
-          account_number: details.account_number || '',
-          account_holder_name: details.account_holder_name || '',
-          branch_name: details.branch_name || '',
-          branch_code: details.branch_code || '',
-          iban: details.iban || '',
-          swift_code: details.swift_code || '',
-          account_type: details.account_type || '',
-          currency: details.currency || 'USD',
-          notes: details.notes || ''
-        });
-      } else {
-        // Reset form if no bank details exist
-        setBankForm({
-          bank_name: '',
-          account_number: '',
-          account_holder_name: employee.first_name + ' ' + employee.last_name || '',
-          branch_name: '',
-          branch_code: '',
-          iban: '',
-          swift_code: '',
-          account_type: '',
-          currency: 'USD',
-          notes: ''
-        });
-      }
     } catch (error) {
       console.error('Failed to load bank details', error);
-      toast.error('Failed to load bank details');
     }
   };
 
@@ -275,212 +123,8 @@ export default function EmployeeDetailPage() {
     try {
       const immigrationData = await employeeImmigrationService.getByEmployee(employee.id);
       setImmigration(immigrationData);
-      if (immigrationData) {
-        setImmigrationForm({
-          work_permit_number: immigrationData.work_permit_number,
-          work_permit_issue_date: immigrationData.work_permit_issue_date,
-          work_permit_expiry_date: immigrationData.work_permit_expiry_date,
-          work_permit_status: immigrationData.work_permit_status,
-          residence_permit_number: immigrationData.residence_permit_number,
-          residence_permit_issue_date: immigrationData.residence_permit_issue_date,
-          residence_permit_expiry_date: immigrationData.residence_permit_expiry_date,
-          residence_permit_status: immigrationData.residence_permit_status,
-          residence_permit_article: immigrationData.residence_permit_article,
-          passport_number: immigrationData.passport_number,
-          passport_issue_date: immigrationData.passport_issue_date,
-          passport_expiry_date: immigrationData.passport_expiry_date,
-          passport_issue_country: immigrationData.passport_issue_country,
-          passport_status: immigrationData.passport_status,
-          health_insurance_number: immigrationData.health_insurance_number,
-          health_insurance_provider: immigrationData.health_insurance_provider,
-          health_insurance_issue_date: immigrationData.health_insurance_issue_date,
-          health_insurance_expiry_date: immigrationData.health_insurance_expiry_date,
-          health_insurance_status: immigrationData.health_insurance_status,
-          civil_id_number: immigrationData.civil_id_number,
-          civil_id_expiry_date: immigrationData.civil_id_expiry_date,
-          civil_id_status: immigrationData.civil_id_status,
-          visa_type: immigrationData.visa_type,
-          sponsor_name: immigrationData.sponsor_name,
-          entry_date: immigrationData.entry_date,
-          notes: immigrationData.notes
-        });
-      }
     } catch (error) {
       console.error('Failed to load immigration data', error);
-      toast.error('Failed to load immigration data');
-    }
-  };
-
-  const handleSaveImmigration = async () => {
-    if (!employee?.id) return;
-
-    try {
-      const renewalInfo = employeeImmigrationService.calculateRenewalInfo(immigrationForm as EmployeeImmigration);
-      
-      await employeeImmigrationService.upsert({
-        employee_id: employee.id,
-        ...immigrationForm,
-        is_expatriate: true,
-        next_renewal_date: renewalInfo.nextRenewalDate || undefined,
-        next_renewal_action: renewalInfo.nextRenewalAction,
-        renewal_priority: renewalInfo.priority,
-        last_renewal_processed_by: user?.employee_id || undefined,
-        last_renewal_processed_date: new Date().toISOString()
-      });
-      toast.success('Immigration record saved successfully');
-      setIsImmigrationModalOpen(false);
-      loadImmigration();
-    } catch (error) {
-      console.error('Failed to save immigration record', error);
-      toast.error('Failed to save immigration record');
-    }
-  };
-
-  const handleYearlyRenewal = async (type: 'work_permit' | 'residence_permit' | 'health_insurance' | 'passport' | 'civil_id') => {
-    if (!immigration || !employee?.id) return;
-
-    try {
-      const today = new Date();
-      const nextYear = new Date(today);
-      nextYear.setFullYear(nextYear.getFullYear() + 1);
-
-      const updates: Partial<EmployeeImmigration> = {
-        last_renewal_processed_by: user?.employee_id || undefined,
-        last_renewal_processed_date: new Date().toISOString()
-      };
-
-      switch (type) {
-        case 'work_permit':
-          updates.work_permit_last_renewed_date = today.toISOString().split('T')[0];
-          updates.work_permit_expiry_date = nextYear.toISOString().split('T')[0];
-          updates.work_permit_status = 'Active';
-          updates.work_permit_next_renewal_date = nextYear.toISOString().split('T')[0];
-          break;
-        case 'residence_permit':
-          updates.residence_permit_last_renewed_date = today.toISOString().split('T')[0];
-          updates.residence_permit_expiry_date = nextYear.toISOString().split('T')[0];
-          updates.residence_permit_status = 'Active';
-          updates.residence_permit_next_renewal_date = nextYear.toISOString().split('T')[0];
-          break;
-        case 'health_insurance':
-          updates.health_insurance_last_renewed_date = today.toISOString().split('T')[0];
-          updates.health_insurance_expiry_date = nextYear.toISOString().split('T')[0];
-          updates.health_insurance_status = 'Active';
-          updates.health_insurance_next_renewal_date = nextYear.toISOString().split('T')[0];
-          break;
-        case 'passport':
-          // Passport renewal might have different validity period
-          updates.passport_status = 'Valid';
-          break;
-        case 'civil_id':
-          updates.civil_id_last_updated_date = today.toISOString().split('T')[0];
-          updates.civil_id_status = 'Valid';
-          break;
-      }
-
-      // Recalculate renewal info
-      const updatedImmigration = { ...immigration, ...updates };
-      const renewalInfo = employeeImmigrationService.calculateRenewalInfo(updatedImmigration as EmployeeImmigration);
-      updates.next_renewal_date = renewalInfo.nextRenewalDate || undefined;
-      updates.next_renewal_action = renewalInfo.nextRenewalAction;
-      updates.renewal_priority = renewalInfo.priority;
-
-      await employeeImmigrationService.update(immigration.id, updates);
-      toast.success(`${type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())} renewed successfully for 1 year`);
-      setIsRenewalModalOpen(false);
-      loadImmigration();
-    } catch (error) {
-      console.error('Failed to renew document', error);
-      toast.error('Failed to renew document');
-    }
-  };
-
-  const handleOpenEducationModal = (education?: EmployeeEducation) => {
-    if (education) {
-      setEditingEducation(education);
-      setEducationForm({
-        institution_name: education.institution_name || '',
-        place_of_graduation: education.place_of_graduation || '',
-        graduation_year: education.graduation_year || new Date().getFullYear(),
-        degree_type: education.degree_type || '',
-        field_of_study: education.field_of_study || '',
-        grade_or_gpa: education.grade_or_gpa || '',
-        is_primary: education.is_primary || false,
-        notes: education.notes || ''
-      });
-    } else {
-      setEditingEducation(null);
-      setEducationForm({
-        institution_name: '',
-        place_of_graduation: '',
-        graduation_year: new Date().getFullYear(),
-        degree_type: '',
-        field_of_study: '',
-        grade_or_gpa: '',
-        is_primary: false,
-        notes: ''
-      });
-    }
-    setIsEducationModalOpen(true);
-  };
-
-  const handleSaveEducation = async () => {
-    if (!employee?.id) return;
-    if (!educationForm.institution_name || !educationForm.place_of_graduation || !educationForm.graduation_year) {
-      toast.error('Please fill in all required fields');
-      return;
-    }
-
-    try {
-      if (editingEducation) {
-        await employeeEducationService.update(editingEducation.id, educationForm);
-        toast.success('Education record updated successfully');
-      } else {
-        await employeeEducationService.create({
-          ...educationForm,
-          employee_id: employee.id
-        });
-        toast.success('Education record added successfully');
-      }
-      await loadEducation();
-      setIsEducationModalOpen(false);
-    } catch (error) {
-      console.error('Failed to save education record', error);
-      toast.error('Failed to save education record');
-    }
-  };
-
-  const handleDeleteEducation = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this education record?')) return;
-    try {
-      await employeeEducationService.delete(id);
-      toast.success('Education record deleted successfully');
-      await loadEducation();
-    } catch (error) {
-      console.error('Failed to delete education record', error);
-      toast.error('Failed to delete education record');
-    }
-  };
-
-  const handleSaveBankDetails = async () => {
-    if (!employee?.id) return;
-    if (!bankForm.bank_name || !bankForm.account_number || !bankForm.account_holder_name) {
-      toast.error('Please fill in all required fields');
-      return;
-    }
-
-    try {
-      await employeeBankDetailsService.upsert({
-        ...bankForm,
-        employee_id: employee.id,
-        is_primary: true
-      });
-      toast.success('Bank details saved successfully');
-      await loadBankDetails();
-      setIsBankModalOpen(false);
-    } catch (error) {
-      console.error('Failed to save bank details', error);
-      toast.error('Failed to save bank details');
     }
   };
 
@@ -524,6 +168,10 @@ export default function EmployeeDetailPage() {
     }
   };
 
+  const handleDownload = (url: string, name: string) => {
+    window.open(url, '_blank');
+  };
+
   // Calculate hours from shift times
   const calculateHours = (startTime: string, endTime: string, breakMinutes: number = 0): number => {
     if (!startTime || !endTime) return 0;
@@ -535,32 +183,15 @@ export default function EmployeeDetailPage() {
     return Math.max(0, diffMinutes / 60);
   };
 
-  // Get shifts for a specific day
   const getShiftsForDay = (dayOfWeek: number): EmployeeShift[] => {
     return employeeShifts.filter(shift => shift.day_of_week === dayOfWeek);
   };
 
-  // Get total hours for a day from shifts
   const getTotalHoursForDay = (dayOfWeek: number): number => {
     const dayShifts = getShiftsForDay(dayOfWeek);
     return dayShifts.reduce((total, shift) => {
       return total + calculateHours(shift.start_time, shift.end_time, shift.break_duration_minutes);
     }, 0);
-  };
-
-  // Get hours from old working hours system
-  const getHoursFromWorkingHours = (dayOfWeek: number): number => {
-    if (!workingHours) return 0;
-    switch (dayOfWeek) {
-      case 0: return workingHours.sunday_hours || 0;
-      case 1: return workingHours.monday_hours || 0;
-      case 2: return workingHours.tuesday_hours || 0;
-      case 3: return workingHours.wednesday_hours || 0;
-      case 4: return workingHours.thursday_hours || 0;
-      case 5: return workingHours.friday_hours || 0;
-      case 6: return workingHours.saturday_hours || 0;
-      default: return 0;
-    }
   };
 
   if (loading) return <div className="p-8 text-center">{t('common.loading')}</div>;
@@ -569,219 +200,211 @@ export default function EmployeeDetailPage() {
   const emp = employee; // Shorthand
 
   return (
-    <div className="space-y-6 pb-6">
-      {/* Modern Header Profile Card */}
+    <div className="space-y-4 md:space-y-6 pb-6">
+      {/* Modern Header Profile Card - Mobile Optimized */}
       <div className="relative">
-        {/* Gradient Background */}
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-primary/10 to-transparent rounded-2xl blur-3xl -z-10" />
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-primary/10 to-transparent rounded-xl md:rounded-2xl blur-3xl -z-10" />
         
-        <div className="flex items-start gap-4">
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            onClick={() => window.history.back()}
-            className="rounded-full hover:bg-white/10 transition-all"
-          >
-          <ArrowLeft size={20} />
-        </Button>
-          
-          <Card className="flex-1 border-0 bg-gradient-to-br from-card via-card/95 to-card/90 backdrop-blur-xl shadow-2xl overflow-hidden">
-            <div className="relative">
-              {/* Decorative gradient overlay */}
-              <div className="absolute top-0 right-0 w-96 h-96 bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
-              
-              <CardContent className="p-8 relative">
-                <div className="flex items-start gap-6">
-                  {/* Enhanced Avatar */}
-                  <div className="relative">
-                    <div className="w-28 h-28 rounded-2xl bg-gradient-to-br from-primary via-primary/80 to-primary/60 flex items-center justify-center text-4xl font-bold text-white shadow-lg shadow-primary/30 border-4 border-white/20 relative overflow-hidden">
-                      <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent" />
-                      {(emp.avatar_url && emp.avatar_url !== `https://ui-avatars.com/api/?name=${emp.first_name}+${emp.last_name}`) ? (
-                        <img src={emp.avatar_url} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <span className="relative z-10">
-                          {(emp.first_name || emp.firstName || 'U')[0]}{(emp.last_name || emp.lastName || 'N')[0]}
-                        </span>
-                      )}
-              </div>
-                    <div className="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-green-500 border-4 border-card flex items-center justify-center">
-                      <div className="w-3 h-3 rounded-full bg-green-400 animate-pulse" />
+        <Card className="flex-1 border-0 bg-gradient-to-br from-card via-card/95 to-card/90 backdrop-blur-xl shadow-2xl overflow-hidden">
+          <div className="relative">
+            <div className="absolute top-0 right-0 w-64 h-64 md:w-96 md:h-96 bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+            
+            <CardContent className="p-4 md:p-8 relative">
+              {/* Mobile Layout: Centered Stack */}
+              <div className="flex flex-col items-center md:flex-row md:items-start gap-4 md:gap-6">
+                {/* Avatar Section - Centered on Mobile */}
+                <div className="relative flex-shrink-0">
+                  <div className="w-24 h-24 md:w-28 md:h-28 rounded-2xl bg-gradient-to-br from-primary via-primary/80 to-primary/60 flex items-center justify-center text-3xl md:text-4xl font-bold text-white shadow-lg shadow-primary/30 border-4 border-white/20 relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent" />
+                    {(emp.avatar_url && emp.avatar_url !== `https://ui-avatars.com/api/?name=${emp.first_name}+${emp.last_name}`) ? (
+                      <img src={emp.avatar_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="relative z-10">
+                        {(emp.first_name || emp.firstName || 'U')[0]}{(emp.last_name || emp.lastName || 'N')[0]}
+                      </span>
+                    )}
                   </div>
+                  <div className="absolute -bottom-1 -right-1 w-6 h-6 md:w-8 md:h-8 rounded-full bg-green-500 border-2 md:border-4 border-card flex items-center justify-center">
+                    <div className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full bg-green-400 animate-pulse" />
                   </div>
-
-                  {/* Employee Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-start gap-4 mb-4">
-                      <div className="flex-1 min-w-0">
-                        <h1 className="text-4xl font-bold bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text text-transparent mb-2">
-                          {emp.first_name || emp.firstName} {emp.last_name || emp.lastName}
-                        </h1>
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 rounded-lg border border-primary/20">
-                            <Briefcase size={16} className="text-primary" />
-                            <span className="text-sm font-medium">
-                              {(emp as any).jobs?.name || emp.designation || emp.position || 'N/A'}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 rounded-lg border border-blue-500/20">
-                            <Building2 size={16} className="text-blue-400" />
-                            <span className="text-sm font-medium">
-                              {(emp as any).departments?.name || emp.department || 'N/A'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      <Badge 
-                        variant={emp.status === 'Active' ? 'success' : 'warning'} 
-                        className="text-base px-5 py-2 rounded-full shadow-lg"
-                      >
-                        {emp.status}
-                  </Badge>
                 </div>
 
-                    {/* Info Grid */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
-                      <div className="flex items-center gap-2 px-3 py-2 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">
-                        <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
-                          <User size={16} className="text-primary" />
-                  </div>
-                        <div className="min-w-0">
-                          <p className="text-xs text-muted-foreground">Employee ID</p>
-                          <p className="text-sm font-semibold truncate">{emp.employee_id || emp.employeeId}</p>
-                  </div>
-                  </div>
-                      <div className="flex items-center gap-2 px-3 py-2 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">
-                        <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
-                          <Calendar size={16} className="text-blue-400" />
+                {/* Employee Info - Centered on Mobile */}
+                <div className="flex-1 min-w-0 w-full text-center md:text-left">
+                  {/* Name and Status Row */}
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+                    <div className="flex-1">
+                      <h1 className="text-2xl md:text-4xl font-bold text-foreground mb-2 break-words">
+                        {emp.first_name || emp.firstName} {emp.last_name || emp.lastName}
+                      </h1>
+                      {/* Role and Department - Stacked on Mobile */}
+                      <div className="flex flex-col sm:flex-row items-center md:items-start gap-2 md:gap-3 justify-center md:justify-start">
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 rounded-lg border border-primary/20">
+                          <Briefcase size={14} className="text-primary flex-shrink-0" />
+                          <span className="text-xs md:text-sm font-medium truncate max-w-[200px]">
+                            {(emp as any).jobs?.name || emp.designation || emp.position || 'N/A'}
+                          </span>
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-xs text-muted-foreground">Join Date</p>
-                          <p className="text-sm font-semibold">
-                            {emp.join_date || emp.hireDate ? new Date(emp.join_date || emp.hireDate!).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
-                          </p>
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 rounded-lg border border-blue-500/20">
+                          <Building2 size={14} className="text-blue-400 flex-shrink-0" />
+                          <span className="text-xs md:text-sm font-medium truncate max-w-[200px]">
+                            {(emp as any).departments?.name || emp.department || 'N/A'}
+                          </span>
                         </div>
                       </div>
-                      {emp.reporting_manager_id && (
-                        <div className="flex items-center gap-2 px-3 py-2 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">
-                          <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center">
-                            <Shield size={16} className="text-purple-400" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">Manager</p>
-                            <p className="text-sm font-semibold">Assigned</p>
-                          </div>
-                        </div>
-                      )}
-                      {(emp as any).external_id && (
-                        <div className="flex items-center gap-2 px-3 py-2 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">
-                          <div className="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center">
-                            <User size={16} className="text-orange-400" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">Fingerprint</p>
-                            <p className="text-sm font-semibold">{(emp as any).external_id}</p>
-                          </div>
-                        </div>
-                      )}
                     </div>
+                    <Badge 
+                      variant={emp.status === 'Active' ? 'success' : 'warning'} 
+                      className="text-sm md:text-base px-4 md:px-5 py-2 rounded-full shadow-lg self-center md:self-start"
+                    >
+                      {emp.status}
+                    </Badge>
+                  </div>
+
+                  {/* Info Cards - Grid Layout */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3">
+                    <div className="flex flex-col items-center md:items-start gap-1.5 p-2.5 md:p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">
+                      <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-primary/20 flex items-center justify-center">
+                        <User size={14} className="text-primary md:w-4 md:h-4" />
+                      </div>
+                      <div className="text-center md:text-left w-full">
+                        <p className="text-[10px] md:text-xs text-muted-foreground font-medium">Employee ID</p>
+                        <p className="text-xs md:text-sm font-semibold truncate">{emp.employee_id || emp.employeeId || 'N/A'}</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-center md:items-start gap-1.5 p-2.5 md:p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">
+                      <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                        <Calendar size={14} className="text-blue-400 md:w-4 md:h-4" />
+                      </div>
+                      <div className="text-center md:text-left w-full">
+                        <p className="text-[10px] md:text-xs text-muted-foreground font-medium">Join Date</p>
+                        <p className="text-xs md:text-sm font-semibold">
+                          {emp.join_date || emp.hireDate ? new Date(emp.join_date || emp.hireDate!).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+                    {emp.reporting_manager_id && (
+                      <div className="flex flex-col items-center md:items-start gap-1.5 p-2.5 md:p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">
+                        <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
+                          <Shield size={14} className="text-purple-400 md:w-4 md:h-4" />
+                        </div>
+                        <div className="text-center md:text-left w-full">
+                          <p className="text-[10px] md:text-xs text-muted-foreground font-medium">Manager</p>
+                          <p className="text-xs md:text-sm font-semibold">Assigned</p>
+                        </div>
+                      </div>
+                    )}
+                    {(emp as any).external_id && (
+                      <div className="flex flex-col items-center md:items-start gap-1.5 p-2.5 md:p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">
+                        <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-orange-500/20 flex items-center justify-center">
+                          <User size={14} className="text-orange-400 md:w-4 md:h-4" />
+                        </div>
+                        <div className="text-center md:text-left w-full">
+                          <p className="text-[10px] md:text-xs text-muted-foreground font-medium">Fingerprint</p>
+                          <p className="text-xs md:text-sm font-semibold truncate">{(emp as any).external_id}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </CardContent>
-            </div>
-          </Card>
-        </div>
+          </div>
+        </Card>
       </div>
 
       {/* Modern Tabs Navigation */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <div className="relative">
-          <TabsList className="grid w-full grid-cols-11 bg-card/50 backdrop-blur-md border border-white/10 p-1.5 rounded-xl shadow-lg overflow-x-auto">
-            <TabsTrigger 
-              value="personal" 
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-primary/80 data-[state=active]:text-white data-[state=active]:shadow-lg text-xs px-3 py-2 rounded-lg transition-all duration-200"
-            >
-              {t('employees.personalInfo')}
-            </TabsTrigger>
-            <TabsTrigger 
-              value="contact" 
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-primary/80 data-[state=active]:text-white data-[state=active]:shadow-lg text-xs px-3 py-2 rounded-lg transition-all duration-200"
-            >
-              {t('employees.contactInfo')}
-            </TabsTrigger>
-            <TabsTrigger 
-              value="employment" 
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-primary/80 data-[state=active]:text-white data-[state=active]:shadow-lg text-xs px-3 py-2 rounded-lg transition-all duration-200"
-            >
-              {t('employees.employmentDetails')}
-            </TabsTrigger>
-            <TabsTrigger 
-              value="working-hours" 
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-primary/80 data-[state=active]:text-white data-[state=active]:shadow-lg text-xs px-3 py-2 rounded-lg transition-all duration-200"
-            >
-              {t('employees.workingHours')}
-            </TabsTrigger>
-            <TabsTrigger 
-              value="payroll" 
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-primary/80 data-[state=active]:text-white data-[state=active]:shadow-lg text-xs px-3 py-2 rounded-lg transition-all duration-200"
-            >
-              {t('employees.payrollInfo') || 'Payroll'}
-            </TabsTrigger>
-            <TabsTrigger 
-              value="leave-balance" 
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-primary/80 data-[state=active]:text-white data-[state=active]:shadow-lg text-xs px-3 py-2 rounded-lg transition-all duration-200"
-            >
-              Leave Balance
-            </TabsTrigger>
-            <TabsTrigger 
-              value="education" 
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-primary/80 data-[state=active]:text-white data-[state=active]:shadow-lg text-xs px-3 py-2 rounded-lg transition-all duration-200"
-            >
-              Education
-            </TabsTrigger>
-            <TabsTrigger 
-              value="bank" 
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-primary/80 data-[state=active]:text-white data-[state=active]:shadow-lg text-xs px-3 py-2 rounded-lg transition-all duration-200"
-            >
-              Bank
-            </TabsTrigger>
-            <TabsTrigger 
-              value="immigration" 
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-primary/80 data-[state=active]:text-white data-[state=active]:shadow-lg text-xs px-3 py-2 rounded-lg transition-all duration-200"
-            >
-              Immigration
-            </TabsTrigger>
-            <TabsTrigger 
-              value="requests" 
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-primary/80 data-[state=active]:text-white data-[state=active]:shadow-lg text-xs px-3 py-2 rounded-lg transition-all duration-200"
-            >
-              Requests
-            </TabsTrigger>
-            <TabsTrigger 
-              value="documents" 
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-primary/80 data-[state=active]:text-white data-[state=active]:shadow-lg text-xs px-3 py-2 rounded-lg transition-all duration-200"
-            >
-              {t('employees.documents')}
-            </TabsTrigger>
-        </TabsList>
+          <TabsList className="flex w-full bg-card/50 backdrop-blur-md border border-white/10 p-1 md:p-1.5 rounded-xl shadow-lg overflow-x-auto scrollbar-hide">
+            <div className="flex gap-1 md:gap-1.5 min-w-full md:grid md:grid-cols-11">
+              <TabsTrigger 
+                value="personal" 
+                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-primary/80 data-[state=active]:text-white data-[state=active]:shadow-lg text-[10px] md:text-xs px-2 md:px-3 py-1.5 md:py-2 rounded-lg transition-all duration-200 whitespace-nowrap flex-shrink-0"
+              >
+                {t('employees.personalInfo')}
+              </TabsTrigger>
+              <TabsTrigger 
+                value="contact" 
+                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-primary/80 data-[state=active]:text-white data-[state=active]:shadow-lg text-[10px] md:text-xs px-2 md:px-3 py-1.5 md:py-2 rounded-lg transition-all duration-200 whitespace-nowrap flex-shrink-0"
+              >
+                {t('employees.contactInfo')}
+              </TabsTrigger>
+              <TabsTrigger 
+                value="employment" 
+                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-primary/80 data-[state=active]:text-white data-[state=active]:shadow-lg text-[10px] md:text-xs px-2 md:px-3 py-1.5 md:py-2 rounded-lg transition-all duration-200 whitespace-nowrap flex-shrink-0"
+              >
+                {t('employees.employmentDetails')}
+              </TabsTrigger>
+              <TabsTrigger 
+                value="working-hours" 
+                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-primary/80 data-[state=active]:text-white data-[state=active]:shadow-lg text-[10px] md:text-xs px-2 md:px-3 py-1.5 md:py-2 rounded-lg transition-all duration-200 whitespace-nowrap flex-shrink-0"
+              >
+                {t('employees.workingHours')}
+              </TabsTrigger>
+              <TabsTrigger 
+                value="payroll" 
+                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-primary/80 data-[state=active]:text-white data-[state=active]:shadow-lg text-[10px] md:text-xs px-2 md:px-3 py-1.5 md:py-2 rounded-lg transition-all duration-200 whitespace-nowrap flex-shrink-0"
+              >
+                {t('employees.payrollInfo') || 'Payroll'}
+              </TabsTrigger>
+              <TabsTrigger 
+                value="leave-balance" 
+                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-primary/80 data-[state=active]:text-white data-[state=active]:shadow-lg text-[10px] md:text-xs px-2 md:px-3 py-1.5 md:py-2 rounded-lg transition-all duration-200 whitespace-nowrap flex-shrink-0"
+              >
+                Leave Balance
+              </TabsTrigger>
+              <TabsTrigger 
+                value="education" 
+                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-primary/80 data-[state=active]:text-white data-[state=active]:shadow-lg text-[10px] md:text-xs px-2 md:px-3 py-1.5 md:py-2 rounded-lg transition-all duration-200 whitespace-nowrap flex-shrink-0"
+              >
+                Education
+              </TabsTrigger>
+              <TabsTrigger 
+                value="bank" 
+                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-primary/80 data-[state=active]:text-white data-[state=active]:shadow-lg text-[10px] md:text-xs px-2 md:px-3 py-1.5 md:py-2 rounded-lg transition-all duration-200 whitespace-nowrap flex-shrink-0"
+              >
+                Bank
+              </TabsTrigger>
+              <TabsTrigger 
+                value="immigration" 
+                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-primary/80 data-[state=active]:text-white data-[state=active]:shadow-lg text-[10px] md:text-xs px-2 md:px-3 py-1.5 md:py-2 rounded-lg transition-all duration-200 whitespace-nowrap flex-shrink-0"
+              >
+                Immigration
+              </TabsTrigger>
+              <TabsTrigger 
+                value="requests" 
+                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-primary/80 data-[state=active]:text-white data-[state=active]:shadow-lg text-[10px] md:text-xs px-2 md:px-3 py-1.5 md:py-2 rounded-lg transition-all duration-200 whitespace-nowrap flex-shrink-0"
+              >
+                Requests
+              </TabsTrigger>
+              <TabsTrigger 
+                value="documents" 
+                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-primary/80 data-[state=active]:text-white data-[state=active]:shadow-lg text-[10px] md:text-xs px-2 md:px-3 py-1.5 md:py-2 rounded-lg transition-all duration-200 whitespace-nowrap flex-shrink-0"
+              >
+                {t('employees.documents')}
+              </TabsTrigger>
+            </div>
+          </TabsList>
         </div>
 
         {/* Personal Info Tab */}
         <TabsContent value="personal" className="mt-6 space-y-6">
           <Card className="overflow-hidden">
             <CardHeader className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border-b border-white/10">
-              <CardTitle className="flex items-center gap-2 text-xl">
-                <User size={24} className="text-primary" />
+              <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
+                <User size={20} className="text-primary md:w-6 md:h-6" />
                 {t('employees.personalInfo')}
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-1 p-4 rounded-lg bg-gradient-to-br from-primary/5 to-transparent border border-primary/10">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                    <User size={14} className="text-primary" />
+            <CardContent className="p-4 md:p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                <div className="space-y-1 p-3 md:p-4 rounded-lg bg-gradient-to-br from-primary/5 to-transparent border border-primary/10">
+                  <label className="text-[10px] md:text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                    <User size={12} className="text-primary md:w-3.5 md:h-3.5" />
                     {t('common.firstName')}
                   </label>
-                  <p className="text-lg font-semibold mt-2">{emp.first_name || emp.firstName}</p>
+                  <p className="text-base md:text-lg font-semibold mt-2">{emp.first_name || emp.firstName}</p>
                 </div>
                 <div className="space-y-1 p-4 rounded-lg bg-gradient-to-br from-primary/5 to-transparent border border-primary/10">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
@@ -830,15 +453,15 @@ export default function EmployeeDetailPage() {
         </TabsContent>
 
         {/* Contact Information Tab */}
-        <TabsContent value="contact" className="mt-6 space-y-6">
+        <TabsContent value="contact" className="mt-4 md:mt-6 space-y-4 md:space-y-6">
           <Card className="overflow-hidden">
             <CardHeader className="bg-gradient-to-r from-blue-500/10 via-blue-500/5 to-transparent border-b border-white/10">
-              <CardTitle className="flex items-center gap-2 text-xl">
-                <Phone size={24} className="text-blue-400" />
+              <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
+                <Phone size={20} className="text-blue-400 md:w-6 md:h-6" />
                 {t('employees.contactInfo')}
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-6">
+            <CardContent className="p-4 md:p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1 p-4 rounded-lg bg-gradient-to-br from-blue-500/5 to-transparent border border-blue-500/10 hover:border-blue-500/20 transition-colors">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
@@ -893,12 +516,12 @@ export default function EmployeeDetailPage() {
           {/* Emergency Contact */}
           <Card className="overflow-hidden">
             <CardHeader className="bg-gradient-to-r from-red-500/10 via-red-500/5 to-transparent border-b border-white/10">
-              <CardTitle className="flex items-center gap-2 text-xl">
-                <Shield size={24} className="text-red-400" />
+              <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
+                <Shield size={20} className="text-red-400 md:w-6 md:h-6" />
                 {t('employees.emergencyContact')}
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-6">
+            <CardContent className="p-4 md:p-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-1 p-4 rounded-lg bg-gradient-to-br from-red-500/5 to-transparent border border-red-500/10">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('common.name')}</label>
@@ -918,15 +541,15 @@ export default function EmployeeDetailPage() {
         </TabsContent>
 
         {/* Employment Details Tab */}
-        <TabsContent value="employment" className="mt-6 space-y-6">
+        <TabsContent value="employment" className="mt-4 md:mt-6 space-y-4 md:space-y-6">
           <Card className="overflow-hidden">
             <CardHeader className="bg-gradient-to-r from-indigo-500/10 via-indigo-500/5 to-transparent border-b border-white/10">
-              <CardTitle className="flex items-center gap-2 text-xl">
-                <Briefcase size={24} className="text-indigo-400" />
+              <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
+                <Briefcase size={20} className="text-indigo-400 md:w-6 md:h-6" />
                 {t('employees.employmentDetails')}
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-6">
+            <CardContent className="p-4 md:p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1 p-4 rounded-lg bg-gradient-to-br from-indigo-500/5 to-transparent border border-indigo-500/10 hover:border-indigo-500/20 transition-colors">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
@@ -1041,39 +664,6 @@ export default function EmployeeDetailPage() {
                     </p>
                   </div>
                 )}
-                {(emp as any).company_id && (
-                  <div className="space-y-1 p-4 rounded-lg bg-gradient-to-br from-violet-500/5 to-transparent border border-violet-500/10 hover:border-violet-500/20 transition-colors">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Company ID</label>
-                    <p className="text-sm font-semibold text-muted-foreground mt-2 font-mono">{(emp as any).company_id.substring(0, 8)}...</p>
-                  </div>
-                )}
-                {(emp as any).synced_from_external !== undefined && (
-                  <div className="space-y-1 p-4 rounded-lg bg-gradient-to-br from-slate-500/5 to-transparent border border-slate-500/10 hover:border-slate-500/20 transition-colors">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Synced from External</label>
-                    <div className="mt-2">
-                      <Badge variant={(emp as any).synced_from_external ? 'success' : 'outline'} className="text-sm">
-                        {(emp as any).synced_from_external ? 'Yes' : 'No'}
-                      </Badge>
-                    </div>
-                  </div>
-                )}
-                {(emp as any).last_synced_at && (
-                  <div className="space-y-1 p-4 rounded-lg bg-gradient-to-br from-slate-500/5 to-transparent border border-slate-500/10 hover:border-slate-500/20 transition-colors">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                      <Clock size={14} className="text-slate-400" />
-                      Last Synced At
-                    </label>
-                    <p className="text-sm font-semibold mt-2 text-muted-foreground">
-                      {new Date((emp as any).last_synced_at).toLocaleString('en-US', { 
-                        year: 'numeric', 
-                        month: 'short', 
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </p>
-                  </div>
-                )}
                 {emp.notes && (
                   <div className="md:col-span-2 space-y-1 p-4 rounded-lg bg-gradient-to-br from-slate-500/5 to-transparent border border-slate-500/10">
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('employees.notes')}</label>
@@ -1117,7 +707,6 @@ export default function EmployeeDetailPage() {
 
         {/* Working Hours Tab */}
         <TabsContent value="working-hours" className="mt-6 space-y-6">
-          {/* Shifts-based Working Hours */}
           {employeeShifts.length > 0 ? (
             <Card className="overflow-hidden">
               <CardHeader className="bg-gradient-to-r from-cyan-500/10 via-cyan-500/5 to-transparent border-b border-white/10">
@@ -1223,19 +812,19 @@ export default function EmployeeDetailPage() {
                     </div>
                     <div className="grid grid-cols-3 gap-4">
                       {workingHours.start_time && (
-              <div>
+                        <div>
                           <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.startTime')}</label>
                           <p className="text-lg">{workingHours.start_time.split(':').slice(0, 2).join(':')}</p>
-              </div>
+                        </div>
                       )}
                       {workingHours.end_time && (
-              <div>
+                        <div>
                           <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.endTime')}</label>
                           <p className="text-lg">{workingHours.end_time.split(':').slice(0, 2).join(':')}</p>
-              </div>
+                        </div>
                       )}
                       {workingHours.break_duration_minutes > 0 && (
-              <div>
+                        <div>
                           <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.breakDuration')}</label>
                           <p className="text-lg">{workingHours.break_duration_minutes} {t('common.minutes') || 'minutes'}</p>
                         </div>
@@ -1333,44 +922,15 @@ export default function EmployeeDetailPage() {
                     <h3 className="text-xl font-bold text-red-400">{t('employees.deductions') || 'DEDUCTIONS'}</h3>
                   </div>
                   <div className="space-y-3">
-                    {/* Social Security / GOSI */}
                     {(() => {
                       const baseSalary = parseFloat((emp as any).base_salary || '0');
-                      const gosiRate = 0.105; // 10.5% GOSI rate (can be made configurable)
+                      const gosiRate = 0.105;
                       const gosiAmount = baseSalary * gosiRate;
                       return gosiAmount > 0 ? (
                         <div className="bg-gradient-to-br from-red-500/20 to-red-500/10 border border-red-500/30 rounded-xl p-4 hover:border-red-500/50 transition-all shadow-lg">
                           <div className="flex justify-between items-center">
                             <span className="text-white font-semibold">{t('employees.socialSecurity') || 'Social Security (GOSI)'}</span>
                             <span className="text-white font-bold text-lg">{gosiAmount.toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} KD</span>
-                          </div>
-                        </div>
-                      ) : null;
-                    })()}
-                    {/* Tax Deduction */}
-                    {(() => {
-                      const baseSalary = parseFloat((emp as any).base_salary || '0');
-                      const taxRate = 0; // Can be fetched from role_salary_config
-                      const taxAmount = baseSalary * taxRate;
-                      return taxAmount > 0 ? (
-                        <div className="bg-gradient-to-br from-red-500/20 to-red-500/10 border border-red-500/30 rounded-xl p-4 hover:border-red-500/50 transition-all">
-                          <div className="flex justify-between items-center">
-                            <span className="text-white font-semibold">{t('employees.tax') || 'Tax'}</span>
-                            <span className="text-white font-bold">{taxAmount.toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} KD</span>
-                          </div>
-                        </div>
-                      ) : null;
-                    })()}
-                    {/* Insurance Deduction */}
-                    {(() => {
-                      const baseSalary = parseFloat((emp as any).base_salary || '0');
-                      const insuranceRate = 0; // Can be fetched from role_salary_config
-                      const insuranceAmount = baseSalary * insuranceRate;
-                      return insuranceAmount > 0 ? (
-                        <div className="bg-gradient-to-br from-red-500/20 to-red-500/10 border border-red-500/30 rounded-xl p-4 hover:border-red-500/50 transition-all">
-                          <div className="flex justify-between items-center">
-                            <span className="text-white font-semibold">{t('employees.insurance') || 'Insurance'}</span>
-                            <span className="text-white font-bold">{insuranceAmount.toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} KD</span>
                           </div>
                         </div>
                       ) : null;
@@ -1459,13 +1019,13 @@ export default function EmployeeDetailPage() {
                     <div className="p-4 bg-gradient-to-r from-red-500/20 to-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
                         <span className="text-xl">⚠️</span>
-              </div>
-              <div>
+                      </div>
+                      <div>
                         <p className="text-sm font-semibold text-red-400">
                           Expired: {leaveBalance.annual_leave.expired.toFixed(2)} days
                         </p>
                         <p className="text-xs text-muted-foreground">Unused leave expired after 2 years</p>
-              </div>
+                      </div>
                     </div>
                   )}
                   {leaveBalance.annual_leave.expiringSoon && leaveBalance.annual_leave.expiringSoon > 0 && (
@@ -1494,8 +1054,8 @@ export default function EmployeeDetailPage() {
                       </div>
                     </div>
                   )}
-            </CardContent>
-          </Card>
+                </CardContent>
+              </Card>
 
               {/* Sick Leave */}
               <Card className="overflow-hidden">
@@ -1574,135 +1134,13 @@ export default function EmployeeDetailPage() {
           )}
         </TabsContent>
 
-        {/* Requests Tab */}
-        <TabsContent value="requests" className="mt-6 space-y-6">
-          {/* Leave Requests */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <CalendarIcon size={20} /> Leave Requests
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {leaveRequests.length === 0 ? (
-                <p className="text-muted-foreground text-center py-4">No leave requests</p>
-              ) : (
-                <div className="space-y-3">
-                  {leaveRequests.map((req) => (
-                    <div key={req.id} className="p-4 bg-white/5 rounded-lg border border-white/10">
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <p className="font-semibold">{req.leave_type}</p>
-                            <StatusBadge status={req.status} />
-                          </div>
-                          <p className="text-sm text-muted-foreground">
-                            {new Date(req.start_date).toLocaleDateString()} - {new Date(req.end_date).toLocaleDateString()}
-                          </p>
-                          {req.reason && (
-                            <p className="text-sm mt-2">{req.reason}</p>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(req.created_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Document Requests */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileTextIcon size={20} /> Document Requests
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {documentRequests.length === 0 ? (
-                <p className="text-muted-foreground text-center py-4">No document requests</p>
-              ) : (
-                <div className="space-y-3">
-                  {documentRequests.map((req) => (
-                    <div key={req.id} className="p-4 bg-white/5 rounded-lg border border-white/10">
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <p className="font-semibold">{req.document_type}</p>
-                            <StatusBadge status={req.status} />
-                          </div>
-                          {req.purpose && (
-                            <p className="text-sm text-muted-foreground mb-1">Purpose: {req.purpose}</p>
-                          )}
-                          {req.language && (
-                            <p className="text-xs text-muted-foreground">Language: {req.language.toUpperCase()}</p>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(req.requested_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* General Employee Requests */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileTextIcon size={20} /> General Requests
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {employeeRequests.length === 0 ? (
-                <p className="text-muted-foreground text-center py-4">No general requests</p>
-              ) : (
-                <div className="space-y-3">
-                  {employeeRequests.map((req) => (
-                    <div key={req.id} className="p-4 bg-white/5 rounded-lg border border-white/10">
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <p className="font-semibold">{req.request_type}</p>
-                            <StatusBadge status={req.status} />
-                          </div>
-                          <p className="text-sm text-muted-foreground mb-1">Category: {req.request_category}</p>
-                          {req.current_approver && (
-                            <p className="text-xs text-muted-foreground">Current Approver: {req.current_approver}</p>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(req.submitted_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
         {/* Education Tab */}
         <TabsContent value="education" className="mt-6">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <GraduationCap size={20} /> Education
               </CardTitle>
-              <Button 
-                size="sm" 
-                className="gap-2"
-                onClick={() => handleOpenEducationModal()}
-              >
-                <Plus size={16}/> Add Education
-              </Button>
             </CardHeader>
             <CardContent>
               {educationRecords.length === 0 ? (
@@ -1711,75 +1149,54 @@ export default function EmployeeDetailPage() {
                   <p>No education records found</p>
                 </div>
               ) : (
-              <div className="space-y-4">
+                <div className="space-y-4">
                   {educationRecords.map((edu) => (
                     <div key={edu.id} className="p-4 bg-white/5 rounded-lg border border-white/10">
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <h3 className="font-bold text-lg">{edu.institution_name}</h3>
-                            {edu.is_primary && (
-                              <Badge variant="default" className="text-xs">Primary</Badge>
-                            )}
-                      </div>
-                          <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                              <span className="text-muted-foreground">Place:</span>
-                              <p className="font-medium">{edu.place_of_graduation}</p>
-                      </div>
-                            <div>
-                              <span className="text-muted-foreground">Year:</span>
-                              <p className="font-medium">{edu.graduation_year}</p>
-                    </div>
-                            {edu.degree_type && (
-                              <div>
-                                <span className="text-muted-foreground">Degree:</span>
-                                <p className="font-medium">{edu.degree_type}</p>
-                              </div>
-                            )}
-                            {edu.field_of_study && (
-                              <div>
-                                <span className="text-muted-foreground">Field:</span>
-                                <p className="font-medium">{edu.field_of_study}</p>
-                              </div>
-                            )}
-                            {edu.grade_or_gpa && (
-                              <div>
-                                <span className="text-muted-foreground">Grade/GPA:</span>
-                                <p className="font-medium">{edu.grade_or_gpa}</p>
-                              </div>
-                            )}
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <h3 className="font-bold text-lg">{edu.institution_name}</h3>
+                          {edu.is_primary && (
+                            <Badge variant="default" className="text-xs">Primary</Badge>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <span className="text-muted-foreground">Place:</span>
+                            <p className="font-medium">{edu.place_of_graduation}</p>
                           </div>
-                          {edu.notes && (
-                            <div className="mt-2">
-                              <span className="text-muted-foreground text-sm">Notes:</span>
-                              <p className="text-sm">{edu.notes}</p>
+                          <div>
+                            <span className="text-muted-foreground">Year:</span>
+                            <p className="font-medium">{edu.graduation_year}</p>
+                          </div>
+                          {edu.degree_type && (
+                            <div>
+                              <span className="text-muted-foreground">Degree:</span>
+                              <p className="font-medium">{edu.degree_type}</p>
+                            </div>
+                          )}
+                          {edu.field_of_study && (
+                            <div>
+                              <span className="text-muted-foreground">Field:</span>
+                              <p className="font-medium">{edu.field_of_study}</p>
+                            </div>
+                          )}
+                          {edu.grade_or_gpa && (
+                            <div>
+                              <span className="text-muted-foreground">Grade/GPA:</span>
+                              <p className="font-medium">{edu.grade_or_gpa}</p>
                             </div>
                           )}
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Button 
-                            variant="ghost" 
-                            size="icon"
-                            onClick={() => handleOpenEducationModal(edu)}
-                            title="Edit"
-                          >
-                            <Edit2 size={18}/>
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon"
-                            onClick={() => handleDeleteEducation(edu.id)}
-                            title="Delete"
-                            className="text-red-400 hover:text-red-300"
-                          >
-                            <Trash2 size={18}/>
-                          </Button>
-                        </div>
+                        {edu.notes && (
+                          <div className="mt-2">
+                            <span className="text-muted-foreground text-sm">Notes:</span>
+                            <p className="text-sm">{edu.notes}</p>
+                          </div>
+                        )}
                       </div>
-                  </div>
-                ))}
-              </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </CardContent>
           </Card>
@@ -1788,17 +1205,10 @@ export default function EmployeeDetailPage() {
         {/* Bank Details Tab */}
         <TabsContent value="bank" className="mt-6">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <CreditCard size={20} /> Bank Details
               </CardTitle>
-              <Button 
-                size="sm" 
-                className="gap-2"
-                onClick={() => setIsBankModalOpen(true)}
-              >
-                <Edit2 size={16}/> {bankDetails ? 'Edit' : 'Add'} Bank Details
-              </Button>
             </CardHeader>
             <CardContent>
               {!bankDetails ? (
@@ -1811,11 +1221,11 @@ export default function EmployeeDetailPage() {
                   <div>
                     <label className="text-xs text-muted-foreground uppercase font-bold">Bank Name</label>
                     <p className="text-lg">{bankDetails.bank_name}</p>
-                </div>
+                  </div>
                   <div>
                     <label className="text-xs text-muted-foreground uppercase font-bold">Account Number</label>
                     <p className="text-lg">{bankDetails.account_number}</p>
-              </div>
+                  </div>
                   <div>
                     <label className="text-xs text-muted-foreground uppercase font-bold">Account Holder Name</label>
                     <p className="text-lg">{bankDetails.account_holder_name}</p>
@@ -1870,33 +1280,10 @@ export default function EmployeeDetailPage() {
         <TabsContent value="immigration" className="mt-6 space-y-6">
           <Card className="overflow-hidden">
             <CardHeader className="bg-gradient-to-r from-indigo-500/10 via-indigo-500/5 to-transparent border-b border-white/10">
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2 text-xl">
-                  <Globe size={24} className="text-indigo-400" />
-                  Immigration & Residence Permit Management
-                </CardTitle>
-                <div className="flex items-center gap-2">
-                  {immigration && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setIsRenewalModalOpen(true)}
-                      className="gap-2"
-                    >
-                      <Calendar size={16} />
-                      Yearly Renewal
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    onClick={() => setIsImmigrationModalOpen(true)}
-                    className="gap-2"
-                  >
-                    <Edit2 size={16} />
-                    {immigration ? 'Edit' : 'Add'} Immigration
-                  </Button>
-                </div>
-              </div>
+              <CardTitle className="flex items-center gap-2 text-xl">
+                <Globe size={24} className="text-indigo-400" />
+                Immigration & Residence Permit Management
+              </CardTitle>
             </CardHeader>
             <CardContent className="p-6">
               {!immigration ? (
@@ -1904,7 +1291,7 @@ export default function EmployeeDetailPage() {
                   <Globe size={64} className="mx-auto mb-4 opacity-50" />
                   <p className="text-lg mb-2">No immigration records found</p>
                   <p className="text-sm">Immigration data will be displayed here once added</p>
-                  </div>
+                </div>
               ) : (
                 <div className="space-y-6">
                   {/* Next Renewal Alert */}
@@ -1932,12 +1319,12 @@ export default function EmployeeDetailPage() {
                               day: 'numeric' 
                             }) : 'N/A'}
                           </p>
-                  </div>
-                        <Badge variant={immigration.renewal_priority === 'Urgent' ? 'error' : immigration.renewal_priority === 'High' ? 'warning' : 'info'}>
+                        </div>
+                        <Badge variant={immigration.renewal_priority === 'Urgent' ? 'destructive' : immigration.renewal_priority === 'High' ? 'warning' : 'outline'}>
                           {immigration.renewal_priority || 'Normal'}
                         </Badge>
-                  </div>
-                </div>
+                      </div>
+                    </div>
                   )}
 
                   {/* Work Permit Section */}
@@ -2191,18 +1578,126 @@ export default function EmployeeDetailPage() {
           </Card>
         </TabsContent>
 
-        {/* Documents Tab */}
-        <TabsContent value="documents" className="mt-6">
+        {/* Requests Tab */}
+        <TabsContent value="requests" className="mt-6 space-y-6">
+          {/* Leave Requests */}
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CalendarIcon size={20} /> Leave Requests
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {leaveRequests.length === 0 ? (
+                <p className="text-muted-foreground text-center py-4">No leave requests</p>
+              ) : (
+                <div className="space-y-3">
+                  {leaveRequests.map((req) => (
+                    <div key={req.id} className="p-4 bg-white/5 rounded-lg border border-white/10">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <p className="font-semibold">{req.leave_type}</p>
+                            <StatusBadge status={req.status} />
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            {new Date(req.start_date).toLocaleDateString()} - {new Date(req.end_date).toLocaleDateString()}
+                          </p>
+                          {req.reason && (
+                            <p className="text-sm mt-2">{req.reason}</p>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(req.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Document Requests */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileTextIcon size={20} /> Document Requests
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {documentRequests.length === 0 ? (
+                <p className="text-muted-foreground text-center py-4">No document requests</p>
+              ) : (
+                <div className="space-y-3">
+                  {documentRequests.map((req) => (
+                    <div key={req.id} className="p-4 bg-white/5 rounded-lg border border-white/10">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <p className="font-semibold">{req.document_type}</p>
+                            <StatusBadge status={req.status} />
+                          </div>
+                          {req.purpose && (
+                            <p className="text-sm text-muted-foreground mb-1">Purpose: {req.purpose}</p>
+                          )}
+                          {req.language && (
+                            <p className="text-xs text-muted-foreground">Language: {req.language.toUpperCase()}</p>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(req.requested_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* General Employee Requests */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileTextIcon size={20} /> General Requests
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {employeeRequests.length === 0 ? (
+                <p className="text-muted-foreground text-center py-4">No general requests</p>
+              ) : (
+                <div className="space-y-3">
+                  {employeeRequests.map((req) => (
+                    <div key={req.id} className="p-4 bg-white/5 rounded-lg border border-white/10">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <p className="font-semibold">{req.request_type}</p>
+                            <StatusBadge status={req.status} />
+                          </div>
+                          <p className="text-sm text-muted-foreground mb-1">Category: {req.request_category}</p>
+                          {req.current_approver && (
+                            <p className="text-xs text-muted-foreground">Current Approver: {req.current_approver}</p>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(req.submitted_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Documents Tab - TODO: Add full content */}
+        <TabsContent value="documents" className="mt-6 space-y-6">
+          <Card>
+            <CardHeader>
               <CardTitle>{t('employees.documents')}</CardTitle>
-              <Button 
-                size="sm" 
-                className="gap-2"
-                onClick={() => setIsUploadModalOpen(true)}
-              >
-                <Upload size={16}/> {t('documents.uploadDocument') || 'Upload Document'}
-              </Button>
             </CardHeader>
             <CardContent>
               {documentsLoading ? (
@@ -2219,7 +1714,7 @@ export default function EmployeeDetailPage() {
                       <div className="flex items-center gap-4">
                         <div className="w-10 h-10 rounded bg-blue-500/20 flex items-center justify-center text-blue-400">
                           <FileText size={20} />
-                  </div>
+                        </div>
                         <div>
                           <p className="font-bold">{doc.name}</p>
                           <p className="text-xs text-muted-foreground">
@@ -2231,8 +1726,8 @@ export default function EmployeeDetailPage() {
                                   : 'N/A'
                             }
                           </p>
-                </div>
-              </div>
+                        </div>
+                      </div>
                       <div className="flex items-center gap-2">
                         <Button 
                           variant="ghost" 
@@ -2242,16 +1737,7 @@ export default function EmployeeDetailPage() {
                         >
                           <Download size={18}/>
                         </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          onClick={() => handleDeleteDocument(doc.id)}
-                          title={t('common.delete') || 'Delete'}
-                          className="text-red-400 hover:text-red-300"
-                        >
-                          <Trash2 size={18}/>
-                        </Button>
-              </div>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -2259,717 +1745,8 @@ export default function EmployeeDetailPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
       </Tabs>
-
-      {/* Upload Document Modal */}
-      <Modal 
-        isOpen={isUploadModalOpen} 
-        onClose={() => {
-          setIsUploadModalOpen(false);
-          setSelectedFile(null);
-          setSelectedCategory('General');
-          if (fileInputRef.current) {
-            fileInputRef.current.value = '';
-          }
-        }} 
-        title={t('documents.uploadDocument') || 'Upload Document'}
-      >
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-foreground">
-              {t('documents.selectFile') || 'Select File'} *
-            </label>
-            <input
-              ref={fileInputRef}
-              type="file"
-              onChange={handleFileSelect}
-              className="w-full p-2 border border-white/10 rounded-lg bg-white/5 text-foreground"
-              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xls,.xlsx"
-            />
-            {selectedFile && (
-              <p className="text-sm text-muted-foreground">
-                {t('documents.selectedFile') || 'Selected'}: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-foreground">
-              {t('documents.category') || 'Category'} *
-            </label>
-            <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-              <SelectTrigger className="w-full h-11">
-                <SelectValue placeholder={t('documents.selectCategory') || 'Select category'} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Contract">{t('documents.contract') || 'Contract'}</SelectItem>
-                <SelectItem value="ID">{t('documents.id') || 'ID'}</SelectItem>
-                <SelectItem value="Education">{t('documents.education') || 'Education'}</SelectItem>
-                <SelectItem value="General">{t('documents.general') || 'General'}</SelectItem>
-                <SelectItem value="Payroll">{t('documents.payroll') || 'Payroll'}</SelectItem>
-                <SelectItem value="Visa">{t('documents.visa') || 'Visa'}</SelectItem>
-                <SelectItem value="Other">{t('documents.other') || 'Other'}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-4">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsUploadModalOpen(false);
-                setSelectedFile(null);
-                setSelectedCategory('General');
-                if (fileInputRef.current) {
-                  fileInputRef.current.value = '';
-                }
-              }}
-            >
-              {t('common.cancel')}
-            </Button>
-            <Button
-              onClick={handleUpload}
-              disabled={!selectedFile || uploading}
-            >
-              {uploading ? t('common.uploading') || 'Uploading...' : t('common.upload') || 'Upload'}
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Education Modal */}
-      <Modal 
-        isOpen={isEducationModalOpen} 
-        onClose={() => {
-          setIsEducationModalOpen(false);
-          setEditingEducation(null);
-        }} 
-        title={editingEducation ? 'Edit Education' : 'Add Education'}
-        size="lg"
-      >
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label>Institution Name *</Label>
-            <Input
-              value={educationForm.institution_name}
-              onChange={(e) => setEducationForm({ ...educationForm, institution_name: e.target.value })}
-              placeholder="University, School, College name"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>Place of Graduation *</Label>
-            <Input
-              value={educationForm.place_of_graduation}
-              onChange={(e) => setEducationForm({ ...educationForm, place_of_graduation: e.target.value })}
-              placeholder="City, Country"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Graduation Year *</Label>
-              <Input
-                type="number"
-                value={educationForm.graduation_year}
-                onChange={(e) => setEducationForm({ ...educationForm, graduation_year: parseInt(e.target.value) || new Date().getFullYear() })}
-                min="1900"
-                max={new Date().getFullYear() + 10}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Degree Type</Label>
-              <Select value={educationForm.degree_type} onValueChange={(value) => setEducationForm({ ...educationForm, degree_type: value })}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select degree type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="High School">High School</SelectItem>
-                  <SelectItem value="Diploma">Diploma</SelectItem>
-                  <SelectItem value="Bachelor">Bachelor</SelectItem>
-                  <SelectItem value="Master">Master</SelectItem>
-                  <SelectItem value="PhD">PhD</SelectItem>
-                  <SelectItem value="Certificate">Certificate</SelectItem>
-                  <SelectItem value="Other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>Field of Study</Label>
-            <Input
-              value={educationForm.field_of_study}
-              onChange={(e) => setEducationForm({ ...educationForm, field_of_study: e.target.value })}
-              placeholder="e.g., Computer Science, Business Administration"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>Grade/GPA</Label>
-            <Input
-              value={educationForm.grade_or_gpa}
-              onChange={(e) => setEducationForm({ ...educationForm, grade_or_gpa: e.target.value })}
-              placeholder="e.g., 3.8, A+, 85%"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="is_primary"
-              checked={educationForm.is_primary}
-              onChange={(e) => setEducationForm({ ...educationForm, is_primary: e.target.checked })}
-              className="w-4 h-4"
-            />
-            <Label htmlFor="is_primary" className="cursor-pointer">Mark as primary qualification</Label>
-          </div>
-          <div className="space-y-2">
-            <Label>Notes</Label>
-            <Textarea
-              value={educationForm.notes}
-              onChange={(e) => setEducationForm({ ...educationForm, notes: e.target.value })}
-              placeholder="Additional notes"
-              rows={3}
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-4">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsEducationModalOpen(false);
-                setEditingEducation(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleSaveEducation}>
-              {editingEducation ? 'Update' : 'Add'} Education
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Bank Details Modal */}
-      <Modal 
-        isOpen={isBankModalOpen} 
-        onClose={() => setIsBankModalOpen(false)} 
-        title={bankDetails ? 'Edit Bank Details' : 'Add Bank Details'}
-        size="lg"
-      >
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label>Bank Name *</Label>
-            <Input
-              value={bankForm.bank_name}
-              onChange={(e) => setBankForm({ ...bankForm, bank_name: e.target.value })}
-              placeholder="Bank name"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Account Number *</Label>
-              <Input
-                value={bankForm.account_number}
-                onChange={(e) => setBankForm({ ...bankForm, account_number: e.target.value })}
-                placeholder="Account number"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Account Holder Name *</Label>
-              <Input
-                value={bankForm.account_holder_name}
-                onChange={(e) => setBankForm({ ...bankForm, account_holder_name: e.target.value })}
-                placeholder="Name on account"
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Branch Name</Label>
-              <Input
-                value={bankForm.branch_name}
-                onChange={(e) => setBankForm({ ...bankForm, branch_name: e.target.value })}
-                placeholder="Branch name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Branch Code</Label>
-              <Input
-                value={bankForm.branch_code}
-                onChange={(e) => setBankForm({ ...bankForm, branch_code: e.target.value })}
-                placeholder="Branch code"
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>IBAN</Label>
-              <Input
-                value={bankForm.iban}
-                onChange={(e) => setBankForm({ ...bankForm, iban: e.target.value })}
-                placeholder="International Bank Account Number"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>SWIFT Code</Label>
-              <Input
-                value={bankForm.swift_code}
-                onChange={(e) => setBankForm({ ...bankForm, swift_code: e.target.value })}
-                placeholder="SWIFT/BIC code"
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Account Type</Label>
-              <Select value={bankForm.account_type} onValueChange={(value) => setBankForm({ ...bankForm, account_type: value })}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select account type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Savings">Savings</SelectItem>
-                  <SelectItem value="Current">Current</SelectItem>
-                  <SelectItem value="Checking">Checking</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Currency</Label>
-              <Select value={bankForm.currency} onValueChange={(value) => setBankForm({ ...bankForm, currency: value })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="USD">USD</SelectItem>
-                  <SelectItem value="EUR">EUR</SelectItem>
-                  <SelectItem value="GBP">GBP</SelectItem>
-                  <SelectItem value="KWD">KWD</SelectItem>
-                  <SelectItem value="SAR">SAR</SelectItem>
-                  <SelectItem value="AED">AED</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>Notes</Label>
-            <Textarea
-              value={bankForm.notes}
-              onChange={(e) => setBankForm({ ...bankForm, notes: e.target.value })}
-              placeholder="Additional notes"
-              rows={3}
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-4">
-            <Button
-              variant="outline"
-              onClick={() => setIsBankModalOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleSaveBankDetails}>
-              {bankDetails ? 'Update' : 'Save'} Bank Details
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Immigration Edit Modal */}
-      <Modal 
-        isOpen={isImmigrationModalOpen} 
-        onClose={() => {
-          setIsImmigrationModalOpen(false);
-          if (immigration) {
-            loadImmigration(); // Reload to reset form
-          }
-        }} 
-        title={immigration ? 'Edit Immigration Record' : 'Add Immigration Record'}
-        size="xl"
-      >
-        <div className="space-y-6 max-h-[80vh] overflow-y-auto">
-          {/* Work Permit Section */}
-          <div className="space-y-4 p-4 border border-blue-500/20 rounded-lg bg-blue-500/5">
-            <h3 className="font-semibold text-blue-400 flex items-center gap-2">
-              <FileCheck size={18} />
-              Work Permit (Public Authority for Manpower)
-            </h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Work Permit Number</Label>
-                <Input
-                  value={immigrationForm.work_permit_number || ''}
-                  onChange={(e) => setImmigrationForm({ ...immigrationForm, work_permit_number: e.target.value })}
-                  placeholder="Enter work permit number"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Status</Label>
-                <Select 
-                  value={immigrationForm.work_permit_status} 
-                  onValueChange={(value) => setImmigrationForm({ ...immigrationForm, work_permit_status: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Active">Active</SelectItem>
-                    <SelectItem value="Pending Renewal">Pending Renewal</SelectItem>
-                    <SelectItem value="Expired">Expired</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Issue Date</Label>
-                <Input
-                  type="date"
-                  value={immigrationForm.work_permit_issue_date || ''}
-                  onChange={(e) => setImmigrationForm({ ...immigrationForm, work_permit_issue_date: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Expiry Date *</Label>
-                <Input
-                  type="date"
-                  value={immigrationForm.work_permit_expiry_date || ''}
-                  onChange={(e) => setImmigrationForm({ ...immigrationForm, work_permit_expiry_date: e.target.value })}
-                  required
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Residence Permit Section */}
-          <div className="space-y-4 p-4 border border-purple-500/20 rounded-lg bg-purple-500/5">
-            <h3 className="font-semibold text-purple-400 flex items-center gap-2">
-              <FileCheck size={18} />
-              Residence Permit (Article 18) - Ministry of Interior
-            </h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Residence Permit Number</Label>
-                <Input
-                  value={immigrationForm.residence_permit_number || ''}
-                  onChange={(e) => setImmigrationForm({ ...immigrationForm, residence_permit_number: e.target.value })}
-                  placeholder="Enter residence permit number"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Status</Label>
-                <Select 
-                  value={immigrationForm.residence_permit_status} 
-                  onValueChange={(value) => setImmigrationForm({ ...immigrationForm, residence_permit_status: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Active">Active</SelectItem>
-                    <SelectItem value="Pending Renewal">Pending Renewal</SelectItem>
-                    <SelectItem value="Expired">Expired</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Issue Date</Label>
-                <Input
-                  type="date"
-                  value={immigrationForm.residence_permit_issue_date || ''}
-                  onChange={(e) => setImmigrationForm({ ...immigrationForm, residence_permit_issue_date: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Expiry Date *</Label>
-                <Input
-                  type="date"
-                  value={immigrationForm.residence_permit_expiry_date || ''}
-                  onChange={(e) => setImmigrationForm({ ...immigrationForm, residence_permit_expiry_date: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Article</Label>
-                <Select 
-                  value={immigrationForm.residence_permit_article} 
-                  onValueChange={(value) => setImmigrationForm({ ...immigrationForm, residence_permit_article: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Article 18">Article 18 (Work)</SelectItem>
-                    <SelectItem value="Article 17">Article 17 (Family)</SelectItem>
-                    <SelectItem value="Article 19">Article 19 (Investor)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-
-          {/* Passport Section */}
-          <div className="space-y-4 p-4 border border-green-500/20 rounded-lg bg-green-500/5">
-            <h3 className="font-semibold text-green-400 flex items-center gap-2">
-              <FileCheck size={18} />
-              Passport Information
-            </h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Passport Number</Label>
-                <Input
-                  value={immigrationForm.passport_number || ''}
-                  onChange={(e) => setImmigrationForm({ ...immigrationForm, passport_number: e.target.value })}
-                  placeholder="Enter passport number"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Issue Country</Label>
-                <Input
-                  value={immigrationForm.passport_issue_country || ''}
-                  onChange={(e) => setImmigrationForm({ ...immigrationForm, passport_issue_country: e.target.value })}
-                  placeholder="Enter country"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Issue Date</Label>
-                <Input
-                  type="date"
-                  value={immigrationForm.passport_issue_date || ''}
-                  onChange={(e) => setImmigrationForm({ ...immigrationForm, passport_issue_date: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Expiry Date *</Label>
-                <Input
-                  type="date"
-                  value={immigrationForm.passport_expiry_date || ''}
-                  onChange={(e) => setImmigrationForm({ ...immigrationForm, passport_expiry_date: e.target.value })}
-                  required
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Health Insurance Section */}
-          <div className="space-y-4 p-4 border border-cyan-500/20 rounded-lg bg-cyan-500/5">
-            <h3 className="font-semibold text-cyan-400 flex items-center gap-2">
-              <FileCheck size={18} />
-              Health Insurance
-            </h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Insurance Number</Label>
-                <Input
-                  value={immigrationForm.health_insurance_number || ''}
-                  onChange={(e) => setImmigrationForm({ ...immigrationForm, health_insurance_number: e.target.value })}
-                  placeholder="Enter insurance number"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Provider</Label>
-                <Input
-                  value={immigrationForm.health_insurance_provider || ''}
-                  onChange={(e) => setImmigrationForm({ ...immigrationForm, health_insurance_provider: e.target.value })}
-                  placeholder="Enter insurance provider"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Issue Date</Label>
-                <Input
-                  type="date"
-                  value={immigrationForm.health_insurance_issue_date || ''}
-                  onChange={(e) => setImmigrationForm({ ...immigrationForm, health_insurance_issue_date: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Expiry Date</Label>
-                <Input
-                  type="date"
-                  value={immigrationForm.health_insurance_expiry_date || ''}
-                  onChange={(e) => setImmigrationForm({ ...immigrationForm, health_insurance_expiry_date: e.target.value })}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Civil ID Section */}
-          <div className="space-y-4 p-4 border border-orange-500/20 rounded-lg bg-orange-500/5">
-            <h3 className="font-semibold text-orange-400 flex items-center gap-2">
-              <FileCheck size={18} />
-              Civil ID
-            </h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Civil ID Number</Label>
-                <Input
-                  value={immigrationForm.civil_id_number || ''}
-                  onChange={(e) => setImmigrationForm({ ...immigrationForm, civil_id_number: e.target.value })}
-                  placeholder="Enter Civil ID number"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Expiry Date</Label>
-                <Input
-                  type="date"
-                  value={immigrationForm.civil_id_expiry_date || ''}
-                  onChange={(e) => setImmigrationForm({ ...immigrationForm, civil_id_expiry_date: e.target.value })}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* General Information */}
-          <div className="space-y-4 p-4 border border-indigo-500/20 rounded-lg bg-indigo-500/5">
-            <h3 className="font-semibold text-indigo-400 flex items-center gap-2">
-              <Globe size={18} />
-              General Information
-            </h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Visa Type</Label>
-                <Select 
-                  value={immigrationForm.visa_type} 
-                  onValueChange={(value) => setImmigrationForm({ ...immigrationForm, visa_type: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select visa type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Work Visa">Work Visa</SelectItem>
-                    <SelectItem value="Family Visa">Family Visa</SelectItem>
-                    <SelectItem value="Investor Visa">Investor Visa</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Sponsor Name</Label>
-                <Input
-                  value={immigrationForm.sponsor_name || ''}
-                  onChange={(e) => setImmigrationForm({ ...immigrationForm, sponsor_name: e.target.value })}
-                  placeholder="Company or individual name"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Entry Date</Label>
-                <Input
-                  type="date"
-                  value={immigrationForm.entry_date || ''}
-                  onChange={(e) => setImmigrationForm({ ...immigrationForm, entry_date: e.target.value })}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Notes */}
-          <div className="space-y-2">
-            <Label>Notes</Label>
-            <Textarea
-              value={immigrationForm.notes || ''}
-              onChange={(e) => setImmigrationForm({ ...immigrationForm, notes: e.target.value })}
-              placeholder="Additional notes about immigration status..."
-              rows={3}
-            />
-          </div>
-
-          <div className="flex justify-end gap-2 pt-4">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsImmigrationModalOpen(false);
-                if (immigration) {
-                  loadImmigration();
-                }
-              }}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleSaveImmigration}>
-              {immigration ? 'Update' : 'Save'} Immigration Record
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Yearly Renewal Modal */}
-      <Modal 
-        isOpen={isRenewalModalOpen} 
-        onClose={() => setIsRenewalModalOpen(false)} 
-        title="Yearly Renewal - Kuwait Expat Law"
-        size="md"
-      >
-        <div className="space-y-4">
-          <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-            <p className="text-sm text-muted-foreground mb-3">
-              According to Kuwait expat law, expatriate employees must renew their documents annually. Select the document to renew for 1 year.
-            </p>
-            <div className="space-y-2">
-              <Label>Select Document to Renew *</Label>
-              <Select 
-                value={renewalType} 
-                onValueChange={(value: any) => setRenewalType(value)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="work_permit">Work Permit (Public Authority for Manpower)</SelectItem>
-                  <SelectItem value="residence_permit">Residence Permit (Article 18) - Ministry of Interior</SelectItem>
-                  <SelectItem value="health_insurance">Health Insurance</SelectItem>
-                  <SelectItem value="passport">Passport</SelectItem>
-                  <SelectItem value="civil_id">Civil ID</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {immigration && (
-            <div className="p-4 bg-white/5 rounded-lg space-y-2">
-              <p className="text-sm font-semibold">Current Expiry Dates:</p>
-              {renewalType === 'work_permit' && immigration.work_permit_expiry_date && (
-                <p className="text-sm text-muted-foreground">
-                  Work Permit: {new Date(immigration.work_permit_expiry_date).toLocaleDateString()}
-                </p>
-              )}
-              {renewalType === 'residence_permit' && immigration.residence_permit_expiry_date && (
-                <p className="text-sm text-muted-foreground">
-                  Residence Permit: {new Date(immigration.residence_permit_expiry_date).toLocaleDateString()}
-                </p>
-              )}
-              {renewalType === 'health_insurance' && immigration.health_insurance_expiry_date && (
-                <p className="text-sm text-muted-foreground">
-                  Health Insurance: {new Date(immigration.health_insurance_expiry_date).toLocaleDateString()}
-                </p>
-              )}
-              {renewalType === 'passport' && immigration.passport_expiry_date && (
-                <p className="text-sm text-muted-foreground">
-                  Passport: {new Date(immigration.passport_expiry_date).toLocaleDateString()}
-                </p>
-              )}
-              {renewalType === 'civil_id' && immigration.civil_id_expiry_date && (
-                <p className="text-sm text-muted-foreground">
-                  Civil ID: {new Date(immigration.civil_id_expiry_date).toLocaleDateString()}
-                </p>
-              )}
-              <p className="text-sm font-semibold text-primary mt-2">
-                New Expiry Date: {(() => {
-                  const nextYear = new Date();
-                  nextYear.setFullYear(nextYear.getFullYear() + 1);
-                  return nextYear.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-                })()}
-              </p>
-            </div>
-          )}
-
-          <div className="flex justify-end gap-2 pt-4">
-            <Button
-              variant="outline"
-              onClick={() => setIsRenewalModalOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button 
-              onClick={() => handleYearlyRenewal(renewalType)}
-              className="gap-2"
-            >
-              <Calendar size={16} />
-              Renew for 1 Year
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 }

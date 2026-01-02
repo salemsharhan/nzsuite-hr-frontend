@@ -155,3 +155,4 @@ CREATE POLICY "Enable delete for authenticated users" ON documents
     )
   );
 
+

@@ -99,3 +99,4 @@ CREATE TRIGGER hiring_checklists_updated_at
   EXECUTE FUNCTION update_hiring_checklists_updated_at();
 
 
+

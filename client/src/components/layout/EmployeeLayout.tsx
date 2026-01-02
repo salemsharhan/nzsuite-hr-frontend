@@ -51,7 +51,7 @@ export const EmployeeLayout = ({ children }: { children: React.ReactNode }) => {
 
   const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard', href: '/self-service', exact: true },
-    { icon: Clock, label: 'Attendance', href: '/attendance' },
+    { icon: Clock, label: 'Attendance', href: '/self-service/attendance' },
     { icon: Calendar, label: 'Leaves', href: '/self-service/leaves' },
     { icon: FileText, label: 'Requests', href: '/self-service/requests' },
     { icon: User, label: 'Profile', href: '/self-service/profile' },
@@ -179,4 +179,5 @@ export const EmployeeLayout = ({ children }: { children: React.ReactNode }) => {
     </div>
   );
 };
+
 

@@ -31,6 +31,7 @@ ALTER TABLE document_requests ENABLE ROW LEVEL SECURITY;
 
 -- Create policies
 -- Employees can view their own requests
+DROP POLICY IF EXISTS "Employees can view their own document requests" ON document_requests;
 CREATE POLICY "Employees can view their own document requests" ON document_requests
   FOR SELECT
   USING (
@@ -41,6 +42,7 @@ CREATE POLICY "Employees can view their own document requests" ON document_reque
   );
 
 -- Employees can create their own requests
+DROP POLICY IF EXISTS "Employees can create their own document requests" ON document_requests;
 CREATE POLICY "Employees can create their own document requests" ON document_requests
   FOR INSERT
   WITH CHECK (
@@ -51,11 +53,13 @@ CREATE POLICY "Employees can create their own document requests" ON document_req
   );
 
 -- Admins can view all requests
+DROP POLICY IF EXISTS "Admins can view all document requests" ON document_requests;
 CREATE POLICY "Admins can view all document requests" ON document_requests
   FOR SELECT
   USING (auth.role() = 'authenticated');
 
 -- Admins can update all requests
+DROP POLICY IF EXISTS "Admins can update all document requests" ON document_requests;
 CREATE POLICY "Admins can update all document requests" ON document_requests
   FOR UPDATE
   USING (auth.role() = 'authenticated');
@@ -64,4 +68,5 @@ CREATE POLICY "Admins can update all document requests" ON document_requests
 COMMENT ON TABLE document_requests IS 'Employee requests for official documents';
 COMMENT ON COLUMN document_requests.document_id IS 'Reference to existing document if admin selects from employee documents';
 COMMENT ON COLUMN document_requests.uploaded_document_url IS 'URL of newly uploaded document if admin uploads a new one';
+
 

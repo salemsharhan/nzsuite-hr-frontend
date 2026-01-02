@@ -11,7 +11,8 @@ import { jobService, Job } from '../services/jobService';
 import { companyService, Company, CreateCompanyData } from '../services/companyService';
 import { companySettingsService, CompanySettings, RoleSalaryConfig, RolePermissionsConfig } from '../services/companySettingsService';
 import { useAuth } from '../contexts/AuthContext';
-import { Clock, DollarSign, Calendar, Settings as SettingsIcon } from 'lucide-react';
+import { Clock, DollarSign, Calendar, Settings as SettingsIcon, MapPin } from 'lucide-react';
+import { attendanceLocationService, AttendanceLocationSettings } from '../services/attendanceLocationService';
 
 export default function SettingsPage() {
   const { t } = useTranslation();
@@ -64,6 +65,18 @@ export default function SettingsPage() {
   const [isCompanySettingsModalOpen, setIsCompanySettingsModalOpen] = useState(false);
   const [isSalaryConfigModalOpen, setIsSalaryConfigModalOpen] = useState(false);
   const [isPermissionsConfigModalOpen, setIsPermissionsConfigModalOpen] = useState(false);
+
+  // Attendance Location Settings state
+  const [attendanceLocationSettings, setAttendanceLocationSettings] = useState<AttendanceLocationSettings | null>(null);
+  const [isAttendanceLocationModalOpen, setIsAttendanceLocationModalOpen] = useState(false);
+  const [newAttendanceLocation, setNewAttendanceLocation] = useState({
+    location_name: '',
+    google_maps_link: '',
+    radius_meters: 100,
+    face_recognition_enabled: true,
+    require_face_verification: true,
+    is_active: true
+  });
   const [newSalaryConfig, setNewSalaryConfig] = useState<Partial<RoleSalaryConfig>>({
     role_id: '',
     job_id: '',
@@ -103,6 +116,9 @@ export default function SettingsPage() {
       loadRolePermissionsConfigs();
       loadRoles(); // Load roles for salary config dropdown
       loadJobs(); // Load jobs for salary config dropdown
+    }
+    if (activeTab === 'attendance-location' && user?.company_id) {
+      loadAttendanceLocationSettings();
     }
   }, [activeTab, user?.company_id]);
 
@@ -393,6 +409,73 @@ export default function SettingsPage() {
       setRolePermissionsConfigs(configs);
     } catch (error) {
       console.error('Failed to load role permissions configs:', error);
+    }
+  };
+
+  // Attendance Location Settings functions
+  const loadAttendanceLocationSettings = async () => {
+    if (!user?.company_id) return;
+    try {
+      const settings = await attendanceLocationService.getByCompany(user.company_id);
+      setAttendanceLocationSettings(settings);
+      if (settings) {
+        setNewAttendanceLocation({
+          location_name: settings.location_name,
+          google_maps_link: settings.google_maps_link || '',
+          radius_meters: settings.radius_meters,
+          face_recognition_enabled: settings.face_recognition_enabled,
+          require_face_verification: settings.require_face_verification,
+          is_active: settings.is_active
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load attendance location settings:', error);
+    }
+  };
+
+  const handleSaveAttendanceLocation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user?.company_id) return;
+
+    try {
+      // Parse Google Maps link to extract coordinates
+      let latitude: number | null = null;
+      let longitude: number | null = null;
+
+      if (newAttendanceLocation.google_maps_link) {
+        try {
+          const coords = await attendanceLocationService.parseGoogleMapsLink(newAttendanceLocation.google_maps_link);
+          if (coords) {
+            latitude = coords.latitude;
+            longitude = coords.longitude;
+          } else {
+            alert('Could not parse Google Maps link. Please ensure it contains coordinates or use a full Google Maps URL.');
+            return;
+          }
+        } catch (error: any) {
+          alert(`Error parsing Google Maps link: ${error.message || 'Unknown error'}. Please try a full Google Maps URL.`);
+          return;
+        }
+      }
+
+      await attendanceLocationService.upsert({
+        company_id: user.company_id,
+        location_name: newAttendanceLocation.location_name,
+        google_maps_link: newAttendanceLocation.google_maps_link || null,
+        latitude,
+        longitude,
+        radius_meters: newAttendanceLocation.radius_meters,
+        face_recognition_enabled: newAttendanceLocation.face_recognition_enabled,
+        require_face_verification: newAttendanceLocation.require_face_verification,
+        is_active: newAttendanceLocation.is_active
+      });
+
+      await loadAttendanceLocationSettings();
+      setIsAttendanceLocationModalOpen(false);
+      alert('Attendance location settings saved successfully!');
+    } catch (error: any) {
+      console.error('Failed to save attendance location settings:', error);
+      alert(`Failed to save: ${error?.message || 'Unknown error'}`);
     }
   };
 
@@ -1061,6 +1144,84 @@ export default function SettingsPage() {
       );
     }
 
+    if (activeTab === 'attendance-location' && user?.company_id) {
+      return (
+        <>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MapPin size={24} />
+              Attendance Location Settings
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {attendanceLocationSettings ? (
+              <div className="space-y-4">
+                <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-semibold">{attendanceLocationSettings.location_name}</h3>
+                    <Badge variant={attendanceLocationSettings.is_active ? 'success' : 'outline'}>
+                      {attendanceLocationSettings.is_active ? 'Active' : 'Inactive'}
+                    </Badge>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    {attendanceLocationSettings.latitude && attendanceLocationSettings.longitude && (
+                      <div>
+                        <span className="text-muted-foreground">Coordinates: </span>
+                        <span className="font-mono">
+                          {attendanceLocationSettings.latitude.toFixed(6)}, {attendanceLocationSettings.longitude.toFixed(6)}
+                        </span>
+                      </div>
+                    )}
+                    <div>
+                      <span className="text-muted-foreground">Allowed Radius: </span>
+                      <span className="font-semibold">{attendanceLocationSettings.radius_meters}m</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Face Recognition: </span>
+                      <Badge variant={attendanceLocationSettings.face_recognition_enabled ? 'success' : 'outline'} className="ml-2">
+                        {attendanceLocationSettings.face_recognition_enabled ? 'Enabled' : 'Disabled'}
+                      </Badge>
+                    </div>
+                    {attendanceLocationSettings.face_recognition_enabled && (
+                      <div>
+                        <span className="text-muted-foreground">Require Face Verification: </span>
+                        <Badge variant={attendanceLocationSettings.require_face_verification ? 'success' : 'outline'} className="ml-2">
+                          {attendanceLocationSettings.require_face_verification ? 'Required' : 'Optional'}
+                        </Badge>
+                      </div>
+                    )}
+                    {attendanceLocationSettings.google_maps_link && (
+                      <div>
+                        <span className="text-muted-foreground">Google Maps: </span>
+                        <a
+                          href={attendanceLocationSettings.google_maps_link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline"
+                        >
+                          View on Maps
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <Button onClick={() => setIsAttendanceLocationModalOpen(true)}>
+                  Edit Location Settings
+                </Button>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground mb-4">No attendance location configured</p>
+                <Button onClick={() => setIsAttendanceLocationModalOpen(true)}>
+                  Configure Attendance Location
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </>
+      );
+    }
+
     return null;
   };
 
@@ -1082,6 +1243,7 @@ export default function SettingsPage() {
               { icon: Users, label: t('settings.jobs'), tab: 'jobs' },
               { icon: Database, label: t('settings.companies'), tab: 'companies', superAdminOnly: true },
               { icon: SettingsIcon, label: t('settings.companySettings'), tab: 'company-settings', adminOnly: true },
+              { icon: MapPin, label: 'Attendance Location', tab: 'attendance-location', adminOnly: true },
               { icon: Bell, label: t('common.notifications'), tab: 'notifications' },
               { icon: Database, label: t('common.import'), tab: 'import' },
               { icon: Smartphone, label: t('settings.mobileApp'), tab: 'mobile' },
@@ -1560,6 +1722,121 @@ export default function SettingsPage() {
           <div className="pt-4 flex justify-end gap-3 border-t border-white/10">
             <Button type="button" variant="outline" onClick={() => setIsPermissionsConfigModalOpen(false)}>{t('common.cancel')}</Button>
             <Button type="submit">{t('common.save')}</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Attendance Location Settings Modal */}
+      <Modal 
+        isOpen={isAttendanceLocationModalOpen} 
+        onClose={() => {
+          setIsAttendanceLocationModalOpen(false);
+          loadAttendanceLocationSettings();
+        }} 
+        title="Attendance Location Settings"
+        size="lg"
+      >
+        <form onSubmit={handleSaveAttendanceLocation} className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Location Name *</label>
+            <Input
+              required
+              value={newAttendanceLocation.location_name}
+              onChange={(e) => setNewAttendanceLocation({ ...newAttendanceLocation, location_name: e.target.value })}
+              placeholder="Main Office"
+            />
+          </div>
+          
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Google Maps Link *</label>
+            <Input
+              required
+              value={newAttendanceLocation.google_maps_link}
+              onChange={(e) => setNewAttendanceLocation({ ...newAttendanceLocation, google_maps_link: e.target.value })}
+              placeholder="https://www.google.com/maps?q=29.3759,47.9774"
+            />
+            <p className="text-xs text-muted-foreground">
+              Paste a Google Maps link. The system will automatically extract coordinates.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Allowed Radius (meters) *</label>
+            <Input
+              type="number"
+              required
+              min="10"
+              max="1000"
+              value={newAttendanceLocation.radius_meters}
+              onChange={(e) => setNewAttendanceLocation({ ...newAttendanceLocation, radius_meters: parseInt(e.target.value) || 100 })}
+              placeholder="100"
+            />
+            <p className="text-xs text-muted-foreground">
+              Employees must be within this radius to mark attendance (10-1000 meters)
+            </p>
+          </div>
+
+          <div className="space-y-4 pt-4 border-t border-white/10">
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-sm font-medium">Enable Face Recognition</label>
+                <p className="text-xs text-muted-foreground">
+                  Allow employees to use face recognition for attendance
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={newAttendanceLocation.face_recognition_enabled}
+                onChange={(e) => setNewAttendanceLocation({ ...newAttendanceLocation, face_recognition_enabled: e.target.checked })}
+                className="w-5 h-5 rounded border-white/20"
+              />
+            </div>
+
+            {newAttendanceLocation.face_recognition_enabled && (
+              <div className="flex items-center justify-between pl-4 border-l-2 border-primary/20">
+                <div>
+                  <label className="text-sm font-medium">Require Face Verification</label>
+                  <p className="text-xs text-muted-foreground">
+                    Make face verification mandatory for attendance
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={newAttendanceLocation.require_face_verification}
+                  onChange={(e) => setNewAttendanceLocation({ ...newAttendanceLocation, require_face_verification: e.target.checked })}
+                  className="w-5 h-5 rounded border-white/20"
+                />
+              </div>
+            )}
+
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-sm font-medium">Active</label>
+                <p className="text-xs text-muted-foreground">
+                  Enable or disable this location setting
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={newAttendanceLocation.is_active}
+                onChange={(e) => setNewAttendanceLocation({ ...newAttendanceLocation, is_active: e.target.checked })}
+                className="w-5 h-5 rounded border-white/20"
+              />
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-white/10 flex justify-end gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsAttendanceLocationModalOpen(false);
+                loadAttendanceLocationSettings();
+              }}
+            >
+              Cancel
+            </Button>
+            <Button type="submit">Save Settings</Button>
           </div>
         </form>
       </Modal>

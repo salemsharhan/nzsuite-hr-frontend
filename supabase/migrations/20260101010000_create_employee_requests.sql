@@ -27,6 +27,7 @@ ALTER TABLE employee_requests ENABLE ROW LEVEL SECURITY;
 
 -- Create policies
 -- Employees can view their own requests
+DROP POLICY IF EXISTS "Employees can view their own requests" ON employee_requests;
 CREATE POLICY "Employees can view their own requests" ON employee_requests
   FOR SELECT
   USING (
@@ -37,6 +38,7 @@ CREATE POLICY "Employees can view their own requests" ON employee_requests
   );
 
 -- Employees can create their own requests
+DROP POLICY IF EXISTS "Employees can create their own requests" ON employee_requests;
 CREATE POLICY "Employees can create their own requests" ON employee_requests
   FOR INSERT
   WITH CHECK (
@@ -47,11 +49,13 @@ CREATE POLICY "Employees can create their own requests" ON employee_requests
   );
 
 -- Admins can view all requests
+DROP POLICY IF EXISTS "Admins can view all employee requests" ON employee_requests;
 CREATE POLICY "Admins can view all employee requests" ON employee_requests
   FOR SELECT
   USING (auth.role() = 'authenticated');
 
 -- Admins can update all requests
+DROP POLICY IF EXISTS "Admins can update all employee requests" ON employee_requests;
 CREATE POLICY "Admins can update all employee requests" ON employee_requests
   FOR UPDATE
   USING (auth.role() = 'authenticated');
@@ -60,4 +64,5 @@ CREATE POLICY "Admins can update all employee requests" ON employee_requests
 COMMENT ON TABLE employee_requests IS 'Employee self-service requests (excluding leaves and documents)';
 COMMENT ON COLUMN employee_requests.form_data IS 'JSON object containing all form field data';
 COMMENT ON COLUMN employee_requests.workflow_route IS 'Array of approver roles/departments in order';
+
 

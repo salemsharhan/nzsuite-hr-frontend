@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { User, FileText, DollarSign, Shield, MapPin, Phone, Mail, Calendar, Briefcase, Building2, GraduationCap, CreditCard, Globe, FileCheck, AlertCircle, Download } from 'lucide-react';
+import i18n from '../utils/i18n';
+import { getEmployeeDisplayName, getEmployeeInitials, getEmployeeFirstName, getEmployeeLastName } from '../utils/employeeName';
+import { User, FileText, DollarSign, Shield, MapPin, Phone, Mail, Calendar, Briefcase, Building2, GraduationCap, CreditCard, Globe, FileCheck, AlertCircle, Download, Camera } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, Button, Badge } from '../components/common/UIComponents';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '../components/ui/accordion';
 import { employeeService, Employee } from '../services/employeeService';
@@ -28,30 +30,48 @@ const calculateDaysUntilExpiry = (expiryDate: string | undefined): number | null
 };
 
 // Helper function to get document status
-const getDocumentStatus = (daysUntilExpiry: number | null, status?: string): { label: string; color: string; priority: string } => {
+const getDocumentStatus = (daysUntilExpiry: number | null, status?: string, t?: any): { label: string; color: string; priority: string } => {
+  if (!t) {
+    // Fallback if translation not available
+    if (daysUntilExpiry === null) {
+      return { label: status || 'Valid', color: 'text-green-400', priority: 'safe' };
+    }
+    if (daysUntilExpiry < 0) {
+      return { label: 'CRITICAL - Overdue!', color: 'text-red-400', priority: 'critical' };
+    }
+    if (daysUntilExpiry <= 14) {
+      return { label: 'URGENT - ' + Math.abs(daysUntilExpiry) + ' days left', color: 'text-red-400', priority: 'urgent' };
+    }
+    if (daysUntilExpiry <= 30) {
+      return { label: 'Attention - ' + daysUntilExpiry + ' days left', color: 'text-orange-400', priority: 'attention' };
+    }
+    return { label: 'Safe - ' + daysUntilExpiry + ' days left', color: 'text-green-400', priority: 'safe' };
+  }
+  
   if (daysUntilExpiry === null) {
-    return { label: status || 'Valid', color: 'text-green-400', priority: 'safe' };
+    return { label: status || t('employeeProfile.validStatus'), color: 'text-green-400', priority: 'safe' };
   }
   if (daysUntilExpiry < 0) {
-    return { label: 'CRITICAL - Overdue!', color: 'text-red-400', priority: 'critical' };
+    return { label: t('employeeProfile.overdue'), color: 'text-red-400', priority: 'critical' };
   }
   if (daysUntilExpiry <= 14) {
-    return { label: 'URGENT - ' + Math.abs(daysUntilExpiry) + ' days left', color: 'text-red-400', priority: 'urgent' };
+    return { label: t('employeeProfile.actionRequired') + ' - ' + Math.abs(daysUntilExpiry) + ' ' + t('common.days') + ' left', color: 'text-red-400', priority: 'urgent' };
   }
   if (daysUntilExpiry <= 30) {
-    return { label: 'Attention - ' + daysUntilExpiry + ' days left', color: 'text-orange-400', priority: 'attention' };
+    return { label: 'Attention - ' + daysUntilExpiry + ' ' + t('common.days') + ' left', color: 'text-orange-400', priority: 'attention' };
   }
-  return { label: 'Safe - ' + daysUntilExpiry + ' days left', color: 'text-green-400', priority: 'safe' };
+  return { label: t('employeeProfile.safe') + ' - ' + daysUntilExpiry + ' ' + t('common.days') + ' left', color: 'text-green-400', priority: 'safe' };
 };
 
 // Employee Immigration View Component
 function EmployeeImmigrationView({ immigration, employee }: { immigration: EmployeeImmigration; employee: Employee }) {
+  const { t } = useTranslation();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   
   // Calculate document statuses
   const documents = [
     {
-      type: 'Civil ID',
+      type: t('employeeProfile.civilID'),
       number: immigration.civil_id_number || 'N/A',
       expiryDate: immigration.civil_id_expiry_date,
       status: immigration.civil_id_status,
@@ -59,7 +79,7 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
       color: 'blue'
     },
     {
-      type: 'Passport',
+      type: t('employeeProfile.passport'),
       number: immigration.passport_number || 'N/A',
       expiryDate: immigration.passport_expiry_date,
       status: immigration.passport_status,
@@ -67,7 +87,7 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
       color: 'green'
     },
     {
-      type: 'Work Permit',
+      type: t('employeeProfile.workPermit'),
       number: immigration.work_permit_number || 'N/A',
       expiryDate: immigration.work_permit_expiry_date,
       status: immigration.work_permit_status,
@@ -75,7 +95,7 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
       color: 'purple'
     },
     {
-      type: 'Health Insurance',
+      type: t('employeeProfile.healthInsurance'),
       number: immigration.health_insurance_number || immigration.health_insurance_provider || 'N/A',
       expiryDate: immigration.health_insurance_expiry_date,
       status: immigration.health_insurance_status,
@@ -83,7 +103,7 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
       color: 'cyan'
     },
     {
-      type: 'Residence Permit (Article 18)',
+      type: t('employeeProfile.residencePermitArticle18'),
       number: immigration.residence_permit_number || 'N/A',
       expiryDate: immigration.residence_permit_expiry_date,
       status: immigration.residence_permit_status,
@@ -91,17 +111,17 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
       color: 'indigo'
     },
     {
-      type: 'Fingerprint Registration',
+      type: t('employeeProfile.fingerprintRegistration'),
       number: immigration.civil_id_number || 'N/A',
       expiryDate: null,
-      status: 'Active',
+      status: t('common.active'),
       icon: Fingerprint,
       color: 'gray'
     }
   ].map(doc => ({
     ...doc,
     daysUntilExpiry: calculateDaysUntilExpiry(doc.expiryDate || undefined),
-    statusInfo: getDocumentStatus(calculateDaysUntilExpiry(doc.expiryDate || undefined), doc.status)
+    statusInfo: getDocumentStatus(calculateDaysUntilExpiry(doc.expiryDate || undefined), doc.status, t)
   }));
 
   // Calculate statistics
@@ -121,7 +141,7 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
     .filter(d => d.expiryDate && (d.daysUntilExpiry !== null && d.daysUntilExpiry <= 30))
     .map(doc => ({
       id: doc.type,
-      title: `${doc.type === 'Passport' ? 'Submit passport renewal application' : doc.type === 'Work Permit' ? 'Upload work permit supporting documents' : doc.type === 'Health Insurance' ? 'Complete health insurance renewal form' : doc.type === 'Residence Permit (Article 18)' ? 'Submit residence permit photos' : 'Update ' + doc.type.toLowerCase()}`,
+      title: `${doc.type === t('employeeProfile.passport') ? t('employeeProfile.submitPassportRenewalApplication') : doc.type === t('employeeProfile.workPermit') ? t('employeeProfile.uploadWorkPermitSupportingDocuments') : doc.type === t('employeeProfile.healthInsurance') ? t('employeeProfile.completeHealthInsuranceRenewalForm') : doc.type === t('employeeProfile.residencePermitArticle18') ? t('employeeProfile.submitResidencePermitPhotos') : t('employeeProfile.update') + ' ' + doc.type.toLowerCase()}`,
       dueDate: doc.expiryDate ? new Date(doc.expiryDate) : null,
       priority: doc.statusInfo.priority === 'critical' || doc.statusInfo.priority === 'urgent' ? 'HIGH' : 'MEDIUM',
       completed: false
@@ -135,7 +155,7 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
     .filter(d => d.expiryDate && (d.daysUntilExpiry !== null && d.daysUntilExpiry <= 30))
     .map(doc => ({
       type: doc.statusInfo.priority === 'critical' || doc.statusInfo.priority === 'urgent' ? 'error' : 'warning',
-      message: `${doc.type} ${doc.daysUntilExpiry && doc.daysUntilExpiry < 0 ? 'overdue' : doc.daysUntilExpiry && doc.daysUntilExpiry <= 14 ? 'expires in ' + doc.daysUntilExpiry + ' days' : 'needs attention'} - ${doc.statusInfo.priority === 'critical' || doc.statusInfo.priority === 'urgent' ? 'Immediate action required' : 'Start renewal process'}.`
+      message: `${doc.type} ${doc.daysUntilExpiry && doc.daysUntilExpiry < 0 ? t('employeeProfile.overdue') : doc.daysUntilExpiry && doc.daysUntilExpiry <= 14 ? t('common.to') + ' ' + doc.daysUntilExpiry + ' ' + t('common.days') : t('employeeProfile.actionRequired')} - ${doc.statusInfo.priority === 'critical' || doc.statusInfo.priority === 'urgent' ? t('employeeProfile.immediateActionRequired') : t('employeeProfile.startRenewal')}.`
     }));
 
   // Calendar helpers
@@ -169,8 +189,8 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
     });
   };
 
-  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const monthNames = [t('employeeProfile.january'), t('employeeProfile.february'), t('employeeProfile.march'), t('employeeProfile.april'), t('employeeProfile.may'), t('employeeProfile.june'), t('employeeProfile.july'), t('employeeProfile.august'), t('employeeProfile.september'), t('employeeProfile.october'), t('employeeProfile.november'), t('employeeProfile.december')];
+  const dayNames = [t('employeeProfile.sun'), t('employeeProfile.mon'), t('employeeProfile.tue'), t('employeeProfile.wed'), t('employeeProfile.thu'), t('employeeProfile.fri'), t('employeeProfile.sat')];
 
   return (
     <div className="space-y-3 md:space-y-4">
@@ -181,8 +201,8 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
             <Globe size={18} className="md:w-5 md:h-5 text-purple-400" />
           </div>
           <div>
-            <h2 className="text-base md:text-2xl font-bold">Immigration & Documents</h2>
-            <p className="text-[10px] md:text-sm text-muted-foreground">Work permits, visas & renewals</p>
+            <h2 className="text-base md:text-2xl font-bold">{t('employeeProfile.immigrationDocuments')}</h2>
+            <p className="text-[10px] md:text-sm text-muted-foreground">{t('employeeProfile.workPermitsVisasRenewals')}</p>
           </div>
         </div>
       </div>
@@ -195,23 +215,23 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
             <div className="flex flex-col items-center justify-center p-2 md:p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
               <div className="w-10 h-10 md:w-12 md:h-12 rounded-lg bg-blue-500/20 flex items-center justify-center mb-1.5 md:mb-2">
                 <span className="text-base md:text-lg font-bold text-blue-400">
-                  {(employee.first_name || 'U')[0]}{(employee.last_name || 'N')[0]}
+                  {getEmployeeInitials(employee)}
                 </span>
               </div>
               <div className="text-lg md:text-2xl font-bold text-blue-400">{totalDocuments}</div>
-              <div className="text-[10px] md:text-xs text-muted-foreground text-center">Total</div>
+              <div className="text-[10px] md:text-xs text-muted-foreground text-center">{t('employeeProfile.total')}</div>
             </div>
 
             {/* Require Action */}
             <div className="flex flex-col items-center justify-center p-2 md:p-3 rounded-lg bg-orange-500/10 border border-orange-500/20">
               <div className="text-lg md:text-2xl font-bold text-orange-400 mb-0.5 md:mb-1">{requireAction}</div>
-              <div className="text-[10px] md:text-xs text-muted-foreground text-center">Require Action</div>
+              <div className="text-[10px] md:text-xs text-muted-foreground text-center">{t('employeeProfile.requireAction')}</div>
             </div>
 
             {/* Valid */}
             <div className="flex flex-col items-center justify-center p-2 md:p-3 rounded-lg bg-green-500/10 border border-green-500/20">
               <div className="text-lg md:text-2xl font-bold text-green-400 mb-0.5 md:mb-1">{validDocuments}</div>
-              <div className="text-[10px] md:text-xs text-muted-foreground text-center">Valid</div>
+              <div className="text-[10px] md:text-xs text-muted-foreground text-center">{t('employeeProfile.valid')}</div>
             </div>
 
             {/* Next Deadline */}
@@ -219,7 +239,7 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
               <div className="text-sm md:text-lg font-bold text-red-400 mb-0.5 md:mb-1 line-clamp-1">
                 {nextDeadline ? new Date(nextDeadline.expiryDate!).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'N/A'}
               </div>
-              <div className="text-[10px] md:text-xs text-muted-foreground text-center">Next Deadline</div>
+              <div className="text-[10px] md:text-xs text-muted-foreground text-center">{t('employeeProfile.nextDeadline')}</div>
             </div>
           </div>
         </CardContent>
@@ -229,7 +249,7 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
       <div>
         <div className="flex items-center gap-2 mb-2 md:mb-3">
           <FileCheck size={14} className="md:w-4 md:h-4 text-muted-foreground" />
-          <h3 className="text-sm md:text-base font-semibold">My Immigration Documents</h3>
+          <h3 className="text-sm md:text-base font-semibold">{t('employeeProfile.myImmigrationDocuments')}</h3>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-3">
           {documents.map((doc, idx) => {
@@ -263,7 +283,7 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
                     }`} />
                   </div>
                   {isUrgent && (
-                    <Badge variant="destructive" className="text-[9px] md:text-xs px-1.5 py-0.5 h-4 md:h-5">URGENT</Badge>
+                    <Badge variant="destructive" className="text-[9px] md:text-xs px-1.5 py-0.5 h-4 md:h-5">{t('employeeProfile.actionRequired')}</Badge>
                   )}
                 </div>
 
@@ -276,7 +296,7 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
                 {/* Expiry Date */}
                 {doc.expiryDate && (
                   <div className="mb-1.5">
-                    <div className="text-[10px] md:text-xs text-muted-foreground">Expires:</div>
+                    <div className="text-[10px] md:text-xs text-muted-foreground">{t('employeeProfile.expires')}</div>
                     <div className="text-[10px] md:text-xs font-semibold">
                       {new Date(doc.expiryDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                     </div>
@@ -289,7 +309,7 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
                     {doc.statusInfo.label}
                   </div>
                   <div className="text-[9px] md:text-[10px] text-muted-foreground line-clamp-1">
-                    {isOverdue ? 'Immediate Action Required' : isUrgent ? 'Action Required' : doc.statusInfo.priority === 'attention' ? 'Pending Documents' : 'Valid'}
+                    {isOverdue ? t('employeeProfile.immediateActionRequired') : isUrgent ? t('employeeProfile.actionRequired') : doc.statusInfo.priority === 'attention' ? t('employeeProfile.pendingDocuments') : t('employeeProfile.validStatus')}
                   </div>
                 </div>
 
@@ -300,7 +320,7 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
                   className="w-full text-[10px] md:text-xs h-7 md:h-8 mt-auto"
                 >
                   <span className="truncate">
-                    {isOverdue ? 'Update Now' : isUrgent ? 'Start Renewal' : doc.statusInfo.priority === 'attention' ? 'Upload Docs' : 'View Details'}
+                    {isOverdue ? t('employeeProfile.updateNow') : isUrgent ? t('employeeProfile.startRenewal') : doc.statusInfo.priority === 'attention' ? t('employeeProfile.uploadDocs') : t('employeeProfile.viewDetails')}
                   </span>
                   <ChevronRight size={10} className="ml-1 md:w-3 md:h-3 flex-shrink-0" />
                 </Button>
@@ -316,7 +336,7 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
         <Card className="p-3 md:p-4">
           <h3 className="text-sm md:text-base font-semibold mb-2 md:mb-3 flex items-center gap-2">
             <Clock size={14} className="md:w-4 md:h-4" />
-            <span className="text-xs md:text-sm">My Tasks & To-Do List</span>
+            <span className="text-xs md:text-sm">{t('employeeProfile.myTasksTodoList')}</span>
           </h3>
           <div className="space-y-1.5 md:space-y-2 mb-3 md:mb-4 max-h-[400px] overflow-y-auto">
             {tasks.slice(0, 5).map((task, idx) => (
@@ -325,9 +345,9 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
                 <div className="flex-1 min-w-0">
                   <div className="text-xs md:text-sm font-medium line-clamp-1">{task.title}</div>
                   <div className="text-[10px] md:text-xs text-muted-foreground flex items-center gap-1.5 md:gap-2 mt-0.5 md:mt-1 flex-wrap">
-                    <span>Due: {task.dueDate ? task.dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}</span>
+                    <span>{t('employeeProfile.due')} {task.dueDate ? task.dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}</span>
                     <Badge variant={task.priority === 'HIGH' ? 'destructive' : 'warning'} className="text-[10px] md:text-xs px-1.5 py-0.5">
-                      {task.priority}
+                      {task.priority === 'HIGH' ? t('employeeProfile.high') : t('employeeProfile.medium')}
                     </Badge>
                   </div>
                 </div>
@@ -337,21 +357,21 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
             <div className="flex items-start gap-2 p-2 rounded-lg bg-green-500/10 border border-green-500/20 opacity-60">
               <CheckCircle2 size={14} className="mt-0.5 md:mt-1 text-green-400 md:w-4 md:h-4" />
               <div className="flex-1 min-w-0">
-                <div className="text-xs md:text-sm font-medium line-through line-clamp-1">Update contact information</div>
-                <div className="text-[10px] md:text-xs text-muted-foreground mt-0.5 md:mt-1">Completed: Dec 28, 2025</div>
+                <div className="text-xs md:text-sm font-medium line-through line-clamp-1">{t('employeeProfile.updateContactInformation')}</div>
+                <div className="text-[10px] md:text-xs text-muted-foreground mt-0.5 md:mt-1">{t('employeeProfile.completed')} Dec 28, 2025</div>
               </div>
             </div>
             <div className="flex items-start gap-2 p-2 rounded-lg bg-green-500/10 border border-green-500/20 opacity-60">
               <CheckCircle2 size={14} className="mt-0.5 md:mt-1 text-green-400 md:w-4 md:h-4" />
               <div className="flex-1 min-w-0">
-                <div className="text-xs md:text-sm font-medium line-through line-clamp-1">Submit residence permit photos</div>
-                <div className="text-[10px] md:text-xs text-muted-foreground mt-0.5 md:mt-1">Completed: Dec 20, 2025</div>
+                <div className="text-xs md:text-sm font-medium line-through line-clamp-1">{t('employeeProfile.submitResidencePermitPhotos')}</div>
+                <div className="text-[10px] md:text-xs text-muted-foreground mt-0.5 md:mt-1">{t('employeeProfile.completed')} Dec 20, 2025</div>
               </div>
             </div>
           </div>
           <div className="pt-2 md:pt-3 border-t border-white/10">
             <div className="flex items-center justify-between text-[10px] md:text-xs mb-1.5 md:mb-2">
-              <span className="text-muted-foreground">{completedTasks} of {totalTasks} tasks completed</span>
+              <span className="text-muted-foreground">{completedTasks} {t('common.of')} {totalTasks} {t('employeeProfile.tasksCompleted')}</span>
               <span className="font-semibold">{Math.round((completedTasks / totalTasks) * 100)}%</span>
             </div>
             <div className="w-full bg-white/10 rounded-full h-1.5 md:h-2">
@@ -368,7 +388,7 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
           <div className="flex items-center justify-between mb-2 md:mb-3">
             <h3 className="text-sm md:text-base font-semibold flex items-center gap-2">
               <CalendarIcon size={14} className="md:w-4 md:h-4" />
-              <span className="text-xs md:text-sm">My Upcoming Deadlines</span>
+              <span className="text-xs md:text-sm">{t('employeeProfile.myUpcomingDeadlines')}</span>
             </h3>
             <div className="flex items-center gap-1 md:gap-2">
               <Button variant="ghost" size="sm" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))} className="h-7 w-7 md:h-8 md:w-8 p-0">
@@ -452,7 +472,7 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
                     </span>
                     <span className="font-medium truncate">- {deadline.type}</span>
                     <Badge variant={isOverdue || isUrgent ? 'destructive' : days !== null && days <= 30 ? 'warning' : 'default'} className="text-[9px] md:text-xs px-1.5 py-0.5 ml-auto flex-shrink-0">
-                      {isOverdue ? 'Overdue!' : isUrgent ? 'Action' : 'Safe'}
+                      {isOverdue ? t('employeeProfile.overdue') : isUrgent ? t('employeeProfile.action') : t('employeeProfile.safe')}
                     </Badge>
                   </div>
                 );
@@ -468,7 +488,7 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
         <Card className="p-3 md:p-4">
           <h3 className="text-sm md:text-base font-semibold mb-2 md:mb-3 flex items-center gap-2">
             <AlertCircle size={14} className="md:w-4 md:h-4" />
-            <span className="text-xs md:text-sm">Notifications</span>
+            <span className="text-xs md:text-sm">{t('employeeProfile.notifications')}</span>
           </h3>
           <div className="space-y-1.5 md:space-y-2">
             {notifications.slice(0, 3).map((notif, idx) => (
@@ -488,17 +508,17 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
           <Card className="p-3 md:p-4">
             <h3 className="text-sm md:text-base font-semibold mb-2 md:mb-3 flex items-center gap-2">
               <HelpCircle size={14} className="md:w-4 md:h-4" />
-              <span className="text-xs md:text-sm">Need Help?</span>
+              <span className="text-xs md:text-sm">{t('employeeProfile.needHelp')}</span>
             </h3>
             <div className="space-y-1.5 md:space-y-2">
               <Button variant="outline" size="sm" className="w-full justify-start text-xs md:text-sm h-8 md:h-9">
-                Contact HR Department
+                {t('employeeProfile.contactHRDepartment')}
               </Button>
               <Button variant="outline" size="sm" className="w-full justify-start text-xs md:text-sm h-8 md:h-9">
-                View Renewal Guidelines
+                {t('employeeProfile.viewRenewalGuidelines')}
               </Button>
               <Button variant="outline" size="sm" className="w-full justify-start text-xs md:text-sm h-8 md:h-9">
-                Download Required Forms
+                {t('employeeProfile.downloadRequiredForms')}
               </Button>
             </div>
           </Card>
@@ -506,20 +526,20 @@ function EmployeeImmigrationView({ immigration, employee }: { immigration: Emplo
           <Card className="p-3 md:p-4">
             <h3 className="text-sm md:text-base font-semibold mb-2 md:mb-3 flex items-center gap-2">
               <Globe size={14} className="md:w-4 md:h-4" />
-              <span className="text-xs md:text-sm">Kuwait Law Information</span>
+              <span className="text-xs md:text-sm">{t('employeeProfile.kuwaitLawInformation')}</span>
             </h3>
             <div className="space-y-1.5 md:space-y-2">
               <div className="p-2 rounded-lg bg-white/5 border border-white/10">
-                <div className="text-[10px] md:text-xs font-semibold mb-0.5 md:mb-1">6-Month Travel Limit</div>
-                <div className="text-[10px] md:text-xs text-muted-foreground">Monitor your days outside Kuwait.</div>
+                <div className="text-[10px] md:text-xs font-semibold mb-0.5 md:mb-1">{t('employeeProfile.sixMonthTravelLimit')}</div>
+                <div className="text-[10px] md:text-xs text-muted-foreground">{t('employeeProfile.monitorDaysOutsideKuwait')}</div>
               </div>
               <div className="p-2 rounded-lg bg-white/5 border border-white/10">
-                <div className="text-[10px] md:text-xs font-semibold mb-0.5 md:mb-1">Article 18 Requirements</div>
-                <div className="text-[10px] md:text-xs text-muted-foreground">Keep work permit current.</div>
+                <div className="text-[10px] md:text-xs font-semibold mb-0.5 md:mb-1">{t('employeeProfile.article18Requirements')}</div>
+                <div className="text-[10px] md:text-xs text-muted-foreground">{t('employeeProfile.keepWorkPermitCurrent')}</div>
               </div>
               <div className="p-2 rounded-lg bg-white/5 border border-white/10">
-                <div className="text-[10px] md:text-xs font-semibold mb-0.5 md:mb-1">Document Checklist</div>
-                <div className="text-[10px] md:text-xs text-muted-foreground">View required documents for renewal.</div>
+                <div className="text-[10px] md:text-xs font-semibold mb-0.5 md:mb-1">{t('employeeProfile.documentChecklist')}</div>
+                <div className="text-[10px] md:text-xs text-muted-foreground">{t('employeeProfile.viewRequiredDocumentsForRenewal')}</div>
               </div>
             </div>
           </Card>
@@ -547,6 +567,8 @@ export default function EmployeeProfilePage() {
   const [workingHours, setWorkingHours] = useState<EmployeeWorkingHours | null>(null);
   const [reportingManagerChain, setReportingManagerChain] = useState<Employee[]>([]);
   const [timesheetEntries, setTimesheetEntries] = useState<TimesheetEntry[]>([]);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadEmployee();
@@ -571,6 +593,42 @@ export default function EmployeeProfilePage() {
       loadLeaveBalance();
     }
   }, [employee?.id, user?.company_id]);
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !employee?.id) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert(t('employees.invalidImageFile') || 'Please select a valid image file');
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert(t('employees.imageTooLarge') || 'Image size must be less than 5MB');
+      return;
+    }
+
+    try {
+      setUploadingAvatar(true);
+      const avatarUrl = await employeeService.uploadAvatar(employee.id, file);
+      
+      // Update local employee state
+      setEmployee({ ...employee, avatar_url: avatarUrl });
+      
+      // Reload employee to get fresh data
+      await loadEmployee();
+    } catch (error: any) {
+      console.error('Failed to upload avatar:', error);
+      alert(error.message || t('employees.avatarUploadFailed') || 'Failed to upload profile image');
+    } finally {
+      setUploadingAvatar(false);
+      if (avatarInputRef.current) {
+        avatarInputRef.current.value = '';
+      }
+    }
+  };
 
   const loadEmployee = async () => {
     try {
@@ -740,25 +798,43 @@ export default function EmployeeProfilePage() {
           <CardContent className="p-4 md:p-6">
             <div className="flex items-center gap-4">
               {/* Avatar */}
-              <div className="relative flex-shrink-0">
-                <div className="w-16 h-16 md:w-20 md:h-20 rounded-xl bg-gradient-to-br from-primary via-primary/80 to-primary/60 flex items-center justify-center text-2xl md:text-3xl font-bold text-white shadow-lg">
+              <div className="relative flex-shrink-0 group">
+                <div className="w-16 h-16 md:w-20 md:h-20 rounded-xl bg-gradient-to-br from-primary via-primary/80 to-primary/60 flex items-center justify-center text-2xl md:text-3xl font-bold text-white shadow-lg relative overflow-hidden">
                   {(emp.avatar_url && emp.avatar_url !== `https://ui-avatars.com/api/?name=${emp.first_name}+${emp.last_name}`) ? (
                     <img src={emp.avatar_url} alt="" className="w-full h-full object-cover rounded-xl" />
                   ) : (
                     <span>
-                      {(emp.first_name || emp.firstName || 'U')[0]}{(emp.last_name || emp.lastName || 'N')[0]}
+                      {getEmployeeInitials(emp)}
                     </span>
+                  )}
+                  {/* Upload Overlay */}
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer rounded-xl" onClick={() => avatarInputRef.current?.click()}>
+                    <Camera size={18} className="text-white md:w-5 md:h-5" />
+                  </div>
+                  {uploadingAvatar && (
+                    <div className="absolute inset-0 bg-black/70 flex items-center justify-center rounded-xl">
+                      <div className="text-white text-xs md:text-sm">{t('common.uploading') || 'Uploading...'}</div>
+                    </div>
                   )}
                 </div>
                 <div className="absolute -bottom-1 -right-1 w-5 h-5 md:w-6 md:h-6 rounded-full bg-green-500 border-2 border-card" />
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarUpload}
+                  className="hidden"
+                />
               </div>
 
               {/* Name and Basic Info */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2 mb-1">
-                  <h1 className="text-lg md:text-2xl font-bold truncate">
-                    {emp.first_name || emp.firstName} {emp.last_name || emp.lastName}
-                  </h1>
+                  <div className="flex-1 min-w-0">
+                    <h1 className="text-lg md:text-2xl font-bold truncate" dir={i18n.language === 'ar' ? 'rtl' : 'ltr'}>
+                      {getEmployeeDisplayName(emp)}
+                    </h1>
+                  </div>
                   <Badge variant={emp.status === 'Active' ? 'success' : 'warning'} className="text-xs md:text-sm px-2 md:px-3 py-1">
                     {emp.status}
                   </Badge>
@@ -774,8 +850,8 @@ export default function EmployeeProfilePage() {
                   </span>
                 </div>
                 <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-                  <span>ID: {emp.employee_id || emp.employeeId || 'N/A'}</span>
-                  {(emp as any).external_id && <span>• FP: {(emp as any).external_id}</span>}
+                  <span>{t('employeeProfile.employeeIdLabel')} {emp.employee_id || emp.employeeId || t('employeeProfile.notApplicable')}</span>
+                  {(emp as any).external_id && <span>• {t('employeeProfile.fingerprintCodeLabel')} {(emp as any).external_id}</span>}
                 </div>
               </div>
             </div>
@@ -788,25 +864,25 @@ export default function EmployeeProfilePage() {
         <div className="px-4 md:px-4 mb-4">
           <div className="grid grid-cols-3 gap-2 md:gap-3">
             <Card className="p-3 md:p-4 text-center border-primary/20 bg-primary/5">
-              <div className="text-xs md:text-sm text-muted-foreground mb-1">Annual Leave</div>
+              <div className="text-xs md:text-sm text-muted-foreground mb-1">{t('employeeProfile.annualLeave')}</div>
               <div className="text-lg md:text-2xl font-bold text-primary">
                 {leaveBalance.annual_leave.available.toFixed(0)}
               </div>
-              <div className="text-[10px] md:text-xs text-muted-foreground">days</div>
+              <div className="text-[10px] md:text-xs text-muted-foreground">{t('common.days')}</div>
             </Card>
             <Card className="p-3 md:p-4 text-center border-blue-500/20 bg-blue-500/5">
-              <div className="text-xs md:text-sm text-muted-foreground mb-1">Sick Leave</div>
+              <div className="text-xs md:text-sm text-muted-foreground mb-1">{t('employeeProfile.sickLeave')}</div>
               <div className="text-lg md:text-2xl font-bold text-blue-400">
                 {leaveBalance.sick_leave.available.toFixed(0)}
               </div>
-              <div className="text-[10px] md:text-xs text-muted-foreground">days</div>
+              <div className="text-[10px] md:text-xs text-muted-foreground">{t('common.days')}</div>
             </Card>
             <Card className="p-3 md:p-4 text-center border-purple-500/20 bg-purple-500/5">
-              <div className="text-xs md:text-sm text-muted-foreground mb-1">Emergency</div>
+              <div className="text-xs md:text-sm text-muted-foreground mb-1">{t('employeeProfile.emergencyLeave')}</div>
               <div className="text-lg md:text-2xl font-bold text-purple-400">
                 {leaveBalance.emergency_leave.available.toFixed(0)}
               </div>
-              <div className="text-[10px] md:text-xs text-muted-foreground">days</div>
+              <div className="text-[10px] md:text-xs text-muted-foreground">{t('common.days')}</div>
             </Card>
           </div>
         </div>
@@ -824,7 +900,7 @@ export default function EmployeeProfilePage() {
                 </div>
                 <div className="text-left">
                   <div className="font-semibold text-base">{t('employees.personalInfo')}</div>
-                  <div className="text-xs text-muted-foreground">Basic personal details</div>
+                  <div className="text-xs text-muted-foreground">{t('employeeProfile.basicPersonalDetails')}</div>
                 </div>
               </div>
             </AccordionTrigger>
@@ -832,11 +908,22 @@ export default function EmployeeProfilePage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                 <div className="p-3 rounded-lg bg-white/5 border border-white/10">
                   <div className="text-xs text-muted-foreground mb-1">{t('common.firstName')}</div>
-                  <div className="font-semibold">{emp.first_name || emp.firstName}</div>
+                  <div className="font-semibold" dir={i18n.language === 'ar' ? 'rtl' : 'ltr'}>{getEmployeeFirstName(emp)}</div>
                 </div>
+                {(emp.middle_name || emp.middleName || (i18n.language === 'ar' && (emp.arabic_middle_name || emp.arabicMiddleName))) && (
+                  <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                    <div className="text-xs text-muted-foreground mb-1">{t('employees.middleName') || 'Middle Name'}</div>
+                    <div className="font-semibold" dir={i18n.language === 'ar' ? 'rtl' : 'ltr'}>
+                      {i18n.language === 'ar' 
+                        ? (emp.arabic_middle_name || emp.arabicMiddleName || emp.middle_name || emp.middleName)
+                        : (emp.middle_name || emp.middleName || emp.arabic_middle_name || emp.arabicMiddleName)
+                      }
+                    </div>
+                  </div>
+                )}
                 <div className="p-3 rounded-lg bg-white/5 border border-white/10">
                   <div className="text-xs text-muted-foreground mb-1">{t('common.lastName')}</div>
-                  <div className="font-semibold">{emp.last_name || emp.lastName}</div>
+                  <div className="font-semibold" dir={i18n.language === 'ar' ? 'rtl' : 'ltr'}>{getEmployeeLastName(emp)}</div>
                 </div>
                 <div className="p-3 rounded-lg bg-white/5 border border-white/10">
                   <div className="text-xs text-muted-foreground mb-1">{t('employees.dateOfBirth')}</div>
@@ -857,6 +944,70 @@ export default function EmployeeProfilePage() {
                   <div className="font-semibold">{emp.nationality || 'N/A'}</div>
                 </div>
               </div>
+              
+              {/* Show alternate name (Arabic when in English mode, English when in Arabic mode) */}
+              {(() => {
+                const currentLang = i18n.language || 'en';
+                const isArabic = currentLang === 'ar';
+                const showAlternate = isArabic 
+                  ? (emp.first_name || emp.firstName) // Show English name when in Arabic mode
+                  : (emp.arabic_first_name || emp.arabicFirstName || emp.arabic_middle_name || emp.arabicMiddleName || emp.arabic_last_name || emp.arabicLastName); // Show Arabic name when in English mode
+                
+                if (!showAlternate) return null;
+                
+                return (
+                  <div className="mt-4 pt-4 border-t border-white/10">
+                    <h3 className="text-sm font-semibold mb-3">
+                      {isArabic ? (t('common.name') || 'Name') + ' (English)' : (t('employees.arabicName') || 'Arabic Name')}
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+                      {isArabic ? (
+                        <>
+                          {emp.first_name && (
+                            <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                              <div className="text-xs text-muted-foreground mb-1">{t('common.firstName')}</div>
+                              <div className="font-semibold">{emp.first_name || emp.firstName}</div>
+                            </div>
+                          )}
+                          {emp.middle_name && (
+                            <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                              <div className="text-xs text-muted-foreground mb-1">{t('employees.middleName') || 'Middle Name'}</div>
+                              <div className="font-semibold">{emp.middle_name || emp.middleName}</div>
+                            </div>
+                          )}
+                          {emp.last_name && (
+                            <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                              <div className="text-xs text-muted-foreground mb-1">{t('common.lastName')}</div>
+                              <div className="font-semibold">{emp.last_name || emp.lastName}</div>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          {(emp.arabic_first_name || emp.arabicFirstName) && (
+                            <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                              <div className="text-xs text-muted-foreground mb-1">{t('employees.arabicFirstName') || 'Arabic First Name'}</div>
+                              <div className="font-semibold" dir="rtl">{emp.arabic_first_name || emp.arabicFirstName}</div>
+                            </div>
+                          )}
+                          {(emp.arabic_middle_name || emp.arabicMiddleName) && (
+                            <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                              <div className="text-xs text-muted-foreground mb-1">{t('employees.arabicMiddleName') || 'Arabic Middle Name'}</div>
+                              <div className="font-semibold" dir="rtl">{emp.arabic_middle_name || emp.arabicMiddleName}</div>
+                            </div>
+                          )}
+                          {(emp.arabic_last_name || emp.arabicLastName) && (
+                            <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                              <div className="text-xs text-muted-foreground mb-1">{t('employees.arabicLastName') || 'Arabic Last Name'}</div>
+                              <div className="font-semibold" dir="rtl">{emp.arabic_last_name || emp.arabicLastName}</div>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </AccordionContent>
           </AccordionItem>
 
@@ -869,7 +1020,7 @@ export default function EmployeeProfilePage() {
                 </div>
                 <div className="text-left">
                   <div className="font-semibold text-base">{t('employees.contactInfo')}</div>
-                  <div className="text-xs text-muted-foreground">Email, phone, address</div>
+                  <div className="text-xs text-muted-foreground">{t('employeeProfile.emailPhoneAddress')}</div>
                 </div>
               </div>
             </AccordionTrigger>
@@ -942,7 +1093,7 @@ export default function EmployeeProfilePage() {
                 </div>
                 <div className="text-left">
                   <div className="font-semibold text-base">{t('employees.employmentDetails')}</div>
-                  <div className="text-xs text-muted-foreground">Job, department, salary</div>
+                  <div className="text-xs text-muted-foreground">{t('employeeProfile.jobDepartmentSalary')}</div>
                 </div>
               </div>
             </AccordionTrigger>
@@ -981,7 +1132,7 @@ export default function EmployeeProfilePage() {
                   <div className="md:col-span-2 p-3 rounded-lg bg-purple-500/5 border border-purple-500/10">
                     <div className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
                       <Shield size={12} className="text-purple-400" />
-                      Reporting Manager Chain
+                      {t('employees.reportingManagerChain')}
                     </div>
                     <div className="space-y-2">
                       {reportingManagerChain.map((manager, index) => (
@@ -991,14 +1142,14 @@ export default function EmployeeProfilePage() {
                               <img src={manager.avatar_url} alt="" className="w-full h-full object-cover rounded-lg" />
                             ) : (
                               <span className="text-xs font-bold text-purple-400">
-                                {(manager.first_name || manager.firstName || 'U')[0]}{(manager.last_name || manager.lastName || 'N')[0]}
+                                {getEmployeeInitials(manager)}
                               </span>
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold truncate">
-                              {manager.first_name || manager.firstName} {manager.last_name || manager.lastName}
-                              {index === 0 && <span className="ml-1 text-xs text-muted-foreground">(You)</span>}
+                            <p className="text-sm font-semibold truncate" dir={i18n.language === 'ar' ? 'rtl' : 'ltr'}>
+                              {getEmployeeDisplayName(manager)}
+                              {index === 0 && <span className="ml-1 text-xs text-muted-foreground">{t('employeeProfile.you')}</span>}
                             </p>
                             <p className="text-xs text-muted-foreground truncate">
                               {(manager as any).jobs?.name || manager.position || manager.designation || 'N/A'}
@@ -1025,7 +1176,7 @@ export default function EmployeeProfilePage() {
                 </div>
                 <div className="text-left">
                   <div className="font-semibold text-base">{t('employees.workingHours')}</div>
-                  <div className="text-xs text-muted-foreground">Schedule and shifts</div>
+                  <div className="text-xs text-muted-foreground">{t('employeeProfile.scheduleAndShifts')}</div>
                 </div>
               </div>
             </AccordionTrigger>
@@ -1033,13 +1184,13 @@ export default function EmployeeProfilePage() {
               {employeeShifts.length > 0 ? (
                 <div className="space-y-3">
                   {[
-                    { day: 0, label: 'Sunday' },
-                    { day: 1, label: 'Monday' },
-                    { day: 2, label: 'Tuesday' },
-                    { day: 3, label: 'Wednesday' },
-                    { day: 4, label: 'Thursday' },
-                    { day: 5, label: 'Friday' },
-                    { day: 6, label: 'Saturday' }
+                    { day: 0, label: t('employeeProfile.sunday') },
+                    { day: 1, label: t('employeeProfile.monday') },
+                    { day: 2, label: t('employeeProfile.tuesday') },
+                    { day: 3, label: t('employeeProfile.wednesday') },
+                    { day: 4, label: t('employeeProfile.thursday') },
+                    { day: 5, label: t('employeeProfile.friday') },
+                    { day: 6, label: t('employeeProfile.saturday') }
                   ].map(({ day, label }) => {
                     const dayShifts = getShiftsForDay(day);
                     const totalHours = getTotalHoursForDay(day);
@@ -1057,7 +1208,7 @@ export default function EmployeeProfilePage() {
                             <div key={idx} className="text-sm text-muted-foreground">
                               {shift.shift_name && <span className="font-medium">{shift.shift_name}: </span>}
                               {shift.start_time?.slice(0, 5)} - {shift.end_time?.slice(0, 5)}
-                              {shift.break_duration_minutes > 0 && ` (${shift.break_duration_minutes}m break)`}
+                              {shift.break_duration_minutes > 0 && ` (${shift.break_duration_minutes}m ${t('employeeProfile.break')})`}
                               <span className="ml-2 text-primary">({hours.toFixed(1)}h)</span>
                             </div>
                           );
@@ -1069,13 +1220,13 @@ export default function EmployeeProfilePage() {
               ) : workingHours ? (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   {[
-                    { label: 'Sunday', hours: workingHours.sunday_hours || 0 },
-                    { label: 'Monday', hours: workingHours.monday_hours || 0 },
-                    { label: 'Tuesday', hours: workingHours.tuesday_hours || 0 },
-                    { label: 'Wednesday', hours: workingHours.wednesday_hours || 0 },
-                    { label: 'Thursday', hours: workingHours.thursday_hours || 0 },
-                    { label: 'Friday', hours: workingHours.friday_hours || 0 },
-                    { label: 'Saturday', hours: workingHours.saturday_hours || 0 }
+                    { label: t('employeeProfile.sunday'), hours: workingHours.sunday_hours || 0 },
+                    { label: t('employeeProfile.monday'), hours: workingHours.monday_hours || 0 },
+                    { label: t('employeeProfile.tuesday'), hours: workingHours.tuesday_hours || 0 },
+                    { label: t('employeeProfile.wednesday'), hours: workingHours.wednesday_hours || 0 },
+                    { label: t('employeeProfile.thursday'), hours: workingHours.thursday_hours || 0 },
+                    { label: t('employeeProfile.friday'), hours: workingHours.friday_hours || 0 },
+                    { label: t('employeeProfile.saturday'), hours: workingHours.saturday_hours || 0 }
                   ].map(({ label, hours }) => (
                     <div key={label} className="p-3 rounded-lg bg-white/5 border border-white/10 text-center">
                       <div className="text-xs text-muted-foreground mb-1">{label}</div>
@@ -1084,7 +1235,7 @@ export default function EmployeeProfilePage() {
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-8 text-muted-foreground">No working hours configured</div>
+                <div className="text-center py-8 text-muted-foreground">{t('employeeProfile.noWorkingHoursConfigured')}</div>
               )}
             </AccordionContent>
           </AccordionItem>
@@ -1097,57 +1248,57 @@ export default function EmployeeProfilePage() {
                   <DollarSign size={20} className="text-emerald-400" />
                 </div>
                 <div className="text-left">
-                  <div className="font-semibold text-base">Payroll Information</div>
-                  <div className="text-xs text-muted-foreground">Salary breakdown</div>
+                  <div className="font-semibold text-base">{t('employeeProfile.payrollInformation')}</div>
+                  <div className="text-xs text-muted-foreground">{t('employeeProfile.salaryBreakdown')}</div>
                 </div>
               </div>
             </AccordionTrigger>
             <AccordionContent className="px-4 md:px-6 pb-6">
               <div className="space-y-4">
                 <div>
-                  <div className="text-sm font-semibold mb-3 text-green-400">EARNINGS</div>
+                  <div className="text-sm font-semibold mb-3 text-green-400">{t('employeeProfile.earnings')}</div>
                   <div className="space-y-2">
                     {(emp as any).base_salary && (
                       <div className="flex justify-between items-center p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-                        <span className="text-sm">Base Salary</span>
+                        <span className="text-sm">{t('employeeProfile.baseSalary')}</span>
                         <span className="font-bold">{parseFloat((emp as any).base_salary || '0').toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} KD</span>
                       </div>
                     )}
                     {(emp as any).housing_allowance && parseFloat((emp as any).housing_allowance || '0') > 0 && (
                       <div className="flex justify-between items-center p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-                        <span className="text-sm">Housing Allowance</span>
+                        <span className="text-sm">{t('employeeProfile.housingAllowance')}</span>
                         <span className="font-bold">{parseFloat((emp as any).housing_allowance || '0').toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} KD</span>
                       </div>
                     )}
                     {(emp as any).transport_allowance && parseFloat((emp as any).transport_allowance || '0') > 0 && (
                       <div className="flex justify-between items-center p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-                        <span className="text-sm">Transport Allowance</span>
+                        <span className="text-sm">{t('employeeProfile.transportAllowance')}</span>
                         <span className="font-bold">{parseFloat((emp as any).transport_allowance || '0').toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} KD</span>
                       </div>
                     )}
                     {(emp as any).meal_allowance && parseFloat((emp as any).meal_allowance || '0') > 0 && (
                       <div className="flex justify-between items-center p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-                        <span className="text-sm">Meal Allowance</span>
+                        <span className="text-sm">{t('employeeProfile.mealAllowance')}</span>
                         <span className="font-bold">{parseFloat((emp as any).meal_allowance || '0').toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} KD</span>
                       </div>
                     )}
                     {(emp as any).medical_allowance && parseFloat((emp as any).medical_allowance || '0') > 0 && (
                       <div className="flex justify-between items-center p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-                        <span className="text-sm">Medical Allowance</span>
+                        <span className="text-sm">{t('employeeProfile.medicalAllowance')}</span>
                         <span className="font-bold">{parseFloat((emp as any).medical_allowance || '0').toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} KD</span>
                       </div>
                     )}
                   </div>
                 </div>
                 <div className="pt-4 border-t border-white/10">
-                  <div className="text-sm font-semibold mb-3 text-red-400">DEDUCTIONS</div>
+                  <div className="text-sm font-semibold mb-3 text-red-400">{t('employeeProfile.deductions')}</div>
                   <div className="space-y-2">
                     {(() => {
                       const baseSalary = parseFloat((emp as any).base_salary || '0');
                       const gosiAmount = baseSalary * 0.105;
                       return gosiAmount > 0 ? (
                         <div className="flex justify-between items-center p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-                          <span className="text-sm">Social Security (GOSI)</span>
+                          <span className="text-sm">{t('employeeProfile.socialSecurityGOSI')}</span>
                           <span className="font-bold">{gosiAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} KD</span>
                         </div>
                       ) : null;
@@ -1156,7 +1307,7 @@ export default function EmployeeProfilePage() {
                 </div>
                 <div className="pt-4 border-t-2 border-primary/30">
                   <div className="flex justify-between items-center p-4 rounded-lg bg-primary/10 border border-primary/20">
-                    <span className="font-bold text-lg">Net Salary</span>
+                    <span className="font-bold text-lg">{t('employeeProfile.netSalary')}</span>
                     <span className="font-bold text-2xl text-primary">
                       {(() => {
                         const baseSalary = parseFloat((emp as any).base_salary || '0');
@@ -1186,8 +1337,8 @@ export default function EmployeeProfilePage() {
                     <Calendar size={20} className="text-blue-400" />
                   </div>
                   <div className="text-left">
-                    <div className="font-semibold text-base">Leave Balance</div>
-                    <div className="text-xs text-muted-foreground">Available leave days</div>
+                    <div className="font-semibold text-base">{t('employeeProfile.leaveBalance')}</div>
+                    <div className="text-xs text-muted-foreground">{t('employeeProfile.availableLeaveDays')}</div>
                   </div>
                 </div>
               </AccordionTrigger>
@@ -1195,22 +1346,22 @@ export default function EmployeeProfilePage() {
                 <div className="space-y-4">
                   {/* Annual Leave */}
                   <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                    <div className="font-semibold mb-3">Annual Leave</div>
+                    <div className="font-semibold mb-3">{t('employeeProfile.annualLeave')}</div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                       <div className="text-center p-2 rounded bg-white/5">
-                        <div className="text-xs text-muted-foreground">Accrued</div>
+                        <div className="text-xs text-muted-foreground">{t('employeeProfile.accrued')}</div>
                         <div className="text-lg font-bold text-blue-400">{leaveBalance.annual_leave.accrued.toFixed(1)}</div>
                       </div>
                       <div className="text-center p-2 rounded bg-white/5">
-                        <div className="text-xs text-muted-foreground">Used</div>
+                        <div className="text-xs text-muted-foreground">{t('employeeProfile.used')}</div>
                         <div className="text-lg font-bold text-orange-400">{leaveBalance.annual_leave.used}</div>
                       </div>
                       <div className="text-center p-2 rounded bg-white/5">
-                        <div className="text-xs text-muted-foreground">Pending</div>
+                        <div className="text-xs text-muted-foreground">{t('employeeProfile.pending')}</div>
                         <div className="text-lg font-bold text-yellow-400">{leaveBalance.annual_leave.pending}</div>
                       </div>
                       <div className="text-center p-2 rounded bg-white/5">
-                        <div className="text-xs text-muted-foreground">Available</div>
+                        <div className="text-xs text-muted-foreground">{t('employeeProfile.available')}</div>
                         <div className="text-lg font-bold text-green-400">{leaveBalance.annual_leave.available.toFixed(1)}</div>
                       </div>
                     </div>
@@ -1218,22 +1369,22 @@ export default function EmployeeProfilePage() {
 
                   {/* Sick Leave */}
                   <div className="p-4 rounded-lg bg-purple-500/10 border border-purple-500/20">
-                    <div className="font-semibold mb-3">Sick Leave</div>
+                    <div className="font-semibold mb-3">{t('employeeProfile.sickLeave')}</div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                       <div className="text-center p-2 rounded bg-white/5">
-                        <div className="text-xs text-muted-foreground">Accrued</div>
+                        <div className="text-xs text-muted-foreground">{t('employeeProfile.accrued')}</div>
                         <div className="text-lg font-bold text-blue-400">{leaveBalance.sick_leave.accrued.toFixed(1)}</div>
                       </div>
                       <div className="text-center p-2 rounded bg-white/5">
-                        <div className="text-xs text-muted-foreground">Used</div>
+                        <div className="text-xs text-muted-foreground">{t('employeeProfile.used')}</div>
                         <div className="text-lg font-bold text-orange-400">{leaveBalance.sick_leave.used}</div>
                       </div>
                       <div className="text-center p-2 rounded bg-white/5">
-                        <div className="text-xs text-muted-foreground">Pending</div>
+                        <div className="text-xs text-muted-foreground">{t('employeeProfile.pending')}</div>
                         <div className="text-lg font-bold text-yellow-400">{leaveBalance.sick_leave.pending}</div>
                       </div>
                       <div className="text-center p-2 rounded bg-white/5">
-                        <div className="text-xs text-muted-foreground">Available</div>
+                        <div className="text-xs text-muted-foreground">{t('employeeProfile.available')}</div>
                         <div className="text-lg font-bold text-green-400">{leaveBalance.sick_leave.available.toFixed(1)}</div>
                       </div>
                     </div>
@@ -1241,22 +1392,22 @@ export default function EmployeeProfilePage() {
 
                   {/* Emergency Leave */}
                   <div className="p-4 rounded-lg bg-rose-500/10 border border-rose-500/20">
-                    <div className="font-semibold mb-3">Emergency Leave</div>
+                    <div className="font-semibold mb-3">{t('employeeProfile.emergencyLeave')}</div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                       <div className="text-center p-2 rounded bg-white/5">
-                        <div className="text-xs text-muted-foreground">Accrued</div>
+                        <div className="text-xs text-muted-foreground">{t('employeeProfile.accrued')}</div>
                         <div className="text-lg font-bold text-blue-400">{leaveBalance.emergency_leave.accrued.toFixed(1)}</div>
                       </div>
                       <div className="text-center p-2 rounded bg-white/5">
-                        <div className="text-xs text-muted-foreground">Used</div>
+                        <div className="text-xs text-muted-foreground">{t('employeeProfile.used')}</div>
                         <div className="text-lg font-bold text-orange-400">{leaveBalance.emergency_leave.used}</div>
                       </div>
                       <div className="text-center p-2 rounded bg-white/5">
-                        <div className="text-xs text-muted-foreground">Pending</div>
+                        <div className="text-xs text-muted-foreground">{t('employeeProfile.pending')}</div>
                         <div className="text-lg font-bold text-yellow-400">{leaveBalance.emergency_leave.pending}</div>
                       </div>
                       <div className="text-center p-2 rounded bg-white/5">
-                        <div className="text-xs text-muted-foreground">Available</div>
+                        <div className="text-xs text-muted-foreground">{t('employeeProfile.available')}</div>
                         <div className="text-lg font-bold text-green-400">{leaveBalance.emergency_leave.available.toFixed(1)}</div>
                       </div>
                     </div>
@@ -1274,8 +1425,8 @@ export default function EmployeeProfilePage() {
                   <GraduationCap size={20} className="text-purple-400" />
                 </div>
                 <div className="text-left">
-                  <div className="font-semibold text-base">Education</div>
-                  <div className="text-xs text-muted-foreground">{educationRecords.length} record{educationRecords.length !== 1 ? 's' : ''}</div>
+                  <div className="font-semibold text-base">{t('employeeProfile.education')}</div>
+                  <div className="text-xs text-muted-foreground">{educationRecords.length} {educationRecords.length !== 1 ? t('employeeProfile.records') : t('employeeProfile.record')}</div>
                 </div>
               </div>
             </AccordionTrigger>
@@ -1283,7 +1434,7 @@ export default function EmployeeProfilePage() {
               {educationRecords.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <GraduationCap size={48} className="mx-auto mb-4 opacity-50" />
-                  <p>No education records found</p>
+                  <p>{t('employeeProfile.noEducationRecordsFound')}</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -1291,26 +1442,26 @@ export default function EmployeeProfilePage() {
                     <div key={edu.id} className="p-4 rounded-lg bg-white/5 border border-white/10">
                       <div className="flex items-start justify-between mb-2">
                         <h3 className="font-bold text-base">{edu.institution_name}</h3>
-                        {edu.is_primary && <Badge variant="default" className="text-xs">Primary</Badge>}
+                        {edu.is_primary && <Badge variant="default" className="text-xs">{t('employeeProfile.primary')}</Badge>}
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-sm">
                         <div>
-                          <div className="text-xs text-muted-foreground">Place</div>
+                          <div className="text-xs text-muted-foreground">{t('employeeProfile.place')}</div>
                           <div className="font-medium">{edu.place_of_graduation}</div>
                         </div>
                         <div>
-                          <div className="text-xs text-muted-foreground">Year</div>
+                          <div className="text-xs text-muted-foreground">{t('employeeProfile.year')}</div>
                           <div className="font-medium">{edu.graduation_year}</div>
                         </div>
                         {edu.degree_type && (
                           <div>
-                            <div className="text-xs text-muted-foreground">Degree</div>
+                            <div className="text-xs text-muted-foreground">{t('employeeProfile.degree')}</div>
                             <div className="font-medium">{edu.degree_type}</div>
                           </div>
                         )}
                         {edu.field_of_study && (
                           <div>
-                            <div className="text-xs text-muted-foreground">Field</div>
+                            <div className="text-xs text-muted-foreground">{t('employeeProfile.field')}</div>
                             <div className="font-medium">{edu.field_of_study}</div>
                           </div>
                         )}
@@ -1330,8 +1481,8 @@ export default function EmployeeProfilePage() {
                   <CreditCard size={20} className="text-green-400" />
                 </div>
                 <div className="text-left">
-                  <div className="font-semibold text-base">Bank Details</div>
-                  <div className="text-xs text-muted-foreground">Account information</div>
+                  <div className="font-semibold text-base">{t('employeeProfile.bankDetails')}</div>
+                  <div className="text-xs text-muted-foreground">{t('employeeProfile.accountInformation')}</div>
                 </div>
               </div>
             </AccordionTrigger>
@@ -1339,31 +1490,31 @@ export default function EmployeeProfilePage() {
               {!bankDetails ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <CreditCard size={48} className="mx-auto mb-4 opacity-50" />
-                  <p>No bank details found</p>
+                  <p>{t('employeeProfile.noBankDetailsFound')}</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="p-3 rounded-lg bg-white/5 border border-white/10">
-                    <div className="text-xs text-muted-foreground mb-1">Bank Name</div>
+                    <div className="text-xs text-muted-foreground mb-1">{t('employeeProfile.bankName')}</div>
                     <div className="font-semibold">{bankDetails.bank_name}</div>
                   </div>
                   <div className="p-3 rounded-lg bg-white/5 border border-white/10">
-                    <div className="text-xs text-muted-foreground mb-1">Account Number</div>
+                    <div className="text-xs text-muted-foreground mb-1">{t('employeeProfile.accountNumber')}</div>
                     <div className="font-semibold font-mono">{bankDetails.account_number}</div>
                   </div>
                   <div className="p-3 rounded-lg bg-white/5 border border-white/10">
-                    <div className="text-xs text-muted-foreground mb-1">Account Holder</div>
+                    <div className="text-xs text-muted-foreground mb-1">{t('employeeProfile.accountHolder')}</div>
                     <div className="font-semibold">{bankDetails.account_holder_name}</div>
                   </div>
                   {bankDetails.branch_name && (
                     <div className="p-3 rounded-lg bg-white/5 border border-white/10">
-                      <div className="text-xs text-muted-foreground mb-1">Branch</div>
+                      <div className="text-xs text-muted-foreground mb-1">{t('employeeProfile.branch')}</div>
                       <div className="font-semibold">{bankDetails.branch_name}</div>
                     </div>
                   )}
                   {bankDetails.iban && (
                     <div className="p-3 rounded-lg bg-white/5 border border-white/10 md:col-span-2">
-                      <div className="text-xs text-muted-foreground mb-1">IBAN</div>
+                      <div className="text-xs text-muted-foreground mb-1">{t('employeeProfile.iban')}</div>
                       <div className="font-semibold font-mono">{bankDetails.iban}</div>
                     </div>
                   )}
@@ -1380,8 +1531,8 @@ export default function EmployeeProfilePage() {
                   <Globe size={20} className="text-indigo-400" />
                 </div>
                 <div className="text-left">
-                  <div className="font-semibold text-base">Immigration & Documents</div>
-                  <div className="text-xs text-muted-foreground">Work permits, visas & renewals</div>
+                  <div className="font-semibold text-base">{t('employeeProfile.immigrationDocuments')}</div>
+                  <div className="text-xs text-muted-foreground">{t('employeeProfile.workPermitsVisasRenewals')}</div>
                 </div>
               </div>
             </AccordionTrigger>
@@ -1389,7 +1540,7 @@ export default function EmployeeProfilePage() {
               {!immigration ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Globe size={48} className="mx-auto mb-4 opacity-50" />
-                  <p>No immigration records found</p>
+                  <p>{t('employeeProfile.noImmigrationRecordsFound')}</p>
                 </div>
               ) : (
                 <EmployeeImmigrationView immigration={immigration} employee={emp} />
@@ -1405,9 +1556,9 @@ export default function EmployeeProfilePage() {
                   <FileText size={20} className="text-orange-400" />
                 </div>
                 <div className="text-left">
-                  <div className="font-semibold text-base">Requests</div>
+                  <div className="font-semibold text-base">{t('employeeProfile.requests')}</div>
                   <div className="text-xs text-muted-foreground">
-                    {leaveRequests.length + documentRequests.length + employeeRequests.length} total
+                    {leaveRequests.length + documentRequests.length + employeeRequests.length} {t('employeeProfile.totalRequests')}
                   </div>
                 </div>
               </div>
@@ -1417,7 +1568,7 @@ export default function EmployeeProfilePage() {
                 {leaveRequests.length > 0 && (
                   <div>
                     <div className="text-sm font-semibold mb-2 flex items-center gap-2">
-                      <CalendarIcon size={16} /> Leave Requests ({leaveRequests.length})
+                      <CalendarIcon size={16} /> {t('employeeProfile.leaveRequests')} ({leaveRequests.length})
                     </div>
                     <div className="space-y-2">
                       {leaveRequests.slice(0, 5).map((req) => (
@@ -1437,7 +1588,7 @@ export default function EmployeeProfilePage() {
                 {documentRequests.length > 0 && (
                   <div>
                     <div className="text-sm font-semibold mb-2 flex items-center gap-2">
-                      <FileTextIcon size={16} /> Document Requests ({documentRequests.length})
+                      <FileTextIcon size={16} /> {t('employeeProfile.documentRequests')} ({documentRequests.length})
                     </div>
                     <div className="space-y-2">
                       {documentRequests.slice(0, 5).map((req) => (
@@ -1455,7 +1606,7 @@ export default function EmployeeProfilePage() {
                 {employeeRequests.length > 0 && (
                   <div>
                     <div className="text-sm font-semibold mb-2 flex items-center gap-2">
-                      <FileTextIcon size={16} /> General Requests ({employeeRequests.length})
+                      <FileTextIcon size={16} /> {t('employeeProfile.generalRequests')} ({employeeRequests.length})
                     </div>
                     <div className="space-y-2">
                       {employeeRequests.slice(0, 5).map((req) => (
@@ -1471,7 +1622,7 @@ export default function EmployeeProfilePage() {
                   </div>
                 )}
                 {leaveRequests.length === 0 && documentRequests.length === 0 && employeeRequests.length === 0 && (
-                  <div className="text-center py-8 text-muted-foreground">No requests found</div>
+                  <div className="text-center py-8 text-muted-foreground">{t('employeeProfile.noRequestsFound')}</div>
                 )}
               </div>
             </AccordionContent>
@@ -1483,8 +1634,8 @@ export default function EmployeeProfilePage() {
               <div className="flex items-center gap-3">
                 <Clock size={18} className="text-blue-400 md:w-5 md:h-5" />
                 <div className="text-left">
-                  <div className="font-semibold text-sm md:text-base">Timesheet</div>
-                  <div className="text-[10px] md:text-xs text-muted-foreground">Work hours & reports</div>
+                  <div className="font-semibold text-sm md:text-base">{t('employeeProfile.timesheet')}</div>
+                  <div className="text-[10px] md:text-xs text-muted-foreground">{t('employeeProfile.workHoursReports')}</div>
                 </div>
               </div>
             </AccordionTrigger>
@@ -1493,7 +1644,7 @@ export default function EmployeeProfilePage() {
                 {timesheetEntries.length > 0 ? (
                   <>
                     <div className="text-sm font-semibold mb-2 flex items-center gap-2">
-                      <Clock size={16} /> Recent Entries ({timesheetEntries.length})
+                      <Clock size={16} /> {t('employeeProfile.recentEntries')} ({timesheetEntries.length})
                     </div>
                     <div className="space-y-2">
                       {timesheetEntries.slice(0, 10).map((entry) => (
@@ -1519,7 +1670,7 @@ export default function EmployeeProfilePage() {
                             </span>
                             {entry.project_name && (
                               <span className="text-xs text-muted-foreground">
-                                <span className="font-medium">Project:</span> {entry.project_name}
+                                <span className="font-medium">{t('employeeProfile.project')}</span> {entry.project_name}
                               </span>
                             )}
                             {entry.task_type && (
@@ -1539,19 +1690,19 @@ export default function EmployeeProfilePage() {
                         href="/self-service/timesheet"
                         className="text-sm text-primary hover:underline font-medium"
                       >
-                        View All Timesheet Entries →
+                        {t('employeeProfile.viewAllTimesheetEntries')}
                       </a>
                     </div>
                   </>
                 ) : (
                   <div className="text-center py-8 text-muted-foreground">
                     <Clock size={48} className="mx-auto mb-4 opacity-50" />
-                    <p>No timesheet entries found</p>
+                    <p>{t('employeeProfile.noTimesheetEntriesFound')}</p>
                     <a
                       href="/self-service/timesheet"
                       className="text-sm text-primary hover:underline mt-2 inline-block"
                     >
-                      Log Time →
+                      {t('employeeProfile.logTime')}
                     </a>
                   </div>
                 )}

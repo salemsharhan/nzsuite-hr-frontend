@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import i18n from '../utils/i18n';
+import { getEmployeeDisplayName, getEmployeeInitials } from '../utils/employeeName';
 import { 
   Search, 
   Plus, 
@@ -74,7 +76,11 @@ export default function EmployeeListPage() {
   const [newEmployee, setNewEmployee] = useState({
     // Basic Information
     first_name: '',
+    middle_name: '',
     last_name: '',
+    arabic_first_name: '',
+    arabic_middle_name: '',
+    arabic_last_name: '',
     email: '',
     fingerprint_machine_code: '', // Machine code from fingerprint device
     phone: '',
@@ -227,7 +233,12 @@ export default function EmployeeListPage() {
             // This allows users to edit the values if they've already entered something
             setNewEmployee(prev => {
               // Helper to check if a field is truly empty
-              const isEmpty = (value: string) => !value || value.trim() === '';
+              const isEmpty = (value: any) => {
+                if (value === null || value === undefined) return true;
+                if (typeof value === 'string') return value.trim() === '';
+                if (typeof value === 'number') return false; // Numbers are never "empty"
+                return !value;
+              };
               
               return {
                 ...prev,
@@ -430,7 +441,7 @@ export default function EmployeeListPage() {
           setBankDetails({
             bank_name: '',
             account_number: '',
-            account_holder_name: employee.first_name + ' ' + employee.last_name || '',
+            account_holder_name: getEmployeeDisplayName(employee) || '',
             branch_name: '',
             branch_code: '',
             iban: '',
@@ -445,7 +456,7 @@ export default function EmployeeListPage() {
         setBankDetails({
           bank_name: '',
           account_number: '',
-          account_holder_name: employee.first_name + ' ' + employee.last_name || '',
+          account_holder_name: getEmployeeDisplayName(employee) || '',
           branch_name: '',
           branch_code: '',
           iban: '',
@@ -460,7 +471,11 @@ export default function EmployeeListPage() {
     // Populate form with employee data
     setNewEmployee({
       first_name: employee.first_name || employee.firstName || '',
+      middle_name: employee.middle_name || employee.middleName || '',
       last_name: employee.last_name || employee.lastName || '',
+      arabic_first_name: employee.arabic_first_name || employee.arabicFirstName || '',
+      arabic_middle_name: employee.arabic_middle_name || employee.arabicMiddleName || '',
+      arabic_last_name: employee.arabic_last_name || employee.arabicLastName || '',
       email: employee.email || '',
       fingerprint_machine_code: (employee as any).external_id || employee.employee_id || employee.employeeId || '',
       phone: employee.phone || '',
@@ -562,7 +577,7 @@ export default function EmployeeListPage() {
           employee_id: newEmployee.fingerprint_machine_code || `EMP-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`,
           external_id: newEmployee.fingerprint_machine_code || null, // Store machine code for attendance mapping
           status: 'Active',
-          avatar_url: `https://ui-avatars.com/api/?name=${newEmployee.first_name}+${newEmployee.last_name}`,
+          avatar_url: `https://ui-avatars.com/api/?name=${encodeURIComponent(getEmployeeDisplayName(newEmployee as any) || 'Employee')}`,
         }),
         // Automatically assign to admin's company if user is admin
         company_id: user?.company_id || null
@@ -739,7 +754,7 @@ export default function EmployeeListPage() {
   };
 
   const filteredEmployees = employees.filter(emp => {
-    const fullName = `${emp.first_name || emp.firstName || ''} ${emp.last_name || emp.lastName || ''}`;
+    const fullName = getEmployeeDisplayName(emp);
     const matchesSearch = fullName.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           emp.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           (emp.employee_id || emp.employeeId || '').toLowerCase().includes(searchTerm.toLowerCase());
@@ -854,6 +869,17 @@ export default function EmployeeListPage() {
                   />
                 </div>
                 <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">{t('employees.middleName') || 'Middle Name'}</label>
+                  <Input 
+                    value={newEmployee.middle_name}
+                    onChange={e => setNewEmployee({...newEmployee, middle_name: e.target.value})}
+                    placeholder={t('employees.middleName') || 'Middle Name'} 
+                    className="h-11"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-5">
+                <div className="space-y-2">
                   <label className="text-sm font-medium text-foreground">{t('common.lastName')} *</label>
                   <Input 
                     required
@@ -862,6 +888,45 @@ export default function EmployeeListPage() {
                     placeholder={t('common.lastName')} 
                     className="h-11"
                   />
+                </div>
+              </div>
+              
+              {/* Arabic Name Fields */}
+              <div className="pt-4 border-t border-white/10">
+                <h3 className="text-sm font-semibold mb-4">{t('employees.arabicName') || 'Arabic Name'}</h3>
+                <div className="grid grid-cols-2 gap-5">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground">{t('employees.arabicFirstName') || 'Arabic First Name'}</label>
+                    <Input 
+                      value={newEmployee.arabic_first_name}
+                      onChange={e => setNewEmployee({...newEmployee, arabic_first_name: e.target.value})}
+                      placeholder={t('employees.arabicFirstName') || 'Arabic First Name'} 
+                      className="h-11"
+                      dir="rtl"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground">{t('employees.arabicMiddleName') || 'Arabic Middle Name'}</label>
+                    <Input 
+                      value={newEmployee.arabic_middle_name}
+                      onChange={e => setNewEmployee({...newEmployee, arabic_middle_name: e.target.value})}
+                      placeholder={t('employees.arabicMiddleName') || 'Arabic Middle Name'} 
+                      className="h-11"
+                      dir="rtl"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-5 mt-5">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground">{t('employees.arabicLastName') || 'Arabic Last Name'}</label>
+                    <Input 
+                      value={newEmployee.arabic_last_name}
+                      onChange={e => setNewEmployee({...newEmployee, arabic_last_name: e.target.value})}
+                      placeholder={t('employees.arabicLastName') || 'Arabic Last Name'} 
+                      className="h-11"
+                      dir="rtl"
+                    />
+                  </div>
                 </div>
               </div>
               
@@ -1124,7 +1189,7 @@ export default function EmployeeListPage() {
                   <SelectContent>
                     <SelectItem value="none">{t('common.none') || 'None'}</SelectItem>
                     {employees.filter(emp => emp.id !== editingEmployee?.id).map(emp => (
-                      <SelectItem key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name}</SelectItem>
+                      <SelectItem key={emp.id} value={emp.id}>{getEmployeeDisplayName(emp)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -1813,6 +1878,42 @@ export default function EmployeeListPage() {
               setIsModalOpen(false);
               setActiveTab('basic'); // Reset to first tab
               setEditingEmployee(null); // Clear editing state
+              // Reset form state
+              setNewEmployee({
+                first_name: '',
+                last_name: '',
+                email: '',
+                fingerprint_machine_code: '',
+                phone: '',
+                alternate_phone: '',
+                date_of_birth: '',
+                gender: '',
+                marital_status: '',
+                nationality: '',
+                address: '',
+                city: '',
+                state: '',
+                country: '',
+                postal_code: '',
+                emergency_contact_name: '',
+                emergency_contact_phone: '',
+                emergency_contact_relationship: '',
+                department_id: '',
+                role_id: '',
+                job_id: '',
+                employment_type: 'Full Time',
+                join_date: new Date().toISOString().split('T')[0],
+                base_salary: '',
+                work_location: 'Office',
+                reporting_manager_id: '',
+                housing_allowance: '',
+                transport_allowance: '',
+                meal_allowance: '',
+                medical_allowance: '',
+                other_allowances: '',
+                notes: '',
+                flexible_hours: false
+              });
               // Reset education and bank details
               setEducationRecords([]);
               setBankDetails({
@@ -1888,11 +1989,11 @@ export default function EmployeeListPage() {
                     {employee.avatar_url ? (
                       <img src={employee.avatar_url} alt="" className="w-full h-full object-cover" />
                     ) : (
-                      <span>{(employee.first_name || employee.firstName || 'U')[0]}{(employee.last_name || employee.lastName || 'N')[0]}</span>
+                      <span>{getEmployeeInitials(employee)}</span>
                     )}
                   </div>
                   <div>
-                    <h3 className="font-bold text-foreground">{employee.first_name || employee.firstName} {employee.last_name || employee.lastName}</h3>
+                    <h3 className="font-bold text-foreground" dir={i18n.language === 'ar' ? 'rtl' : 'ltr'}>{getEmployeeDisplayName(employee)}</h3>
                     <p className="text-xs text-muted-foreground">{employee.designation}</p>
                   </div>
                 </div>

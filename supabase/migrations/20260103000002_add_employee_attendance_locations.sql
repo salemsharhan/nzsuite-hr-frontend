@@ -47,3 +47,8 @@ CREATE POLICY "Enable update access for employee_attendance_locations" ON employ
   FOR UPDATE 
   USING (true);
 
+
+
+
+
+

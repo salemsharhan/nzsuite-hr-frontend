@@ -153,3 +153,8 @@ COMMENT ON COLUMN employee_immigration.residence_permit_article IS 'Article type
 COMMENT ON COLUMN employee_immigration.next_renewal_action IS 'Next document that needs renewal (earliest expiry)';
 COMMENT ON COLUMN employee_immigration.renewal_priority IS 'Priority level based on expiry dates and urgency';
 
+
+
+
+
+

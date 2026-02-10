@@ -10,3 +10,8 @@ ALTER TABLE documents ALTER COLUMN category SET DEFAULT 'General';
 
 
 
+
+
+
+
+

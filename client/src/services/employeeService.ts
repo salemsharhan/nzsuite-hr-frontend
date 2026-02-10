@@ -1,13 +1,25 @@
 // Using Supabase REST API for dynamic data
 
 import { api, adminApi } from './api';
+import { createClient } from '@supabase/supabase-js';
+
+// Create service role client for storage operations to bypass RLS
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = import.meta.env.VITE_SUPABASE_SERVICE_KEY;
+const supabaseStorage = SUPABASE_SERVICE_KEY 
+  ? createClient(SUPABASE_URL || '', SUPABASE_SERVICE_KEY)
+  : null;
 
 // Supabase table structure
 interface SupabaseEmployee {
   id: string; // UUID
   employee_id: string;
   first_name: string;
+  middle_name?: string;
   last_name: string;
+  arabic_first_name?: string;
+  arabic_middle_name?: string;
+  arabic_last_name?: string;
   email: string;
   phone?: string;
   alternate_phone?: string;
@@ -64,7 +76,11 @@ export interface Employee {
   employeeId: string;
   external_id?: string; // Machine code from fingerprint device
   firstName: string;
+  middleName?: string;
   lastName: string;
+  arabicFirstName?: string;
+  arabicMiddleName?: string;
+  arabicLastName?: string;
   email: string;
   phone?: string;
   alternate_phone?: string;
@@ -130,7 +146,11 @@ function mapSupabaseToEmployee(supabaseEmp: any): Employee {
     employeeId: supabaseEmp.employee_id,
     external_id: supabaseEmp.external_id,
     firstName: supabaseEmp.first_name,
+    middleName: supabaseEmp.middle_name,
     lastName: supabaseEmp.last_name,
+    arabicFirstName: supabaseEmp.arabic_first_name,
+    arabicMiddleName: supabaseEmp.arabic_middle_name,
+    arabicLastName: supabaseEmp.arabic_last_name,
     email: supabaseEmp.email,
     phone: supabaseEmp.phone,
     alternate_phone: supabaseEmp.alternate_phone,
@@ -181,7 +201,11 @@ function mapSupabaseToEmployee(supabaseEmp: any): Employee {
     // Legacy fields
     employee_id: supabaseEmp.employee_id,
     first_name: supabaseEmp.first_name,
+    middle_name: supabaseEmp.middle_name,
     last_name: supabaseEmp.last_name,
+    arabic_first_name: supabaseEmp.arabic_first_name,
+    arabic_middle_name: supabaseEmp.arabic_middle_name,
+    arabic_last_name: supabaseEmp.arabic_last_name,
     designation: supabaseEmp.designation,
     join_date: supabaseEmp.join_date,
     employment_type: supabaseEmp.employment_type as 'Full Time' | 'Part Time' | 'Consultant',
@@ -194,7 +218,11 @@ function mapEmployeeToSupabase(employee: any): Partial<SupabaseEmployee & { comp
   const mapped: any = {
     employee_id: employee.employee_id || employee.employeeId,
     first_name: employee.first_name || employee.firstName,
+    middle_name: employee.middle_name || employee.middleName,
     last_name: employee.last_name || employee.lastName,
+    arabic_first_name: employee.arabic_first_name || employee.arabicFirstName,
+    arabic_middle_name: employee.arabic_middle_name || employee.arabicMiddleName,
+    arabic_last_name: employee.arabic_last_name || employee.arabicLastName,
     email: employee.email,
     phone: employee.phone,
     department: employee.department,
@@ -295,7 +323,8 @@ export const employeeService = {
       };
       
       // Filter by company_id if provided (for admin users)
-      if (companyId) {
+      // Ensure companyId is a string, not an object
+      if (companyId && typeof companyId === 'string') {
         params.company_id = `eq.${companyId}`;
       }
       
@@ -368,6 +397,250 @@ export const employeeService = {
     try {
       const uuid = typeof id === 'number' ? id.toString() : id;
       
+      // Delete related records first to avoid foreign key constraint violations
+      // Order matters: delete child records before parent
+      
+      // 1. Delete attendance logs
+      try {
+        await adminApi.delete(`/attendance_logs`, {
+          params: {
+            employee_id: `eq.${uuid}`
+          }
+        });
+      } catch (err) {
+        console.warn('Error deleting attendance logs (may not exist):', err);
+      }
+      
+      // 2. Delete leave requests
+      try {
+        await adminApi.delete(`/leave_requests`, {
+          params: {
+            employee_id: `eq.${uuid}`
+          }
+        });
+      } catch (err) {
+        console.warn('Error deleting leave requests (may not exist):', err);
+      }
+      
+      // 3. Delete timesheet entries
+      try {
+        await adminApi.delete(`/timesheet_entries`, {
+          params: {
+            employee_id: `eq.${uuid}`
+          }
+        });
+      } catch (err) {
+        console.warn('Error deleting timesheet entries (may not exist):', err);
+      }
+      
+      // 4. Delete employee education records
+      try {
+        await adminApi.delete(`/employee_education`, {
+          params: {
+            employee_id: `eq.${uuid}`
+          }
+        });
+      } catch (err) {
+        console.warn('Error deleting education records (may not exist):', err);
+      }
+      
+      // 5. Delete employee bank details
+      try {
+        await adminApi.delete(`/employee_bank_details`, {
+          params: {
+            employee_id: `eq.${uuid}`
+          }
+        });
+      } catch (err) {
+        console.warn('Error deleting bank details (may not exist):', err);
+      }
+      
+      // 6. Delete employee immigration records
+      try {
+        await adminApi.delete(`/employee_immigration`, {
+          params: {
+            employee_id: `eq.${uuid}`
+          }
+        });
+      } catch (err) {
+        console.warn('Error deleting immigration records (may not exist):', err);
+      }
+      
+      // 7. Delete employee attendance locations
+      try {
+        await adminApi.delete(`/employee_attendance_locations`, {
+          params: {
+            employee_id: `eq.${uuid}`
+          }
+        });
+      } catch (err) {
+        console.warn('Error deleting attendance locations (may not exist):', err);
+      }
+      
+      // 8. Delete employee shifts
+      try {
+        await adminApi.delete(`/employee_shifts`, {
+          params: {
+            employee_id: `eq.${uuid}`
+          }
+        });
+      } catch (err) {
+        console.warn('Error deleting employee shifts (may not exist):', err);
+      }
+      
+      // 9. Delete employee working hours
+      try {
+        await adminApi.delete(`/employee_working_hours`, {
+          params: {
+            employee_id: `eq.${uuid}`
+          }
+        });
+      } catch (err) {
+        console.warn('Error deleting working hours (may not exist):', err);
+      }
+      
+      // 10. Delete employee requests
+      try {
+        await adminApi.delete(`/employee_requests`, {
+          params: {
+            employee_id: `eq.${uuid}`
+          }
+        });
+      } catch (err) {
+        console.warn('Error deleting employee requests (may not exist):', err);
+      }
+      
+      // 11. Delete document requests
+      try {
+        await adminApi.delete(`/document_requests`, {
+          params: {
+            employee_id: `eq.${uuid}`
+          }
+        });
+      } catch (err) {
+        console.warn('Error deleting document requests (may not exist):', err);
+      }
+      
+      // 12. Delete documents
+      try {
+        await adminApi.delete(`/documents`, {
+          params: {
+            employee_id: `eq.${uuid}`
+          }
+        });
+      } catch (err) {
+        console.warn('Error deleting documents (may not exist):', err);
+      }
+      
+      // 13. Delete WebAuthn credentials
+      try {
+        await adminApi.delete(`/webauthn_credentials`, {
+          params: {
+            employee_id: `eq.${uuid}`
+          }
+        });
+      } catch (err) {
+        console.warn('Error deleting WebAuthn credentials (may not exist):', err);
+      }
+      
+      // 14. Delete attendances (raw attendance records - uses integer employee_id)
+      // First, get the employee to find their integer ID
+      try {
+        const employee = await this.getById(uuid);
+        if (employee) {
+          // Try to get integer employee_id from external_id or extract from employee_id text
+          let integerEmployeeId: number | null = null;
+          const externalId = (employee as any).external_id;
+          if (externalId && !isNaN(Number(externalId))) {
+            integerEmployeeId = Number(externalId);
+          } else {
+            const employeeIdText = employee.employee_id || employee.employeeId || '';
+            const match = employeeIdText.match(/\d+/);
+            if (match) {
+              integerEmployeeId = parseInt(match[0], 10);
+            } else if (!isNaN(Number(employeeIdText))) {
+              integerEmployeeId = Number(employeeIdText);
+            }
+          }
+          
+          if (integerEmployeeId) {
+            await adminApi.delete(`/attendances`, {
+              params: {
+                employee_id: `eq.${integerEmployeeId}`
+              }
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Error deleting attendances (may not exist):', err);
+      }
+      
+      // 15. Update user_roles to set employee_id to NULL (if exists)
+      try {
+        await adminApi.patch(`/user_roles`, {
+          employee_id: null
+        }, {
+          params: {
+            employee_id: `eq.${uuid}`
+          }
+        });
+      } catch (err) {
+        console.warn('Error updating user_roles (may not exist):', err);
+      }
+      
+      // 16. Update leave_requests approved_by to NULL (if employee was an approver)
+      try {
+        await adminApi.patch(`/leave_requests`, {
+          approved_by: null
+        }, {
+          params: {
+            approved_by: `eq.${uuid}`
+          }
+        });
+      } catch (err) {
+        console.warn('Error updating leave_requests approved_by (may not exist):', err);
+      }
+      
+      // 17. Update employee_requests reviewed_by to NULL (if employee was a reviewer)
+      try {
+        await adminApi.patch(`/employee_requests`, {
+          reviewed_by: null
+        }, {
+          params: {
+            reviewed_by: `eq.${uuid}`
+          }
+        });
+      } catch (err) {
+        console.warn('Error updating employee_requests reviewed_by (may not exist):', err);
+      }
+      
+      // 18. Update document_requests completed_by to NULL (if employee completed requests)
+      try {
+        await adminApi.patch(`/document_requests`, {
+          completed_by: null
+        }, {
+          params: {
+            completed_by: `eq.${uuid}`
+          }
+        });
+      } catch (err) {
+        console.warn('Error updating document_requests completed_by (may not exist):', err);
+      }
+      
+      // 19. Update employees reporting_manager_id to NULL (if employee was a manager)
+      try {
+        await adminApi.patch(`/employees`, {
+          reporting_manager_id: null
+        }, {
+          params: {
+            reporting_manager_id: `eq.${uuid}`
+          }
+        });
+      } catch (err) {
+        console.warn('Error updating employees reporting_manager_id (may not exist):', err);
+      }
+      
+      // 20. Finally, delete the employee
       await adminApi.delete(`/employees`, {
         params: {
           id: `eq.${uuid}`
@@ -413,6 +686,95 @@ export const employeeService = {
     }
 
     return chain;
+  },
+
+  /**
+   * Upload profile image/avatar for an employee
+   */
+  async uploadAvatar(employeeId: string, file: File): Promise<string> {
+    try {
+      // Upload file to Supabase Storage using documents bucket
+      const fileExt = file.name.split('.').pop();
+      const fileName = `avatar_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const filePath = `employees/${employeeId}/avatars/${fileName}`;
+      
+      let publicUrl = '';
+      
+      if (supabaseStorage) {
+        try {
+          // Delete old avatar if exists
+          try {
+            const { data: listData } = await supabaseStorage.storage
+              .from('documents')
+              .list(`employees/${employeeId}/avatars/`);
+            
+            if (listData && listData.length > 0) {
+              // Delete old files
+              const filesToDelete = listData.map(f => `employees/${employeeId}/avatars/${f.name}`);
+              await supabaseStorage.storage
+                .from('documents')
+                .remove(filesToDelete);
+            }
+          } catch (deleteError) {
+            // Ignore delete errors (file might not exist)
+            console.warn('Could not delete old avatar:', deleteError);
+          }
+          
+          // Upload new avatar
+          const { data: uploadData, error: uploadError } = await supabaseStorage.storage
+            .from('documents')
+            .upload(filePath, file, {
+              cacheControl: '3600',
+              upsert: true
+            });
+          
+          if (uploadError) {
+            throw new Error(`Failed to upload avatar: ${uploadError.message}`);
+          }
+          
+          // Get public URL
+          const { data: urlData } = supabaseStorage.storage
+            .from('documents')
+            .getPublicUrl(filePath);
+          
+          if (urlData?.publicUrl) {
+            publicUrl = urlData.publicUrl;
+          } else {
+            throw new Error('Failed to get public URL for avatar');
+          }
+        } catch (storageError: any) {
+          console.error('Storage upload error:', storageError);
+          throw new Error(`Failed to upload avatar: ${storageError.message || 'Storage error'}`);
+        }
+      } else {
+        // Fallback: convert to base64 data URL
+        const base64Url = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const result = e.target?.result as string;
+            if (result) {
+              resolve(result);
+            } else {
+              reject(new Error('Failed to read file'));
+            }
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        
+        // Update employee record with base64 data URL
+        await this.update(employeeId, { avatar_url: base64Url });
+        return base64Url;
+      }
+      
+      // Update employee record with new avatar URL
+      await this.update(employeeId, { avatar_url: publicUrl });
+      
+      return publicUrl;
+    } catch (error: any) {
+      console.error('Error uploading avatar:', error);
+      throw error;
+    }
   },
 
   /**

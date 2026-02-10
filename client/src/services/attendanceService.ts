@@ -354,11 +354,27 @@ function transformRawAttendanceWithCache(
   const hour = date.getHours();
   const isMorning = hour < 12;
   
-  if (raw.status1 === true || (raw.status1 === null && isMorning)) {
+  // Determine check-in or check-out based on status flags
+  // status1 = true means check-in, status2 = true means check-out
+  // If both are true, determine based on time of day and context
+  if (raw.status1 === true && raw.status2 === true) {
+    // Both flags set - this is ambiguous, use time of day to determine
+    // Morning/early day (< 14:00 / 2 PM) = likely check-in
+    // Afternoon/evening (>= 14:00 / 2 PM) = likely check-out
+    if (hour < 14) {
+      checkIn = timeStr;
+    } else {
+      checkOut = timeStr;
+    }
+  } else if (raw.status1 === true) {
+    // Explicit check-in flag
     checkIn = timeStr;
-  } else if (raw.status2 === true || (raw.status2 === null && !isMorning)) {
+  } else if (raw.status2 === true) {
+    // Explicit check-out flag
     checkOut = timeStr;
   } else {
+    // Fallback: use time of day as heuristic
+    // Morning (< 12:00) = likely check-in, Afternoon (>= 12:00) = likely check-out
     if (isMorning) {
       checkIn = timeStr;
     } else {
@@ -461,14 +477,27 @@ async function transformRawAttendance(raw: RawAttendance, employeeUuid: string |
   const hour = date.getHours();
   const isMorning = hour < 12;
   
-  if (raw.status1 === true || (raw.status1 === null && isMorning)) {
-    // Likely a check-in (status1 or morning time)
+  // Determine check-in or check-out based on status flags
+  // status1 = true means check-in, status2 = true means check-out
+  // If both are true, determine based on time of day and context
+  if (raw.status1 === true && raw.status2 === true) {
+    // Both flags set - this is ambiguous, use time of day to determine
+    // Morning/early day (< 14:00 / 2 PM) = likely check-in
+    // Afternoon/evening (>= 14:00 / 2 PM) = likely check-out
+    if (hour < 14) {
+      checkIn = timeStr;
+    } else {
+      checkOut = timeStr;
+    }
+  } else if (raw.status1 === true) {
+    // Explicit check-in flag
     checkIn = timeStr;
-  } else if (raw.status2 === true || (raw.status2 === null && !isMorning)) {
-    // Likely a check-out (status2 or afternoon time)
+  } else if (raw.status2 === true) {
+    // Explicit check-out flag
     checkOut = timeStr;
   } else {
-    // Default: use timestamp for both, will be aggregated later
+    // Fallback: use time of day as heuristic
+    // Morning (< 12:00) = likely check-in, Afternoon (>= 12:00) = likely check-out
     if (isMorning) {
       checkIn = timeStr;
     } else {
@@ -555,8 +584,14 @@ async function transformRawAttendance(raw: RawAttendance, employeeUuid: string |
 /**
  * Aggregates multiple attendance records for the same employee and date
  * into a single record with check-in (earliest) and check-out (latest)
+ * Handles multiple shifts: if 4 entries (2 check-ins + 2 check-outs), creates 2 records
+ * Uses shift information to group check-outs that belong to the same shift
  */
-function aggregateAttendanceRecords(records: AttendanceLog[]): AttendanceLog[] {
+function aggregateAttendanceRecords(
+  records: AttendanceLog[],
+  shiftsMap?: Map<string, Map<number, EmployeeShift[]>>,
+  workingHoursMap?: Map<string, EmployeeWorkingHours>
+): AttendanceLog[] {
   const grouped = new Map<string, AttendanceLog[]>();
   
   // Group by employee_id and date
@@ -571,55 +606,339 @@ function aggregateAttendanceRecords(records: AttendanceLog[]): AttendanceLog[] {
   // Aggregate each group
   const aggregated: AttendanceLog[] = [];
   grouped.forEach((group, key) => {
+    // Collect all timestamps and classify them as check-ins or check-outs
+    const allTimestamps: Array<{ time: string; type: 'check_in' | 'check_out'; record: AttendanceLog }> = [];
+    
+    group.forEach(record => {
+      if (record.check_in && record.check_in.trim() !== '') {
+        allTimestamps.push({ time: record.check_in, type: 'check_in', record });
+      }
+      if (record.check_out && record.check_out.trim() !== '' && record.check_out !== record.check_in) {
+        allTimestamps.push({ time: record.check_out, type: 'check_out', record });
+      }
+    });
+    
+    // Sort all timestamps chronologically
+    allTimestamps.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+    
+    // If only one record, handle it specially
+    // Rule: Single entry should always be treated as check-in (not check-out)
     if (group.length === 1) {
-      aggregated.push(group[0]);
-    } else {
-      // Collect all check-in and check-out times
-      const checkIns: string[] = [];
-      const checkOuts: string[] = [];
-      let totalLateMinutes = 0;
-      let totalOvertimeMinutes = 0;
-      let hasValidRecord = false;
+      const record = group[0];
+      // If both check-in and check-out are set to the same value, it's likely a bug
+      if (record.check_in && record.check_out && record.check_in === record.check_out) {
+        // Both are the same - treat as check-in
+        const fixedRecord: AttendanceLog = {
+          ...record,
+          check_in: record.check_in,
+          check_out: ''
+        };
+        aggregated.push(fixedRecord);
+        return;
+      }
+      // Single record: if it has check-out but no check-in, treat the check-out as check-in
+      // If it has check-in, use it as-is
+      if (record.check_out && !record.check_in) {
+        // Only check-out exists - treat it as check-in
+        const fixedRecord: AttendanceLog = {
+          ...record,
+          check_in: record.check_out,
+          check_out: ''
+        };
+        aggregated.push(fixedRecord);
+        return;
+      }
+      // Normal single record with check-in - use as-is
+      aggregated.push(record);
+      return;
+    }
+    
+    if (allTimestamps.length === 0) {
+      // No valid timestamps, skip
+      return;
+    }
+    
+    // Separate check-ins and check-outs, removing duplicates
+    const checkIns: string[] = [];
+    const checkOuts: string[] = [];
+    const seenTimes = new Set<string>();
+    
+    allTimestamps.forEach(({ time, type }) => {
+      if (!seenTimes.has(time)) {
+        seenTimes.add(time);
+        if (type === 'check_in') {
+          checkIns.push(time);
+        } else {
+          checkOuts.push(time);
+        }
+      }
+    });
+    
+    // Get metadata from first record
+    const firstRecord = group[0];
+    const employeeInfo = firstRecord.employees;
+    const rawAttendanceId = firstRecord.raw_attendance_id;
+    const sn = firstRecord.sn;
+    const stamp = firstRecord.stamp;
+    
+    // Calculate late and overtime from records
+    let totalLateMinutes = 0;
+    let totalOvertimeMinutes = 0;
+    group.forEach(record => {
+      if (record.late_minutes > 0) {
+        totalLateMinutes = Math.max(totalLateMinutes, record.late_minutes);
+      }
+      if (record.overtime_minutes > 0) {
+        totalOvertimeMinutes = Math.max(totalOvertimeMinutes, record.overtime_minutes);
+      }
+    });
       
-      group.forEach(record => {
-        if (record.check_in) {
-          checkIns.push(record.check_in);
-          hasValidRecord = true;
-        }
-        if (record.check_out) {
-          checkOuts.push(record.check_out);
-          hasValidRecord = true;
-        }
-        if (record.late_minutes > 0) {
-          totalLateMinutes = Math.max(totalLateMinutes, record.late_minutes);
-        }
-        if (record.overtime_minutes > 0) {
-          totalOvertimeMinutes = Math.max(totalOvertimeMinutes, record.overtime_minutes);
+    // Smart pairing algorithm for multiple shifts
+    // Pair check-ins with check-outs based on time proximity and logical order
+    const shifts: Array<{ check_in: string; check_out: string }> = [];
+    const usedCheckIns = new Set<number>();
+    const usedCheckOuts = new Set<number>();
+    
+    // First pass: pair check-ins with check-outs that come after them
+    checkIns.forEach((checkIn, ciIndex) => {
+      let bestCheckOut: { index: number; time: string; gap: number } | null = null;
+      
+      // Find the closest check-out after this check-in (within reasonable time, e.g., 12 hours)
+      checkOuts.forEach((checkOut, coIndex) => {
+        if (usedCheckOuts.has(coIndex)) return;
+        
+        const checkInTime = new Date(checkIn).getTime();
+        const checkOutTime = new Date(checkOut).getTime();
+        const gap = checkOutTime - checkInTime;
+        
+        // Check-out must be after check-in, and within 12 hours
+        if (gap > 0 && gap < 12 * 60 * 60 * 1000) {
+          if (!bestCheckOut || gap < bestCheckOut.gap) {
+            bestCheckOut = { index: coIndex, time: checkOut, gap };
+          }
         }
       });
       
-      if (!hasValidRecord) {
-        // No valid records, skip
-        return;
+      if (bestCheckOut) {
+        shifts.push({ check_in: checkIn, check_out: bestCheckOut.time });
+        usedCheckIns.add(ciIndex);
+        usedCheckOuts.add(bestCheckOut.index);
+      }
+    });
+    
+    // Second pass: handle remaining check-outs (orphan check-outs)
+    // But first, try to group orphan check-outs by shift windows before pairing individually
+    const orphanCheckOuts: Array<{ index: number; time: string }> = [];
+    checkOuts.forEach((checkOut, coIndex) => {
+      if (!usedCheckOuts.has(coIndex)) {
+        orphanCheckOuts.push({ index: coIndex, time: checkOut });
+      }
+    });
+    
+    // If we have orphan check-outs and shift information, try to group them by shift first
+    if (orphanCheckOuts.length > 0 && firstRecord.employee_id && !firstRecord.employee_id.startsWith('unknown-')) {
+      const employeeUuid = firstRecord.employee_id;
+      const recordDate = new Date(firstRecord.date);
+      const dayOfWeek = recordDate.getDay();
+      
+      let employeeShifts: EmployeeShift[] = [];
+      if (shiftsMap) {
+        const empShifts = shiftsMap.get(employeeUuid);
+        if (empShifts) {
+          employeeShifts = empShifts.get(dayOfWeek) || [];
+        }
       }
       
-      // Sort times
-      checkIns.sort();
-      checkOuts.sort();
-      
-      // Use earliest check-in and latest check-out
-      const firstRecord = group[0];
-      const aggregatedRecord: AttendanceLog = {
-        ...firstRecord,
-        check_in: checkIns.length > 0 ? checkIns[0] : '',
-        check_out: checkOuts.length > 0 ? checkOuts[checkOuts.length - 1] : '',
-        status: checkIns.length > 0 ? (totalLateMinutes > 0 ? 'Late' : 'Present') : 'Absent',
-        late_minutes: totalLateMinutes,
-        overtime_minutes: totalOvertimeMinutes
-      };
-      
-      aggregated.push(aggregatedRecord);
+      // Group orphan check-outs by shift windows
+      if (employeeShifts.length > 0) {
+        const sortedShifts = [...employeeShifts].sort((a, b) => {
+          const aStart = a.start_time.split(':').map(Number);
+          const bStart = b.start_time.split(':').map(Number);
+          return (aStart[0] * 60 + aStart[1]) - (bStart[0] * 60 + bStart[1]);
+        });
+        
+        sortedShifts.forEach((shift) => {
+          const [shiftStartHour, shiftStartMin] = shift.start_time.split(':').map(Number);
+          const [shiftEndHour, shiftEndMin] = shift.end_time.split(':').map(Number);
+          
+          const shiftStart = new Date(recordDate);
+          shiftStart.setHours(shiftStartHour, shiftStartMin, 0, 0);
+          
+          const shiftEnd = new Date(recordDate);
+          shiftEnd.setHours(shiftEndHour, shiftEndMin, 0, 0);
+          if (shiftEnd <= shiftStart) {
+            shiftEnd.setDate(shiftEnd.getDate() + 1);
+          }
+          
+          // Allow check-outs within shift window + 3 hours tolerance on each side
+          // This handles cases where check-ins happen before shift start (e.g., 7 AM for a 10 AM shift)
+          const shiftStartWithTolerance = new Date(shiftStart);
+          shiftStartWithTolerance.setHours(shiftStartWithTolerance.getHours() - 3);
+          const shiftEndWithTolerance = new Date(shiftEnd);
+          shiftEndWithTolerance.setHours(shiftEndWithTolerance.getHours() + 3);
+          
+          // Find check-outs in this shift window
+          const checkOutsInShift = orphanCheckOuts.filter(({ time }) => {
+            const checkOutTime = new Date(time);
+            return checkOutTime >= shiftStartWithTolerance && checkOutTime <= shiftEndWithTolerance;
+          });
+          
+          // If multiple check-outs in same shift, combine them into one shift entry
+          if (checkOutsInShift.length >= 2) {
+            checkOutsInShift.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+            // Use earliest as check-in, latest as check-out
+            // This handles the case where check-in record is missing but we have multiple check-outs
+            shifts.push({ 
+              check_in: checkOutsInShift[0].time, 
+              check_out: checkOutsInShift[checkOutsInShift.length - 1].time 
+            });
+            // Mark as used
+            checkOutsInShift.forEach(({ index }) => usedCheckOuts.add(index));
+          } else if (checkOutsInShift.length === 1) {
+            // Single check-out in shift - determine if it's check-in or check-out
+            const checkOutTime = new Date(checkOutsInShift[0].time);
+            const timeInMinutes = checkOutTime.getHours() * 60 + checkOutTime.getMinutes();
+            const shiftStartMinutes = shiftStartHour * 60 + shiftStartMin;
+            const shiftEndMinutes = shiftEndHour * 60 + shiftEndMin;
+            
+            // Check if there's already a completed shift before this time
+            const hasCompletedShiftBefore = shifts.some(s => {
+              if (s.check_in && s.check_out) {
+                const shiftEnd = new Date(s.check_out);
+                return shiftEnd.getTime() < checkOutTime.getTime();
+              }
+              return false;
+            });
+            
+            // If there's a completed shift before and this time is near shift start, treat as check-in
+            // Otherwise, if it's near shift end, treat as check-out
+            if (hasCompletedShiftBefore && timeInMinutes <= shiftStartMinutes + 60) {
+              // Near shift start and there's a previous shift - treat as check-in for new shift
+              shifts.push({ check_in: checkOutsInShift[0].time, check_out: '' });
+              usedCheckOuts.add(checkOutsInShift[0].index);
+            } else if (timeInMinutes >= shiftEndMinutes - 60) {
+              // Near shift end, treat as check-out only
+              shifts.push({ check_in: '', check_out: checkOutsInShift[0].time });
+              usedCheckOuts.add(checkOutsInShift[0].index);
+            } else {
+              // Ambiguous - if there's a completed shift before, treat as check-in; otherwise check-out
+              if (hasCompletedShiftBefore) {
+                shifts.push({ check_in: checkOutsInShift[0].time, check_out: '' });
+              } else {
+                shifts.push({ check_in: '', check_out: checkOutsInShift[0].time });
+              }
+              usedCheckOuts.add(checkOutsInShift[0].index);
+            }
+          }
+        });
+      }
     }
+    
+    // Now handle remaining orphan check-outs that weren't grouped by shift
+    // If we have multiple orphan check-outs, combine them into a single shift
+    // Rule: If there are only check-outs (no check-ins), treat first as check-in, last as check-out
+    const remainingOrphanCheckOuts = orphanCheckOuts.filter(({ index }) => !usedCheckOuts.has(index));
+    if (remainingOrphanCheckOuts.length >= 2) {
+      // Sort by time
+      remainingOrphanCheckOuts.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+      
+      // If we have NO check-ins at all, always combine check-outs into one shift
+      // Otherwise, check if they're within 12 hours of each other (likely same shift)
+      const firstTime = new Date(remainingOrphanCheckOuts[0].time).getTime();
+      const lastTime = new Date(remainingOrphanCheckOuts[remainingOrphanCheckOuts.length - 1].time).getTime();
+      const timeSpan = lastTime - firstTime;
+      
+      // If no check-ins exist, or if within 12 hours, combine them into one shift
+      if (checkIns.length === 0 || timeSpan <= 12 * 60 * 60 * 1000) {
+        shifts.push({ 
+          check_in: remainingOrphanCheckOuts[0].time, 
+          check_out: remainingOrphanCheckOuts[remainingOrphanCheckOuts.length - 1].time 
+        });
+        remainingOrphanCheckOuts.forEach(({ index }) => usedCheckOuts.add(index));
+      }
+    }
+    
+    // Handle individual remaining orphan check-outs
+    remainingOrphanCheckOuts.forEach(({ index: coIndex, time: checkOut }) => {
+      if (!usedCheckOuts.has(coIndex)) {
+        // Try to find a check-in before this check-out that wasn't used
+        let bestCheckIn: { index: number; time: string; gap: number } | null = null;
+        
+        checkIns.forEach((checkIn, ciIndex) => {
+          if (usedCheckIns.has(ciIndex)) return;
+          
+          const checkInTime = new Date(checkIn).getTime();
+          const checkOutTime = new Date(checkOut).getTime();
+          const gap = checkOutTime - checkInTime;
+          
+          // Check-in must be before check-out, and within 12 hours
+          if (gap > 0 && gap < 12 * 60 * 60 * 1000) {
+            if (!bestCheckIn || gap < bestCheckIn.gap) {
+              bestCheckIn = { index: ciIndex, time: checkIn, gap };
+            }
+          }
+        });
+        
+        if (bestCheckIn) {
+          shifts.push({ check_in: bestCheckIn.time, check_out: checkOut });
+          usedCheckIns.add(bestCheckIn.index);
+          usedCheckOuts.add(coIndex);
+        } else {
+          // Orphan check-out - check if there's a completed shift before this time
+          // If yes, treat this as check-in for a new shift; otherwise treat as check-out
+          const checkOutTime = new Date(checkOut).getTime();
+          const hasCompletedShiftBefore = shifts.some(s => {
+            if (s.check_in && s.check_out) {
+              const shiftEnd = new Date(s.check_out);
+              // If there's a gap of more than 2 hours, this is likely a new shift
+              return (checkOutTime - shiftEnd.getTime()) > 2 * 60 * 60 * 1000;
+            }
+            return false;
+          });
+          
+          if (hasCompletedShiftBefore) {
+            // There's a completed shift before with significant gap - treat as check-in for new shift
+            shifts.push({ check_in: checkOut, check_out: '' });
+          } else {
+            // No completed shift before - treat as check-out only
+            shifts.push({ check_in: '', check_out: checkOut });
+          }
+        }
+      }
+    });
+    
+    // Third pass: handle remaining check-ins (orphan check-ins)
+    checkIns.forEach((checkIn, ciIndex) => {
+      if (!usedCheckIns.has(ciIndex)) {
+        shifts.push({ check_in: checkIn, check_out: '' });
+      }
+    });
+    
+    
+    // Sort shifts by check-in time (or check-out time if no check-in)
+    shifts.sort((a, b) => {
+      const timeA = a.check_in ? new Date(a.check_in).getTime() : new Date(a.check_out).getTime();
+      const timeB = b.check_in ? new Date(b.check_in).getTime() : new Date(b.check_out).getTime();
+      return timeA - timeB;
+    });
+    
+    // Create attendance records for each shift
+    shifts.forEach((shift, index) => {
+      const shiftRecord: AttendanceLog = {
+        ...firstRecord,
+        id: `aggregated-${firstRecord.employee_id}-${firstRecord.date}-shift${index + 1}`,
+        check_in: shift.check_in,
+        check_out: shift.check_out,
+        status: shift.check_in ? (index === 0 && totalLateMinutes > 0 ? 'Late' : 'Present') : 'Present',
+        late_minutes: index === 0 ? totalLateMinutes : 0,
+        overtime_minutes: index === shifts.length - 1 ? totalOvertimeMinutes : 0,
+        employees: employeeInfo || firstRecord.employees,
+        raw_attendance_id: rawAttendanceId || firstRecord.raw_attendance_id,
+        sn: sn || firstRecord.sn,
+        stamp: stamp || firstRecord.stamp
+      };
+      aggregated.push(shiftRecord);
+    });
   });
   
   return aggregated;
@@ -635,6 +954,7 @@ export interface AttendanceFilters {
   minLateMinutes?: number;
   minOvertimeMinutes?: number;
   employeeIds?: number[]; // Integer employee IDs from attendances table
+  companyId?: string; // Filter by company ID (for admin users)
   page?: number;
   limit?: number;
 }
@@ -692,20 +1012,14 @@ export const attendanceService = {
         }
       }
       
-      // Apply pagination
-      if (filters?.limit) {
-        params.limit = filters.limit;
-        if (filters.page) {
-          const offset = (filters.page - 1) * filters.limit;
-          params.offset = offset;
-        }
-      } else {
-        // Default limit if no pagination specified
-        params.limit = 1000;
-      }
+      // IMPORTANT: Fetch ALL records first (without pagination) to ensure proper aggregation
+      // We need all records for the date range to aggregate check-ins and check-outs correctly
+      // Set a high limit to get all records, then paginate after aggregation
+      params.limit = 10000; // Fetch up to 10,000 records for aggregation
+      params.offset = 0; // Start from beginning
       
-      // Fetch attendance records with filters
-      // Request total count in headers for pagination
+      // Fetch attendance records with filters (all records, no pagination yet)
+      // Request total count in headers
       const response = await adminApi.get<RawAttendance[]>('/attendances', { 
         params,
         headers: {
@@ -714,14 +1028,14 @@ export const attendanceService = {
       });
       const rawRecords = response.data || [];
       
-      // Get total count from Content-Range header for pagination
+      // Get total count from Content-Range header
       const contentRange = response.headers['content-range'] || response.headers['Content-Range'];
-      let totalCount = rawRecords.length;
+      let totalRawCount = rawRecords.length;
       if (contentRange) {
         // Format: "0-9/100" means items 0-9 of 100 total
         const match = contentRange.match(/\/(\d+)/);
         if (match) {
-          totalCount = parseInt(match[1], 10);
+          totalRawCount = parseInt(match[1], 10);
         }
       }
       
@@ -738,7 +1052,8 @@ export const attendanceService = {
       }
       
       // Fetch all employees for mapping (only once)
-      const employees = await employeeService.getAll();
+      // Filter by company_id if provided (for admin users to see only their company's employees)
+      const employees = await employeeService.getAll(filters?.companyId);
       const employeeMap = new Map<string, Employee>();
       employees.forEach(emp => {
         employeeMap.set(emp.id, emp);
@@ -782,17 +1097,28 @@ export const attendanceService = {
       const uniqueUuids = [...new Set([...employeeUuidMap.values()].filter(u => !u.startsWith('unknown-')))];
       
       // Batch fetch all employee shifts at once using Supabase's `in` filter
+      // Filter by company_id if provided to ensure we only get shifts for the current company
       const shiftsMap = new Map<string, Map<number, EmployeeShift[]>>(); // employee_id -> dayOfWeek -> shifts[]
       if (uniqueUuids.length > 0) {
         try {
+          // Build query with company_id filter if provided
+          let shiftsQuery = `/employee_shifts?employee_id=in.(${uniqueUuids.join(',')})&is_active=eq.true&select=*&order=employee_id.asc,day_of_week.asc,start_time.asc`;
+          if (filters?.companyId) {
+            shiftsQuery += `&company_id=eq.${filters.companyId}`;
+          }
+          
           // Fetch all shifts for all employees in one call
-          const shiftsResponse = await adminApi.get<EmployeeShift[]>(
-            `/employee_shifts?employee_id=in.(${uniqueUuids.join(',')})&is_active=eq.true&select=*&order=employee_id.asc,day_of_week.asc,start_time.asc`
-          );
+          const shiftsResponse = await adminApi.get<EmployeeShift[]>(shiftsQuery);
           const allShifts = Array.isArray(shiftsResponse.data) ? shiftsResponse.data : [];
           
           // Organize shifts by employee_id and day_of_week
+          // Additional safety: filter by company_id if provided (in case some shifts slipped through)
           allShifts.forEach(shift => {
+            // Skip shifts that don't match the company_id filter (if set)
+            if (filters?.companyId && shift.company_id !== filters.companyId) {
+              return;
+            }
+            
             if (!shiftsMap.has(shift.employee_id)) {
               shiftsMap.set(shift.employee_id, new Map());
             }
@@ -808,16 +1134,27 @@ export const attendanceService = {
       }
       
       // Batch fetch all employee working hours at once
+      // Filter by company_id if provided to ensure we only get working hours for the current company
       const workingHoursMap = new Map<string, EmployeeWorkingHours>();
       if (uniqueUuids.length > 0) {
         try {
-          const workingHoursResponse = await adminApi.get<EmployeeWorkingHours[]>(
-            `/employee_working_hours?employee_id=in.(${uniqueUuids.join(',')})&is_active=eq.true&select=*&order=effective_from.desc`
-          );
+          // Build query with company_id filter if provided
+          let workingHoursQuery = `/employee_working_hours?employee_id=in.(${uniqueUuids.join(',')})&is_active=eq.true&select=*&order=effective_from.desc`;
+          if (filters?.companyId) {
+            workingHoursQuery += `&company_id=eq.${filters.companyId}`;
+          }
+          
+          const workingHoursResponse = await adminApi.get<EmployeeWorkingHours[]>(workingHoursQuery);
           const allWorkingHours = Array.isArray(workingHoursResponse.data) ? workingHoursResponse.data : [];
           
           // Get the most recent working hours for each employee
+          // Additional safety: filter by company_id if provided (in case some records slipped through)
           allWorkingHours.forEach(wh => {
+            // Skip working hours that don't match the company_id filter (if set)
+            if (filters?.companyId && wh.company_id !== filters.companyId) {
+              return;
+            }
+            
             if (!workingHoursMap.has(wh.employee_id)) {
               workingHoursMap.set(wh.employee_id, wh);
             }
@@ -828,10 +1165,18 @@ export const attendanceService = {
       }
       
       // Transform records using cached shift/working hours data
+      // Only process records for employees that belong to the current company (if companyId filter is set)
       const transformedRecords: AttendanceLog[] = [];
       
       for (const raw of recordsToProcess) {
         const employeeUuid = employeeUuidMap.get(raw.employee_id) || `unknown-${raw.employee_id}`;
+        
+        // If companyId filter is set, skip records for employees not in the company
+        if (filters?.companyId && employeeUuid.startsWith('unknown-')) {
+          // This employee is not in the company's employee list, skip it
+          continue;
+        }
+        
         const employee = employeeUuid.startsWith('unknown-') ? undefined : employeeMap.get(employeeUuid);
         
         // Use cached shifts/working hours instead of making individual API calls
@@ -845,16 +1190,34 @@ export const attendanceService = {
         transformedRecords.push(transformed);
       }
       
-      // Aggregate records by employee and date
-      const aggregated = aggregateAttendanceRecords(transformedRecords);
+      // Aggregate records by employee and date, passing shift information
+      const aggregated = aggregateAttendanceRecords(transformedRecords, shiftsMap, workingHoursMap);
       
-      // Sort by date descending
-      aggregated.sort((a, b) => b.date.localeCompare(a.date));
+      // Sort by date descending, then by employee name
+      aggregated.sort((a, b) => {
+        const dateCompare = b.date.localeCompare(a.date);
+        if (dateCompare !== 0) return dateCompare;
+        // If same date, sort by employee name
+        const aName = `${a.employees?.first_name || ''} ${a.employees?.last_name || ''}`.toLowerCase();
+        const bName = `${b.employees?.first_name || ''} ${b.employees?.last_name || ''}`.toLowerCase();
+        return aName.localeCompare(bName);
+      });
       
-      // Return with total count for pagination
+      // Apply pagination to aggregated results (not raw records)
+      let paginatedData = aggregated;
+      let finalTotalCount = aggregated.length;
+      
+      if (filters?.limit && filters?.page) {
+        const startIndex = (filters.page - 1) * filters.limit;
+        const endIndex = startIndex + filters.limit;
+        paginatedData = aggregated.slice(startIndex, endIndex);
+        finalTotalCount = aggregated.length; // Total count is based on aggregated records
+      }
+      
+      // Return paginated aggregated data
       return {
-        data: aggregated,
-        totalCount: totalCount
+        data: paginatedData,
+        totalCount: finalTotalCount
       };
     } catch (err: any) {
       console.error('API error fetching attendance:', err.message);
@@ -867,8 +1230,9 @@ export const attendanceService = {
 
   /**
    * Get attendance records for a specific employee (by UUID)
+   * Optionally filter by date (today only if dateFilter is 'today')
    */
-  async getByEmployee(employeeId: string) {
+  async getByEmployee(employeeId: string, dateFilter?: 'today' | 'all') {
     try {
       // First, we need to find the integer employee_id for this UUID
       const employees = await employeeService.getAll();
@@ -900,16 +1264,50 @@ export const attendanceService = {
         return [];
       }
       
+      // Build query with optional date filter
+      let queryUrl = `/attendances?employee_id=eq.${integerEmployeeId}&select=*&order=timestamp.desc`;
+      
+      if (dateFilter === 'today') {
+        // Get today's date range
+        const today = new Date();
+        const todayStart = new Date(today);
+        todayStart.setHours(0, 0, 0, 0);
+        const todayEnd = new Date(today);
+        todayEnd.setHours(23, 59, 59, 999);
+        
+        // Format as ISO strings
+        const startISO = todayStart.toISOString();
+        const endISO = todayEnd.toISOString();
+        
+        // PostgREST doesn't support multiple operators on same column in URL params
+        // So we'll filter on the client side after fetching
+        // But we can at least filter from start of day
+        queryUrl += `&timestamp=gte.${startISO}`;
+      }
+      
       // Fetch attendance records for this integer employee_id
-      const response = await adminApi.get<RawAttendance[]>(`/attendances?employee_id=eq.${integerEmployeeId}&select=*&order=timestamp.desc`);
-      const rawRecords = response.data || [];
+      const response = await adminApi.get<RawAttendance[]>(queryUrl);
+      let rawRecords = response.data || [];
+      
+      // If filtering for today, apply end date filter on client side
+      if (dateFilter === 'today') {
+        const today = new Date();
+        const todayEnd = new Date(today);
+        todayEnd.setHours(23, 59, 59, 999);
+        const endISO = todayEnd.toISOString();
+        
+        rawRecords = rawRecords.filter(raw => {
+          const recordDate = new Date(raw.timestamp);
+          return recordDate <= new Date(endISO);
+        });
+      }
       
       // Transform records
       const transformedRecords = await Promise.all(
         rawRecords.map(raw => transformRawAttendance(raw, employeeId, employee))
       );
       
-      // Aggregate by date
+      // Aggregate by date (no shift map available in this context, but that's okay)
       return aggregateAttendanceRecords(transformedRecords);
     } catch (error) {
       console.error('Error fetching employee attendance:', error);
@@ -964,18 +1362,27 @@ export const attendanceService = {
       }
 
       // Determine timestamp and status flags based on check_in or check_out
-      const isCheckIn = !!log.check_in;
-      const timestamp = isCheckIn ? log.check_in! : log.check_out!;
+      // Check which field is provided (check_in or check_out)
+      const hasCheckIn = !!log.check_in;
+      const hasCheckOut = !!log.check_out;
+      
+      // Timestamp from caller is already adjusted for Kuwait timezone
+      // (caller adds 3 hours before passing toISOString())
+      // So we use it directly
+      const timestamp = hasCheckIn ? log.check_in! : log.check_out!;
       const date = new Date(timestamp);
       const hour = date.getHours();
       const isMorning = hour < 12;
 
       // Transform to attendances table format
+      // status1 = true means check-in, status2 = true means check-out
+      // Set flags explicitly: if check_in is provided, set status1=true, status2=null
+      // If check_out is provided, set status1=null, status2=true
       const attendanceData: any = {
         employee_id: integerEmployeeId,
         timestamp: timestamp,
-        status1: isCheckIn || (isMorning && !log.check_out) ? true : null, // Check-in flag
-        status2: !isCheckIn || (!isMorning && log.check_out) ? true : null, // Check-out flag
+        status1: hasCheckIn ? true : null, // Check-in flag: true only if check_in is provided
+        status2: hasCheckOut ? true : null, // Check-out flag: true only if check_out is provided
         status3: null,
         status4: null,
         status5: null,
@@ -991,10 +1398,39 @@ export const attendanceService = {
       // If you need to store geo/webauthn data, consider storing in attendance_logs or a separate table
 
       const response = await adminApi.post('/attendances', attendanceData);
-      if (response.data && response.data.length > 0) {
-        return response.data[0];
+      const result = response.data && response.data.length > 0 ? response.data[0] : response.data;
+      
+      // Send message notification if enabled (fire and forget - don't block attendance recording)
+      if (log.employee_id && (log.check_in || log.check_out)) {
+        try {
+          // Get employee to find company_id
+          const { employeeService } = await import('./employeeService');
+          const employees = await employeeService.getAll();
+          const employee = employees.find(emp => emp.id === log.employee_id);
+          
+          if (employee && employee.company_id) {
+            const { messageService } = await import('./messageService');
+            const messageType = log.check_in ? 'check_in' : 'check_out';
+            const timestamp = log.check_in || log.check_out || new Date().toISOString();
+            
+            // Send message asynchronously (don't await - fire and forget)
+            messageService.sendAttendanceMessage(
+              employee.company_id,
+              log.employee_id,
+              messageType,
+              timestamp
+            ).catch(error => {
+              console.error('Failed to send attendance message:', error);
+              // Don't throw - message failure shouldn't block attendance recording
+            });
+          }
+        } catch (error) {
+          console.error('Error sending attendance message:', error);
+          // Don't throw - message failure shouldn't block attendance recording
+        }
       }
-      return response.data;
+      
+      return result;
     } catch (error) {
       console.error('Error creating punch:', error);
       throw error;

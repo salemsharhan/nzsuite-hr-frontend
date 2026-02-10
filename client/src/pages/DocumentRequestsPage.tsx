@@ -58,6 +58,7 @@ export default function DocumentRequestsPage() {
       const filters = {
         status: statusFilter,
         document_type: documentTypeFilter !== 'all' ? documentTypeFilter : undefined,
+        companyId: user?.role !== 'super_admin' ? user?.company_id : undefined,
         page: currentPage,
         limit: itemsPerPage
       };

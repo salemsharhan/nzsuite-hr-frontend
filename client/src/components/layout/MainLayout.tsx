@@ -3,6 +3,7 @@ import { Link, useLocation, useRoute } from 'wouter';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useTheme } from '../../contexts/ThemeContext';
 import {
   LayoutDashboard, 
   Users, 
@@ -20,7 +21,9 @@ import {
   BarChart3,
   ShieldCheck,
   Globe,
-  ClipboardCheck
+  ClipboardCheck,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { cn } from '../common/UIComponents';
 
@@ -68,14 +71,14 @@ export const Sidebar = ({ collapsed, setCollapsed, mobileOpen, setMobileOpen }: 
     { icon: Clock, label: t('common.attendance'), href: '/attendance', roles: ['super_admin', 'admin', 'employee'] },
     { icon: Calendar, label: t('common.leaves'), href: userRole === 'employee' ? '/self-service/leaves' : '/leaves', roles: ['super_admin', 'admin', 'employee'] },
     { icon: DollarSign, label: t('common.payroll'), href: '/payroll', roles: ['super_admin', 'admin'] },
-    { icon: Users, label: 'Self Service', href: '/self-service', roles: ['super_admin', 'admin', 'employee'] },
-    { icon: Clock, label: 'Timesheets', href: '/timesheets', roles: ['super_admin', 'admin', 'employee'] },
+    { icon: Users, label: t('layout.selfService'), href: '/self-service', roles: ['super_admin', 'admin', 'employee'] },
+    { icon: Clock, label: t('layout.timesheets'), href: '/timesheets', roles: ['super_admin', 'admin', 'employee'] },
     { icon: Briefcase, label: t('common.recruitment'), href: '/recruitment', roles: ['super_admin', 'admin'] },
-    { icon: ClipboardCheck, label: 'Hiring Checklist', href: '/hiring-checklist', roles: ['super_admin', 'admin', 'employee'] },
+    { icon: ClipboardCheck, label: t('layout.hiringChecklist'), href: '/hiring-checklist', roles: ['super_admin', 'admin', 'employee'] },
     { icon: FileText, label: t('common.documents'), href: '/documents', roles: ['super_admin', 'admin', 'employee'] },
-    { icon: FileText, label: 'Document Requests', href: '/document-requests', roles: ['super_admin', 'admin'] },
-    { icon: FileText, label: 'Employee Requests', href: '/employee-requests', roles: ['super_admin', 'admin'] },
-    { icon: Globe, label: 'Immigration Management', href: '/immigration', roles: ['super_admin', 'admin'] },
+    { icon: FileText, label: t('layout.documentRequests'), href: '/document-requests', roles: ['super_admin', 'admin'] },
+    { icon: FileText, label: t('layout.employeeRequests'), href: '/employee-requests', roles: ['super_admin', 'admin'] },
+    { icon: Globe, label: t('layout.immigrationManagement'), href: '/immigration', roles: ['super_admin', 'admin'] },
     { icon: BarChart3, label: t('common.analytics'), href: '/analytics', roles: ['super_admin', 'admin'] },
     { icon: ShieldCheck, label: t('common.admin'), href: '/admin', roles: ['super_admin', 'admin'] },
     { icon: Settings, label: t('common.settings'), href: '/settings', roles: ['super_admin', 'admin'] },
@@ -122,7 +125,7 @@ export const Sidebar = ({ collapsed, setCollapsed, mobileOpen, setMobileOpen }: 
         {/* Navigation */}
         <div className="flex-1 overflow-y-auto py-6 px-3 custom-scrollbar">
           <div className="space-y-1">
-            {!collapsed && <div className="px-3 mb-2 text-xs font-semibold text-muted-foreground/50 uppercase tracking-wider">Main Menu</div>}
+            {!collapsed && <div className="px-3 mb-2 text-xs font-semibold text-muted-foreground/50 uppercase tracking-wider">{t('layout.mainMenu')}</div>}
             {menuItems.filter(item => canAccessMenuItem(item.roles)).map((item) => (
               <SidebarItem 
                 key={item.href}
@@ -208,6 +211,7 @@ export const Sidebar = ({ collapsed, setCollapsed, mobileOpen, setMobileOpen }: 
 export const Topbar = ({ collapsed, setCollapsed, setMobileOpen }: any) => {
   const { t } = useTranslation();
   const { language, changeLanguage, direction } = useLanguage();
+  const { theme, toggleTheme } = useTheme();
 
   const toggleLanguage = () => {
     changeLanguage(language === 'en' ? 'ar' : 'en');
@@ -251,12 +255,27 @@ export const Topbar = ({ collapsed, setCollapsed, setMobileOpen }: any) => {
           <button 
             onClick={toggleLanguage}
             className="p-2 hover:bg-white/5 rounded-full text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2"
+            title={`Switch to ${language === 'en' ? 'Arabic' : 'English'}`}
           >
             <Globe size={18} />
             <span className="text-sm font-medium uppercase">{language}</span>
           </button>
           
           <div className="h-6 w-px bg-white/10 mx-1" />
+          
+          {toggleTheme && (
+            <>
+              <button 
+                onClick={toggleTheme}
+                className="p-2 hover:bg-white/5 rounded-full text-muted-foreground hover:text-foreground transition-colors"
+                title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+              >
+                {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+              </button>
+              
+              <div className="h-6 w-px bg-white/10 mx-1" />
+            </>
+          )}
           
           <button className="p-2 hover:bg-white/5 rounded-full text-muted-foreground relative group">
             <Bell size={20} />

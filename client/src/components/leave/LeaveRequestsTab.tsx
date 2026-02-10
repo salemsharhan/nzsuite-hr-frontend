@@ -131,6 +131,7 @@ export default function LeaveRequestsTab({ onRequestUpdated }: LeaveRequestsTabP
         leave_type: leaveTypeFilter !== 'all' ? leaveTypeFilter : undefined,
         date_from: dateFromFilter || undefined,
         date_to: dateToFilter || undefined,
+        companyId: user?.role !== 'super_admin' ? user?.company_id : undefined,
         page: currentPage,
         limit: itemsPerPage
       };

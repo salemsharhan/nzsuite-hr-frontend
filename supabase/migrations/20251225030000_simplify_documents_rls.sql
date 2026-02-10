@@ -29,3 +29,8 @@ CREATE POLICY "documents_delete_policy" ON documents
   USING (auth.role() = 'authenticated');
 
 
+
+
+
+
+

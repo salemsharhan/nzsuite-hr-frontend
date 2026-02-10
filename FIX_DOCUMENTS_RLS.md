@@ -67,3 +67,8 @@ const supabaseService = createClient(
 After applying the storage policies, try uploading a document again. Both the database insert and file access should work.
 
 
+
+
+
+
+

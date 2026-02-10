@@ -71,19 +71,23 @@ export default function EmployeeRequestsPage() {
       setLoading(true);
       
       // Fetch all types of requests
+      const companyId = user?.role !== 'super_admin' ? user?.company_id : undefined;
       const [empRequests, docRequests, leaveReqs] = await Promise.all([
         employeeRequestService.getAll({
           status: statusFilter !== 'all' ? statusFilter as any : undefined,
+          companyId,
           page: currentPage,
           limit: itemsPerPage
         }),
         documentRequestService.getAll({
           status: statusFilter !== 'all' ? (statusFilter === 'Completed' ? 'Completed' : statusFilter as any) : 'all',
+          companyId,
           page: currentPage,
           limit: itemsPerPage
         }),
         leaveService.getAll({
           status: statusFilter !== 'all' ? statusFilter as any : undefined,
+          companyId,
           page: currentPage,
           limit: itemsPerPage
         })

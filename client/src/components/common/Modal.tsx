@@ -32,7 +32,7 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' }:
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" />
+          <div className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm" />
         </Transition.Child>
 
         <div className="fixed inset-0 overflow-y-auto">
@@ -46,12 +46,12 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' }:
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel className={`w-full ${sizeClasses[size]} transform overflow-hidden rounded-2xl bg-[#0f172a] border border-white/10 p-6 text-left align-middle shadow-xl transition-all max-h-[90vh] flex flex-col`}>
-                <div className="flex justify-between items-center mb-6 pb-4 border-b border-white/10">
-                  <Dialog.Title as="h3" className="text-xl font-semibold leading-6 text-white">
+              <Dialog.Panel className={`w-full ${sizeClasses[size]} transform overflow-hidden rounded-2xl bg-card border border-border p-6 text-left align-middle shadow-xl transition-all max-h-[90vh] flex flex-col`}>
+                <div className="flex justify-between items-center mb-6 pb-4 border-b border-border">
+                  <Dialog.Title as="h3" className="text-xl font-semibold leading-6 text-foreground">
                     {title}
                   </Dialog.Title>
-                  <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors p-1 hover:bg-white/10 rounded-md">
+                  <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors p-1 hover:bg-muted rounded-md">
                     <X size={20} />
                   </button>
                 </div>

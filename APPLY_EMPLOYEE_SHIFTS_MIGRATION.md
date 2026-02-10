@@ -108,3 +108,8 @@ After applying the migration, verify the table exists:
    - updated_at (timestamptz)
 
 
+
+
+
+
+

@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Folder, FileText, MoreVertical, Search, Upload, Grid, List, Trash2, Download, Plus, X } from 'lucide-react';
 import { Card, CardContent, Button, Input } from '../components/common/UIComponents';
 import Modal from '../components/common/Modal';
 import { documentService, Document, Folder as FolderType } from '../services/documentService';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function DocumentsPage() {
+  const { t } = useTranslation();
+  const { user } = useAuth();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [folders, setFolders] = useState<FolderType[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,8 +25,9 @@ export default function DocumentsPage() {
 
   const loadData = async () => {
     try {
+      const companyId = user?.role !== 'super_admin' ? user?.company_id : undefined;
       const [docsData, foldersData] = await Promise.all([
-        documentService.getAll(),
+        documentService.getAll(undefined, companyId),
         documentService.getFolders()
       ]);
       setDocuments(docsData);
@@ -36,7 +41,7 @@ export default function DocumentsPage() {
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) {
-      alert('Please enter a folder name');
+      alert(t('documents.pleaseEnterFolderName'));
       return;
     }
 
@@ -53,12 +58,12 @@ export default function DocumentsPage() {
       setNewFolderColor('#3b82f6');
     } catch (error: any) {
       console.error('Failed to create folder:', error);
-      alert(error.response?.data?.message || 'Failed to create folder. It may already exist.');
+      alert(error.response?.data?.message || t('documents.failedToCreateFolder'));
     }
   };
 
   const handleDeleteFolder = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to delete the folder "${name}"? This will not delete the files inside.`)) return;
+    if (!confirm(t('documents.confirmDeleteFolder', { name }))) return;
     try {
       await documentService.deleteFolder(id);
       setFolders(folders.filter(f => f.id !== id));
@@ -67,7 +72,7 @@ export default function DocumentsPage() {
       }
     } catch (error) {
       console.error('Failed to delete folder:', error);
-      alert('Failed to delete folder');
+      alert(t('documents.failedToDeleteFolder'));
     }
   };
 
@@ -83,20 +88,27 @@ export default function DocumentsPage() {
         setDocuments([newDoc, ...documents]);
       } catch (error) {
         console.error('Failed to upload:', error);
-        alert('Failed to upload file');
+        alert(t('documents.failedToUpload'));
       }
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this file?')) return;
+    if (!confirm(t('documents.confirmDeleteFile'))) return;
     try {
       await documentService.delete(id);
       setDocuments(documents.filter(d => d.id !== id));
     } catch (error) {
       console.error('Failed to delete:', error);
-      alert('Failed to delete file');
+      alert(t('documents.failedToDeleteFile'));
     }
+  };
+
+  const getFolderDescription = (folder: FolderType): string => {
+    const translationKey = `documents.${folder.name.toLowerCase()}Desc`;
+    const translated = t(translationKey);
+    // If translation exists and is different from the key, use it; otherwise use original description
+    return translated !== translationKey ? translated : (folder.description || '');
   };
 
   const selectedFolder = folders.find(f => f.id === selectedFolderId);
@@ -109,14 +121,14 @@ export default function DocumentsPage() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold font-heading">Documents</h1>
-          <p className="text-muted-foreground">Centralized digital filing cabinet</p>
+          <h1 className="text-3xl font-bold font-heading">{t('documents.title')}</h1>
+          <p className="text-muted-foreground">{t('documents.subtitle')}</p>
         </div>
         <div className="flex gap-3">
           <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input 
-              placeholder="Search files..." 
+              placeholder={t('documents.searchFiles')} 
               className="pl-9 w-64" 
               value={search}
               onChange={e => setSearch(e.target.value)}
@@ -129,7 +141,7 @@ export default function DocumentsPage() {
               onChange={handleUpload}
             />
             <Button className="gap-2">
-              <Upload size={16} /> Upload
+              <Upload size={16} /> {t('documents.upload')}
             </Button>
           </div>
         </div>
@@ -156,14 +168,16 @@ export default function DocumentsPage() {
                     handleDeleteFolder(folder.id, folder.name);
                   }}
                   className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-destructive text-white rounded-full p-1 hover:bg-destructive/80"
-                  title="Delete folder"
+                  title={t('documents.deleteFolder')}
                 >
                   <X size={12} />
                 </button>
               </div>
               <span className="font-medium text-sm">{folder.name}</span>
               {folder.description && (
-                <span className="text-xs text-muted-foreground line-clamp-1">{folder.description}</span>
+                <span className="text-xs text-muted-foreground line-clamp-1">
+                  {getFolderDescription(folder)}
+                </span>
               )}
             </CardContent>
           </Card>
@@ -178,7 +192,7 @@ export default function DocumentsPage() {
             <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center">
               <Plus size={24} className="text-muted-foreground" />
             </div>
-            <span className="font-medium text-sm text-muted-foreground">Add Folder</span>
+            <span className="font-medium text-sm text-muted-foreground">{t('documents.addFolder')}</span>
           </CardContent>
         </Card>
       </div>
@@ -192,28 +206,28 @@ export default function DocumentsPage() {
           setNewFolderDescription('');
           setNewFolderColor('#3b82f6');
         }}
-        title="Create New Folder"
+        title={t('documents.createNewFolder')}
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-2">Folder Name *</label>
+            <label className="block text-sm font-medium mb-2">{t('documents.folderName')} *</label>
             <Input
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
-              placeholder="e.g., Contracts, Policies..."
+              placeholder={t('documents.folderNamePlaceholder')}
               autoFocus
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-2">Description</label>
+            <label className="block text-sm font-medium mb-2">{t('documents.folderDescription')}</label>
             <Input
               value={newFolderDescription}
               onChange={(e) => setNewFolderDescription(e.target.value)}
-              placeholder="Optional description..."
+              placeholder={t('documents.folderDescriptionPlaceholder')}
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-2">Color</label>
+            <label className="block text-sm font-medium mb-2">{t('documents.folderColor')}</label>
             <div className="flex gap-2">
               <Input
                 type="color"
@@ -239,10 +253,10 @@ export default function DocumentsPage() {
                 setNewFolderColor('#3b82f6');
               }}
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleCreateFolder}>
-              Create Folder
+              {t('documents.createFolder')}
             </Button>
           </div>
         </div>
@@ -254,19 +268,19 @@ export default function DocumentsPage() {
           <table className="w-full text-sm text-left">
             <thead className="text-xs text-muted-foreground uppercase bg-white/5 border-b border-white/5">
               <tr>
-                <th className="px-6 py-3">Name</th>
-                <th className="px-6 py-3">Folder</th>
-                <th className="px-6 py-3">Owner</th>
-                <th className="px-6 py-3">Date Modified</th>
-                <th className="px-6 py-3">Size</th>
-                <th className="px-6 py-3 text-right">Actions</th>
+                <th className="px-6 py-3">{t('documents.name')}</th>
+                <th className="px-6 py-3">{t('documents.folder')}</th>
+                <th className="px-6 py-3">{t('documents.owner')}</th>
+                <th className="px-6 py-3">{t('documents.dateModified')}</th>
+                <th className="px-6 py-3">{t('documents.size')}</th>
+                <th className="px-6 py-3 text-right">{t('documents.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
               {loading ? (
-                <tr><td colSpan={6} className="text-center py-8">Loading...</td></tr>
+                <tr><td colSpan={6} className="text-center py-8">{t('documents.loading')}</td></tr>
               ) : filteredDocs.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-8 text-muted-foreground">No files found.</td></tr>
+                <tr><td colSpan={6} className="text-center py-8 text-muted-foreground">{t('documents.noFilesFound')}</td></tr>
               ) : filteredDocs.map((file) => (
                 <tr key={file.id} className="hover:bg-white/5 transition-colors group">
                   <td className="px-6 py-4 flex items-center gap-3 font-medium">

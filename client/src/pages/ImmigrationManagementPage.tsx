@@ -73,12 +73,14 @@ export default function ImmigrationManagementPage() {
   const loadData = async () => {
     try {
       setLoading(true);
+      const companyId = user?.role !== 'super_admin' ? user?.company_id : undefined;
       const [immigrationData, employeeData] = await Promise.all([
         employeeImmigrationService.getAll({
           renewal_priority: priorityFilter !== 'all' ? priorityFilter : undefined,
-          is_expatriate: true
+          is_expatriate: true,
+          companyId
         }),
-        employeeService.getAll()
+        employeeService.getAll(companyId)
       ]);
 
       // Map employees to immigration records

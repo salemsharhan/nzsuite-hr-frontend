@@ -53,7 +53,7 @@ export default function EmployeeTimesheetPage() {
       setTimesheetEntries(entries);
     } catch (error) {
       console.error('Failed to load timesheet entries:', error);
-      toast.error('Failed to load timesheet entries');
+      toast.error(t('timesheet.failedToLoad'));
     } finally {
       setLoading(false);
     }
@@ -89,12 +89,12 @@ export default function EmployeeTimesheetPage() {
         : null);
     
     if (!employeeId) {
-      toast.error('Employee ID not found');
+      toast.error(t('timesheet.employeeIdNotFound'));
       return;
     }
 
     if (timesheetForm.hours_worked <= 0) {
-      toast.error('Please enter hours worked');
+      toast.error(t('timesheet.pleaseEnterHours'));
       return;
     }
 
@@ -108,12 +108,12 @@ export default function EmployeeTimesheetPage() {
         project_name: timesheetForm.project_name,
         task_type: timesheetForm.task_type
       });
-      toast.success('Timesheet saved successfully!');
+      toast.success(t('timesheet.savedSuccessfully'));
       await loadTimesheetEntries();
       setIsModalOpen(false);
     } catch (error: any) {
       console.error('Failed to save timesheet:', error);
-      toast.error(error.message || 'Failed to save timesheet');
+      toast.error(error.message || t('timesheet.failedToSave'));
     } finally {
       setIsSubmitting(false);
     }
@@ -126,18 +126,18 @@ export default function EmployeeTimesheetPage() {
         : null);
     
     if (!employeeId) {
-      toast.error('Employee ID not found');
+      toast.error(t('timesheet.employeeIdNotFound'));
       return;
     }
 
     try {
       setIsSubmitting(true);
       await timesheetService.submitDaily(employeeId, date);
-      toast.success('Daily timesheet report submitted successfully!');
+      toast.success(t('timesheet.dailySubmittedSuccessfully'));
       await loadTimesheetEntries();
     } catch (error: any) {
       console.error('Failed to submit timesheet:', error);
-      toast.error(error.message || 'Failed to submit timesheet');
+      toast.error(error.message || t('timesheet.failedToSubmit'));
     } finally {
       setIsSubmitting(false);
     }
@@ -150,7 +150,7 @@ export default function EmployeeTimesheetPage() {
         : null);
     
     if (!employeeId) {
-      toast.error('Employee ID not found');
+      toast.error(t('timesheet.employeeIdNotFound'));
       return;
     }
 
@@ -163,18 +163,18 @@ export default function EmployeeTimesheetPage() {
       const weekStartDate = weekStart.toISOString().split('T')[0];
       
       await timesheetService.submitWeekly(employeeId, weekStartDate);
-      toast.success('Weekly timesheet report submitted successfully!');
+      toast.success(t('timesheet.weeklySubmittedSuccessfully'));
       await loadTimesheetEntries();
     } catch (error: any) {
       console.error('Failed to submit weekly timesheet:', error);
-      toast.error(error.message || 'Failed to submit weekly timesheet');
+      toast.error(error.message || t('timesheet.failedToSubmitWeekly'));
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this timesheet entry?')) return;
+    if (!confirm(t('timesheet.confirmDelete'))) return;
     
     const employeeId = user?.employee_id || 
       (sessionStorage.getItem('employee_data') 
@@ -182,17 +182,17 @@ export default function EmployeeTimesheetPage() {
         : null);
     
     if (!employeeId) {
-      toast.error('Employee ID not found');
+      toast.error(t('timesheet.employeeIdNotFound'));
       return;
     }
     
     try {
       await timesheetService.delete(id, employeeId);
-      toast.success('Timesheet entry deleted successfully');
+      toast.success(t('timesheet.deleteSuccessfully'));
       await loadTimesheetEntries();
     } catch (error: any) {
       console.error('Failed to delete timesheet:', error);
-      toast.error(error.message || 'Failed to delete timesheet entry');
+      toast.error(error.message || t('timesheet.failedToDelete'));
     }
   };
 
@@ -234,12 +234,12 @@ export default function EmployeeTimesheetPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">My Timesheet</h1>
-          <p className="text-sm text-muted-foreground">Track your work hours and submit reports</p>
+          <h1 className="text-2xl font-bold">{t('timesheet.myTimesheet')}</h1>
+          <p className="text-sm text-muted-foreground">{t('timesheet.subtitle')}</p>
         </div>
         <Button onClick={() => handleOpenModal()} className="gap-2">
           <Plus size={18} />
-          Log Time
+          {t('timesheet.logTime')}
         </Button>
       </div>
 
@@ -248,21 +248,21 @@ export default function EmployeeTimesheetPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Calendar size={20} />
-            Weekly Summary
+            {t('timesheet.weeklySummary')}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-3 gap-4 mb-4">
-            <div className="text-center p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
-              <div className="text-xs text-muted-foreground mb-1">Total Hours</div>
-              <div className="text-2xl font-bold text-blue-400">{weeklyTotals.totalHours.toFixed(1)}h</div>
+            <div className="text-center p-3 bg-blue-500/10 dark:bg-blue-500/10 rounded-lg border border-blue-500/30 dark:border-blue-500/20">
+              <div className="text-xs text-muted-foreground mb-1">{t('timesheet.totalHours')}</div>
+              <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{weeklyTotals.totalHours.toFixed(1)}h</div>
             </div>
-            <div className="text-center p-3 bg-green-500/10 rounded-lg border border-green-500/20">
-              <div className="text-xs text-muted-foreground mb-1">Submitted</div>
-              <div className="text-2xl font-bold text-green-400">{weeklyTotals.submittedCount}/{weeklyTotals.totalEntries}</div>
+            <div className="text-center p-3 bg-green-500/10 dark:bg-green-500/10 rounded-lg border border-green-500/30 dark:border-green-500/20">
+              <div className="text-xs text-muted-foreground mb-1">{t('timesheet.submitted')}</div>
+              <div className="text-2xl font-bold text-green-600 dark:text-green-400">{weeklyTotals.submittedCount}/{weeklyTotals.totalEntries}</div>
             </div>
-            <div className="text-center p-3 bg-purple-500/10 rounded-lg border border-purple-500/20">
-              <div className="text-xs text-muted-foreground mb-1">Week</div>
+            <div className="text-center p-3 bg-purple-500/10 dark:bg-purple-500/10 rounded-lg border border-purple-500/30 dark:border-purple-500/20">
+              <div className="text-xs text-muted-foreground mb-1">{t('timesheet.week')}</div>
               <div className="text-sm font-semibold">
                 {new Date(weeklyTotals.weekStartDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date(weeklyTotals.weekEndDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
               </div>
@@ -276,7 +276,7 @@ export default function EmployeeTimesheetPage() {
               variant="secondary"
             >
               <Send size={18} />
-              Submit Weekly Report
+              {t('timesheet.submitWeeklyReport')}
             </Button>
           )}
         </CardContent>
@@ -287,7 +287,7 @@ export default function EmployeeTimesheetPage() {
         <CardContent className="p-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-xs">From Date</Label>
+              <Label className="text-xs">{t('timesheet.fromDate')}</Label>
               <Input
                 type="date"
                 value={dateFilter.from}
@@ -296,7 +296,7 @@ export default function EmployeeTimesheetPage() {
               />
             </div>
             <div>
-              <Label className="text-xs">To Date</Label>
+              <Label className="text-xs">{t('timesheet.toDate')}</Label>
               <Input
                 type="date"
                 value={dateFilter.to}
@@ -311,16 +311,16 @@ export default function EmployeeTimesheetPage() {
       {/* Timesheet Entries */}
       <Card>
         <CardHeader>
-          <CardTitle>Timesheet Entries</CardTitle>
+          <CardTitle>{t('timesheet.timesheetEntries')}</CardTitle>
         </CardHeader>
         <CardContent>
           {timesheetEntries.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <Clock size={48} className="mx-auto mb-4 opacity-50" />
-              <p>No timesheet entries found</p>
+              <p>{t('timesheet.noEntriesFound')}</p>
               <Button onClick={() => handleOpenModal()} variant="outline" className="mt-4">
                 <Plus size={18} className="mr-2" />
-                Add Entry
+                {t('timesheet.addEntry')}
               </Button>
             </div>
           ) : (
@@ -328,7 +328,7 @@ export default function EmployeeTimesheetPage() {
               {timesheetEntries.map((entry) => (
                 <div
                   key={entry.id}
-                  className="p-3 md:p-4 bg-white/5 rounded-lg border border-white/10 hover:border-white/20 transition-colors"
+                  className="p-3 md:p-4 bg-card rounded-lg border border-border hover:border-border/80 transition-colors"
                 >
                   {/* Header: Date and Status */}
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
@@ -354,12 +354,12 @@ export default function EmployeeTimesheetPage() {
                     </span>
                     {entry.project_name && (
                       <span className="text-sm text-muted-foreground">
-                        <span className="font-medium">Project:</span> {entry.project_name}
+                        <span className="font-medium">{t('timesheet.project')}:</span> {entry.project_name}
                       </span>
                     )}
                     {entry.task_type && (
                       <span className="text-sm text-muted-foreground">
-                        <span className="font-medium">Type:</span> {entry.task_type}
+                        <span className="font-medium">{t('timesheet.type')}:</span> {entry.task_type}
                       </span>
                     )}
                   </div>
@@ -371,7 +371,7 @@ export default function EmployeeTimesheetPage() {
 
                   {/* Action Buttons */}
                   {!entry.is_submitted && (
-                    <div className="flex items-center gap-2 pt-2 border-t border-white/10">
+                    <div className="flex items-center gap-2 pt-2 border-t border-border">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -379,7 +379,7 @@ export default function EmployeeTimesheetPage() {
                         className="flex-1 sm:flex-initial h-9 md:h-8"
                       >
                         <Edit2 size={14} className="sm:mr-2" />
-                        <span className="hidden sm:inline">Edit</span>
+                        <span className="hidden sm:inline">{t('timesheet.edit')}</span>
                       </Button>
                       <Button
                         variant="ghost"
@@ -388,7 +388,7 @@ export default function EmployeeTimesheetPage() {
                         className="text-red-400 hover:text-red-300 flex-1 sm:flex-initial h-9 md:h-8"
                       >
                         <Trash2 size={14} className="sm:mr-2" />
-                        <span className="hidden sm:inline">Delete</span>
+                        <span className="hidden sm:inline">{t('timesheet.delete')}</span>
                       </Button>
                       <Button
                         variant="outline"
@@ -398,8 +398,7 @@ export default function EmployeeTimesheetPage() {
                         className="flex-1 sm:flex-initial gap-1.5 h-9 md:h-8"
                       >
                         <Send size={14} />
-                        <span className="hidden sm:inline">Submit</span>
-                        <span className="sm:hidden">Submit</span>
+                        <span>{t('timesheet.submit')}</span>
                       </Button>
                     </div>
                   )}
@@ -414,12 +413,12 @@ export default function EmployeeTimesheetPage() {
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title={editingEntry ? 'Edit Timesheet Entry' : 'Log Time'}
+        title={editingEntry ? t('timesheet.editTimesheetEntry') : t('timesheet.logTime')}
         size="md"
       >
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>Date *</Label>
+            <Label>{t('timesheet.date')} *</Label>
             <Input
               type="date"
               value={selectedDate}
@@ -429,73 +428,73 @@ export default function EmployeeTimesheetPage() {
           </div>
 
           <div className="space-y-2">
-            <Label>Hours Worked *</Label>
+            <Label>{t('timesheet.hoursWorked')} *</Label>
             <Input
               type="number"
               step="0.25"
               min="0"
               max="24"
-              value={timesheetForm.hours_worked}
+              value={timesheetForm.hours_worked || ''}
               onChange={(e) => setTimesheetForm({ ...timesheetForm, hours_worked: parseFloat(e.target.value) || 0 })}
               placeholder="8.5"
             />
-            <p className="text-xs text-muted-foreground">Enter hours worked (e.g., 8.5 for 8 hours 30 minutes)</p>
+            <p className="text-xs text-muted-foreground">{t('timesheet.enterHoursWorked')}</p>
           </div>
 
           <div className="space-y-2">
-            <Label>Project Name</Label>
+            <Label>{t('timesheet.projectName')}</Label>
             <Input
               value={timesheetForm.project_name}
               onChange={(e) => setTimesheetForm({ ...timesheetForm, project_name: e.target.value })}
-              placeholder="Project name (optional)"
+              placeholder={t('timesheet.projectNamePlaceholder')}
             />
           </div>
 
           <div className="space-y-2">
-            <Label>Task Type</Label>
+            <Label>{t('timesheet.taskType')}</Label>
             <Select
               value={timesheetForm.task_type}
               onValueChange={(value) => setTimesheetForm({ ...timesheetForm, task_type: value })}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select task type (optional)" />
+                <SelectValue placeholder={t('timesheet.selectTaskType')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="Development">Development</SelectItem>
-                <SelectItem value="Meeting">Meeting</SelectItem>
-                <SelectItem value="Support">Support</SelectItem>
-                <SelectItem value="Testing">Testing</SelectItem>
-                <SelectItem value="Documentation">Documentation</SelectItem>
-                <SelectItem value="Training">Training</SelectItem>
-                <SelectItem value="Other">Other</SelectItem>
+                <SelectItem value="Development">{t('timesheet.development')}</SelectItem>
+                <SelectItem value="Meeting">{t('timesheet.meeting')}</SelectItem>
+                <SelectItem value="Support">{t('timesheet.support')}</SelectItem>
+                <SelectItem value="Testing">{t('timesheet.testing')}</SelectItem>
+                <SelectItem value="Documentation">{t('timesheet.documentation')}</SelectItem>
+                <SelectItem value="Training">{t('timesheet.training')}</SelectItem>
+                <SelectItem value="Other">{t('timesheet.other')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div className="space-y-2">
-            <Label>Description</Label>
+            <Label>{t('timesheet.description')}</Label>
             <Textarea
               value={timesheetForm.description}
               onChange={(e) => setTimesheetForm({ ...timesheetForm, description: e.target.value })}
-              placeholder="What work did you do? (optional)"
+              placeholder={t('timesheet.descriptionPlaceholder')}
               rows={4}
             />
           </div>
 
-          <div className="flex gap-2 pt-4 border-t border-white/10">
+          <div className="flex gap-2 pt-4 border-t border-border">
             <Button
               variant="outline"
               onClick={() => setIsModalOpen(false)}
               className="flex-1"
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               onClick={handleSaveTimesheet}
               disabled={isSubmitting || timesheetForm.hours_worked <= 0}
               className="flex-1"
             >
-              {isSubmitting ? 'Saving...' : 'Save'}
+              {isSubmitting ? t('timesheet.saving') : t('timesheet.save')}
             </Button>
             {!editingEntry?.is_submitted && (
               <Button
@@ -511,7 +510,7 @@ export default function EmployeeTimesheetPage() {
                 className="flex-1"
               >
                 <Send className="w-4 h-4 mr-2" />
-                Save & Submit
+                {t('timesheet.saveAndSubmit')}
               </Button>
             )}
           </div>

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRoute } from 'wouter';
 import { useTranslation } from 'react-i18next';
-import { User, FileText, Clock, DollarSign, Shield, ArrowLeft, Upload, Download, MapPin, Phone, Mail, Calendar, Briefcase, Building2, X, Trash2, GraduationCap,CheckCircle, CreditCard, Plus, Edit2, Globe, FileCheck, AlertCircle, Users, Home, Fingerprint, CheckCircle2, HelpCircle, ChevronRight, ChevronLeft } from 'lucide-react';
+import i18n from '../utils/i18n';
+import { User, FileText, Clock, DollarSign, Shield, ArrowLeft, Upload, Download, MapPin, Phone, Mail, Calendar, Briefcase, Building2, X, Trash2, GraduationCap, CheckCircle, CreditCard, Plus, Edit2, Globe, FileCheck, AlertCircle, Users, Home, Fingerprint, CheckCircle2, HelpCircle, ChevronRight, ChevronLeft, Camera, XCircle, Filter } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, Button, Badge, Tabs, TabsList, TabsTrigger, TabsContent } from '../components/common/UIComponents';
 import { employeeService, Employee } from '../services/employeeService';
 import { documentService, Document } from '../services/documentService';
@@ -16,8 +17,10 @@ import { documentRequestService, DocumentRequest } from '../services/documentReq
 import { leaveService, LeaveRequest } from '../services/leaveService';
 import { companySettingsService, EmployeeShift, EmployeeWorkingHours } from '../services/companySettingsService';
 import { timesheetService, TimesheetEntry } from '../services/timesheetService';
+import { attendanceService, AttendanceLog } from '../services/attendanceService';
 import { useAuth } from '../contexts/AuthContext';
 import Modal from '../components/common/Modal';
+import { getEmployeeDisplayName, getEmployeeInitials, getEmployeeFirstName, getEmployeeLastName } from '../utils/employeeName';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -593,7 +596,17 @@ export default function EmployeeDetailPage() {
     use_company_default: true
   });
   const [reportingManagerChain, setReportingManagerChain] = useState<Employee[]>([]);
+  const [reportingManager, setReportingManager] = useState<Employee | null>(null);
   const [timesheetEntries, setTimesheetEntries] = useState<any[]>([]);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  // Attendance state
+  const [attendanceLogs, setAttendanceLogs] = useState<AttendanceLog[]>([]);
+  const [loadingAttendance, setLoadingAttendance] = useState(false);
+  const [attendanceDateFrom, setAttendanceDateFrom] = useState('');
+  const [attendanceDateTo, setAttendanceDateTo] = useState('');
 
   useEffect(() => {
     if (params?.id) {
@@ -640,8 +653,27 @@ export default function EmployeeDetailPage() {
   useEffect(() => {
     if (employee?.id) {
       loadReportingManagerChain();
+      loadReportingManager();
     }
   }, [employee?.id]);
+
+  const handleDeleteEmployee = async () => {
+    if (!employee?.id) return;
+    
+    try {
+      setDeleting(true);
+      await employeeService.delete(employee.id);
+      toast.success(t('employees.employeeDeleted') || 'Employee deleted successfully');
+      // Navigate back to employees list
+      window.location.href = '/employees';
+    } catch (error: any) {
+      console.error('Failed to delete employee:', error);
+      toast.error(error?.message || t('employees.failedToDeleteEmployee') || 'Failed to delete employee');
+    } finally {
+      setDeleting(false);
+      setIsDeleteModalOpen(false);
+    }
+  };
 
   const loadEmployee = async (id: string) => {
     try {
@@ -1122,6 +1154,56 @@ export default function EmployeeDetailPage() {
     }
   };
 
+  const loadReportingManager = async () => {
+    if (!employee?.reporting_manager_id) {
+      setReportingManager(null);
+      return;
+    }
+    try {
+      const manager = await employeeService.getById(employee.reporting_manager_id);
+      setReportingManager(manager);
+    } catch (error) {
+      console.error('Failed to load reporting manager', error);
+      setReportingManager(null);
+    }
+  };
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !employee?.id) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert(t('employees.invalidImageFile') || 'Please select a valid image file');
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert(t('employees.imageTooLarge') || 'Image size must be less than 5MB');
+      return;
+    }
+
+    try {
+      setUploadingAvatar(true);
+      const avatarUrl = await employeeService.uploadAvatar(employee.id, file);
+      
+      // Update local employee state
+      setEmployee({ ...employee, avatar_url: avatarUrl });
+      
+      // Reload employee to get fresh data
+      await loadEmployee(employee.id);
+    } catch (error: any) {
+      console.error('Failed to upload avatar:', error);
+      alert(error.message || t('employees.avatarUploadFailed') || 'Failed to upload profile image');
+    } finally {
+      setUploadingAvatar(false);
+      if (avatarInputRef.current) {
+        avatarInputRef.current.value = '';
+      }
+    }
+  };
+
   const loadReportingManagerChain = async () => {
     if (!employee?.id) return;
     try {
@@ -1141,6 +1223,145 @@ export default function EmployeeDetailPage() {
       setTimesheetEntries(entries);
     } catch (error) {
       console.error('Failed to load timesheet entries', error);
+    }
+  };
+
+  const loadAttendanceLogs = async () => {
+    if (!employee?.id) return;
+    try {
+      setLoadingAttendance(true);
+      
+      // Use the same approach as AttendancePage - use getAll with employee filter
+      // This ensures we use the same aggregation logic with shift information
+      const employees = await employeeService.getAll();
+      const emp = employees.find(e => e.id === employee.id);
+      
+      if (!emp) {
+        setAttendanceLogs([]);
+        return;
+      }
+      
+      // Find integer employee_id
+      let integerEmployeeId: number | null = null;
+      const externalId = (emp as any).external_id;
+      if (externalId && !isNaN(Number(externalId))) {
+        integerEmployeeId = Number(externalId);
+      } else {
+        const employeeIdText = emp.employee_id || emp.employeeId || '';
+        const match = employeeIdText.match(/\d+/);
+        if (match) {
+          integerEmployeeId = parseInt(match[0], 10);
+        } else if (!isNaN(Number(employeeIdText))) {
+          integerEmployeeId = Number(employeeIdText);
+        }
+      }
+      
+      if (!integerEmployeeId) {
+        console.warn(`Could not find integer employee_id for UUID: ${employee.id}`);
+        setAttendanceLogs([]);
+        return;
+      }
+      
+      // Build filters for attendanceService.getAll (same logic as AttendancePage)
+      const filters: any = {
+        employeeIds: [integerEmployeeId],
+        companyId: user?.company_id
+      };
+      
+      if (attendanceDateFrom) {
+        filters.dateFrom = attendanceDateFrom;
+      }
+      
+      if (attendanceDateTo) {
+        filters.dateTo = attendanceDateTo;
+      }
+      
+      // Fetch using getAll which properly handles aggregation with shifts
+      // This will return ALL entries per day (multiple shifts are handled)
+      const response = await attendanceService.getAll(filters);
+      const logs = response.data || [];
+      
+      // Filter to only this employee (in case of any edge cases)
+      const employeeLogs = logs.filter(log => log.employee_id === employee.id);
+      
+      // Sort by date descending, then by check-in time descending
+      employeeLogs.sort((a, b) => {
+        const dateCompare = new Date(b.date).getTime() - new Date(a.date).getTime();
+        if (dateCompare !== 0) return dateCompare;
+        // Same date - sort by check-in time (latest first)
+        const aTime = a.check_in ? new Date(a.check_in).getTime() : (a.check_out ? new Date(a.check_out).getTime() : 0);
+        const bTime = b.check_in ? new Date(b.check_in).getTime() : (b.check_out ? new Date(b.check_out).getTime() : 0);
+        return bTime - aTime;
+      });
+      
+      setAttendanceLogs(employeeLogs);
+    } catch (error) {
+      console.error('Failed to load attendance logs:', error);
+      toast.error(t('attendance.failedToLoad') || 'Failed to load attendance records');
+    } finally {
+      setLoadingAttendance(false);
+    }
+  };
+
+  // Load attendance when tab is active or filters change
+  useEffect(() => {
+    if (activeTab === 'attendance' && employee?.id) {
+      loadAttendanceLogs();
+    }
+  }, [activeTab, employee?.id, attendanceDateFrom, attendanceDateTo]);
+
+  const handleDownloadAttendanceReport = () => {
+    if (attendanceLogs.length === 0) {
+      toast.error(t('attendance.noDataToExport') || 'No attendance data to export');
+      return;
+    }
+
+    // Create CSV content
+    const headers = [
+      t('attendance.date') || 'Date',
+      t('attendance.checkIn') || 'Check In',
+      t('attendance.checkOut') || 'Check Out',
+      t('attendance.late') || 'Late (min)',
+      t('attendance.overtime') || 'Overtime (min)',
+      t('attendance.status') || 'Status'
+    ];
+
+    const rows = attendanceLogs.map(log => [
+      new Date(log.date).toLocaleDateString(),
+      log.check_in ? new Date(log.check_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-',
+      log.check_out ? new Date(log.check_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-',
+      log.late_minutes > 0 ? log.late_minutes.toString() : '0',
+      log.overtime_minutes > 0 ? log.overtime_minutes.toString() : '0',
+      log.status
+    ]);
+
+    // Combine headers and rows
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `attendance_report_${employee?.first_name || 'employee'}_${employee?.last_name || ''}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast.success(t('attendance.reportDownloaded') || 'Attendance report downloaded successfully');
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'Present': return 'success';
+      case 'Late': return 'warning';
+      case 'Absent': return 'destructive';
+      case 'Early Departure': return 'warning';
+      default: return 'default';
     }
   };
 
@@ -1204,6 +1425,19 @@ export default function EmployeeDetailPage() {
           >
           <ArrowLeft size={20} />
         </Button>
+        
+        {/* Delete Button - Only show for admins */}
+        {user?.role !== 'employee' && (
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={() => setIsDeleteModalOpen(true)}
+            className="rounded-full hover:bg-destructive/10 text-destructive hover:text-destructive transition-all"
+            title={t('employees.deleteEmployee') || 'Delete Employee'}
+          >
+            <Trash2 size={20} />
+          </Button>
+        )}
           
           <Card className="flex-1 border-0 bg-gradient-to-br from-card via-card/95 to-card/90 backdrop-blur-xl shadow-2xl overflow-hidden">
             <div className="relative">
@@ -1213,28 +1447,44 @@ export default function EmployeeDetailPage() {
               <CardContent className="p-8 relative">
                 <div className="flex items-start gap-6">
                   {/* Enhanced Avatar */}
-                  <div className="relative">
+                  <div className="relative group">
                     <div className="w-28 h-28 rounded-2xl bg-gradient-to-br from-primary via-primary/80 to-primary/60 flex items-center justify-center text-4xl font-bold text-white shadow-lg shadow-primary/30 border-4 border-white/20 relative overflow-hidden">
                       <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent" />
                       {(emp.avatar_url && emp.avatar_url !== `https://ui-avatars.com/api/?name=${emp.first_name}+${emp.last_name}`) ? (
                         <img src={emp.avatar_url} alt="" className="w-full h-full object-cover" />
                       ) : (
                         <span className="relative z-10">
-                          {(emp.first_name || emp.firstName || 'U')[0]}{(emp.last_name || emp.lastName || 'N')[0]}
+                          {getEmployeeInitials(emp)}
                         </span>
                       )}
-              </div>
+                      {/* Upload Overlay */}
+                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer rounded-2xl" onClick={() => avatarInputRef.current?.click()}>
+                        <Camera size={24} className="text-white" />
+                      </div>
+                      {uploadingAvatar && (
+                        <div className="absolute inset-0 bg-black/70 flex items-center justify-center rounded-2xl">
+                          <div className="text-white text-sm">{t('common.uploading') || 'Uploading...'}</div>
+                        </div>
+                      )}
+                    </div>
                     <div className="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-green-500 border-4 border-card flex items-center justify-center">
                       <div className="w-3 h-3 rounded-full bg-green-400 animate-pulse" />
-                  </div>
+                    </div>
+                    <input
+                      ref={avatarInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleAvatarUpload}
+                      className="hidden"
+                    />
                   </div>
 
                   {/* Employee Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-start gap-4 mb-4">
                       <div className="flex-1 min-w-0">
-                        <h1 className="text-4xl font-bold bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text text-transparent mb-2">
-                          {emp.first_name || emp.firstName} {emp.last_name || emp.lastName}
+                        <h1 className="text-4xl font-bold bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text text-transparent mb-2" dir={i18n.language === 'ar' ? 'rtl' : 'ltr'}>
+                          {getEmployeeDisplayName(emp)}
                         </h1>
                         <div className="flex items-center gap-3 flex-wrap">
                           <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 rounded-lg border border-primary/20">
@@ -1266,7 +1516,7 @@ export default function EmployeeDetailPage() {
                           <User size={16} className="text-primary" />
                   </div>
                         <div className="min-w-0">
-                          <p className="text-xs text-muted-foreground">Employee ID</p>
+                          <p className="text-xs text-muted-foreground">{t('employees.employeeId')}</p>
                           <p className="text-sm font-semibold truncate">{emp.employee_id || emp.employeeId}</p>
                   </div>
                   </div>
@@ -1275,7 +1525,7 @@ export default function EmployeeDetailPage() {
                           <Calendar size={16} className="text-blue-400" />
                         </div>
                         <div className="min-w-0">
-                          <p className="text-xs text-muted-foreground">Join Date</p>
+                          <p className="text-xs text-muted-foreground">{t('employees.joinDate')}</p>
                           <p className="text-sm font-semibold">
                             {emp.join_date || emp.hireDate ? new Date(emp.join_date || emp.hireDate!).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
                           </p>
@@ -1287,8 +1537,13 @@ export default function EmployeeDetailPage() {
                             <Shield size={16} className="text-purple-400" />
                           </div>
                           <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">Manager</p>
-                            <p className="text-sm font-semibold">Assigned</p>
+                            <p className="text-xs text-muted-foreground">{t('employees.manager')}</p>
+                            <p className="text-sm font-semibold truncate">
+                              {reportingManager 
+                                ? getEmployeeDisplayName(reportingManager)
+                                : t('employees.assigned')
+                              }
+                            </p>
                           </div>
                         </div>
                       )}
@@ -1298,7 +1553,7 @@ export default function EmployeeDetailPage() {
                             <User size={16} className="text-orange-400" />
                           </div>
                           <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">Fingerprint</p>
+                            <p className="text-xs text-muted-foreground">{t('employees.fingerprintMachineCode')}</p>
                             <p className="text-sm font-semibold">{(emp as any).external_id}</p>
                           </div>
                         </div>
@@ -1312,19 +1567,19 @@ export default function EmployeeDetailPage() {
                         <div className="mt-4 pt-4 border-t border-white/10">
                           <div className="flex items-center justify-between gap-4 flex-wrap">
                             <div className="text-center">
-                              <div className="text-xs text-muted-foreground">Documents</div>
-                              <div className="text-lg font-bold">{stats.totalDocuments} Total</div>
+                              <div className="text-xs text-muted-foreground">{t('employees.documents')}</div>
+                              <div className="text-lg font-bold">{stats.totalDocuments} {t('employeeProfile.total')}</div>
                             </div>
                             <div className="text-center">
-                              <div className="text-xs text-muted-foreground">Require Action</div>
+                              <div className="text-xs text-muted-foreground">{t('employeeProfile.requireAction')}</div>
                               <div className="text-lg font-bold text-orange-400">{stats.requireAction}</div>
                             </div>
                             <div className="text-center">
-                              <div className="text-xs text-muted-foreground">Valid</div>
+                              <div className="text-xs text-muted-foreground">{t('employeeProfile.valid')}</div>
                               <div className="text-lg font-bold text-green-400">{stats.validDocuments}</div>
                             </div>
                             <div className="text-center">
-                              <div className="text-xs text-muted-foreground">Next Deadline</div>
+                              <div className="text-xs text-muted-foreground">{t('employeeProfile.nextDeadline')}</div>
                               <div className="text-xs font-bold text-red-400">
                                 {stats.nextDeadline ? new Date(stats.nextDeadline.expiryDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
                               </div>
@@ -1357,13 +1612,14 @@ export default function EmployeeDetailPage() {
                 { value: 'employment', icon: Briefcase, label: t('employees.employmentDetails'), color: 'from-purple-500 to-violet-500' },
                 { value: 'working-hours', icon: Clock, label: t('employees.workingHours'), color: 'from-orange-500 to-amber-500' },
                 { value: 'payroll', icon: DollarSign, label: t('employees.payrollInfo') || 'Payroll', color: 'from-yellow-500 to-yellow-400' },
-                { value: 'leave-balance', icon: Calendar, label: 'Leave Balance', color: 'from-pink-500 to-rose-500' },
-                { value: 'education', icon: GraduationCap, label: 'Education', color: 'from-indigo-500 to-blue-500' },
-                { value: 'bank', icon: CreditCard, label: 'Bank', color: 'from-teal-500 to-cyan-500' },
-                { value: 'immigration', icon: Globe, label: 'Immigration', color: 'from-violet-500 to-purple-500' },
-                { value: 'attendance-location', icon: MapPin, label: 'Attendance Location', color: 'from-red-500 to-orange-500' },
-                { value: 'timesheet', icon: Clock, label: 'Timesheet', color: 'from-slate-500 to-gray-500' },
-                { value: 'requests', icon: FileTextIcon, label: 'Requests', color: 'from-cyan-500 to-blue-500' },
+                { value: 'leave-balance', icon: Calendar, label: t('employees.leaveBalance'), color: 'from-pink-500 to-rose-500' },
+                { value: 'education', icon: GraduationCap, label: t('employees.education'), color: 'from-indigo-500 to-blue-500' },
+                { value: 'bank', icon: CreditCard, label: t('employees.bank'), color: 'from-teal-500 to-cyan-500' },
+                { value: 'immigration', icon: Globe, label: t('employees.immigration'), color: 'from-violet-500 to-purple-500' },
+                { value: 'attendance-location', icon: MapPin, label: t('employees.attendanceLocation'), color: 'from-red-500 to-orange-500' },
+                { value: 'timesheet', icon: Clock, label: t('employees.timesheet'), color: 'from-slate-500 to-gray-500' },
+                { value: 'attendance', icon: CheckCircle2, label: t('employees.attendance') || 'Attendance', color: 'from-emerald-500 to-green-500' },
+                { value: 'requests', icon: FileTextIcon, label: t('employees.requests'), color: 'from-cyan-500 to-blue-500' },
                 { value: 'documents', icon: FileText, label: t('employees.documents'), color: 'from-blue-500 to-indigo-500' },
               ].map((tab) => {
                 const Icon = tab.icon;
@@ -1456,14 +1712,28 @@ export default function EmployeeDetailPage() {
                     <User size={14} className="text-primary" />
                     {t('common.firstName')}
                   </label>
-                  <p className="text-lg font-semibold mt-2">{emp.first_name || emp.firstName}</p>
+                  <p className="text-lg font-semibold mt-2" dir={i18n.language === 'ar' ? 'rtl' : 'ltr'}>{getEmployeeFirstName(emp)}</p>
                 </div>
+                {(emp.middle_name || emp.middleName) && (
+                  <div className="space-y-1 p-4 rounded-lg bg-gradient-to-br from-primary/5 to-transparent border border-primary/10">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                      <User size={14} className="text-primary" />
+                      {t('employees.middleName') || 'Middle Name'}
+                    </label>
+                    <p className="text-lg font-semibold mt-2" dir={i18n.language === 'ar' ? 'rtl' : 'ltr'}>
+                      {i18n.language === 'ar' 
+                        ? (emp.arabic_middle_name || emp.arabicMiddleName || emp.middle_name || emp.middleName)
+                        : (emp.middle_name || emp.middleName || emp.arabic_middle_name || emp.arabicMiddleName)
+                      }
+                    </p>
+                  </div>
+                )}
                 <div className="space-y-1 p-4 rounded-lg bg-gradient-to-br from-primary/5 to-transparent border border-primary/10">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                     <User size={14} className="text-primary" />
                     {t('common.lastName')}
                   </label>
-                  <p className="text-lg font-semibold mt-2">{emp.last_name || emp.lastName}</p>
+                  <p className="text-lg font-semibold mt-2" dir={i18n.language === 'ar' ? 'rtl' : 'ltr'}>{getEmployeeLastName(emp)}</p>
                 </div>
                 <div className="space-y-1 p-4 rounded-lg bg-gradient-to-br from-blue-500/5 to-transparent border border-blue-500/10">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
@@ -1500,6 +1770,88 @@ export default function EmployeeDetailPage() {
                   <p className="text-lg font-semibold mt-2">{emp.nationality || 'N/A'}</p>
                 </div>
               </div>
+              
+              {/* Show alternate name (Arabic when in English mode, English when in Arabic mode) */}
+              {(() => {
+                const currentLang = i18n.language || 'en';
+                const isArabic = currentLang === 'ar';
+                const showAlternate = isArabic 
+                  ? (emp.first_name || emp.firstName) // Show English name when in Arabic mode
+                  : (emp.arabic_first_name || emp.arabicFirstName || emp.arabic_middle_name || emp.arabicMiddleName || emp.arabic_last_name || emp.arabicLastName); // Show Arabic name when in English mode
+                
+                if (!showAlternate) return null;
+                
+                return (
+                  <div className="mt-6 pt-6 border-t border-white/10">
+                    <h3 className="text-sm font-semibold mb-4">
+                      {isArabic ? (t('common.name') || 'Name') + ' (English)' : (t('employees.arabicName') || 'Arabic Name')}
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {isArabic ? (
+                        <>
+                          {emp.first_name && (
+                            <div className="space-y-1 p-4 rounded-lg bg-gradient-to-br from-blue-500/5 to-transparent border border-blue-500/10">
+                              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                <User size={14} className="text-blue-400" />
+                                {t('common.firstName')}
+                              </label>
+                              <p className="text-lg font-semibold mt-2">{emp.first_name || emp.firstName}</p>
+                            </div>
+                          )}
+                          {emp.middle_name && (
+                            <div className="space-y-1 p-4 rounded-lg bg-gradient-to-br from-blue-500/5 to-transparent border border-blue-500/10">
+                              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                <User size={14} className="text-blue-400" />
+                                {t('employees.middleName') || 'Middle Name'}
+                              </label>
+                              <p className="text-lg font-semibold mt-2">{emp.middle_name || emp.middleName}</p>
+                            </div>
+                          )}
+                          {emp.last_name && (
+                            <div className="space-y-1 p-4 rounded-lg bg-gradient-to-br from-blue-500/5 to-transparent border border-blue-500/10">
+                              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                <User size={14} className="text-blue-400" />
+                                {t('common.lastName')}
+                              </label>
+                              <p className="text-lg font-semibold mt-2">{emp.last_name || emp.lastName}</p>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          {(emp.arabic_first_name || emp.arabicFirstName) && (
+                            <div className="space-y-1 p-4 rounded-lg bg-gradient-to-br from-blue-500/5 to-transparent border border-blue-500/10">
+                              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                <User size={14} className="text-blue-400" />
+                                {t('employees.arabicFirstName') || 'Arabic First Name'}
+                              </label>
+                              <p className="text-lg font-semibold mt-2" dir="rtl">{emp.arabic_first_name || emp.arabicFirstName}</p>
+                            </div>
+                          )}
+                          {(emp.arabic_middle_name || emp.arabicMiddleName) && (
+                            <div className="space-y-1 p-4 rounded-lg bg-gradient-to-br from-blue-500/5 to-transparent border border-blue-500/10">
+                              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                <User size={14} className="text-blue-400" />
+                                {t('employees.arabicMiddleName') || 'Arabic Middle Name'}
+                              </label>
+                              <p className="text-lg font-semibold mt-2" dir="rtl">{emp.arabic_middle_name || emp.arabicMiddleName}</p>
+                            </div>
+                          )}
+                          {(emp.arabic_last_name || emp.arabicLastName) && (
+                            <div className="space-y-1 p-4 rounded-lg bg-gradient-to-br from-blue-500/5 to-transparent border border-blue-500/10">
+                              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                <User size={14} className="text-blue-400" />
+                                {t('employees.arabicLastName') || 'Arabic Last Name'}
+                              </label>
+                              <p className="text-lg font-semibold mt-2" dir="rtl">{emp.arabic_last_name || emp.arabicLastName}</p>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1687,13 +2039,13 @@ export default function EmployeeDetailPage() {
                                 <img src={manager.avatar_url} alt="" className="w-full h-full object-cover rounded-lg" />
                               ) : (
                                 <span className="text-xs font-bold text-purple-400">
-                                  {(manager.first_name || manager.firstName || 'U')[0]}{(manager.last_name || manager.lastName || 'N')[0]}
+                                  {getEmployeeInitials(manager)}
                                 </span>
                               )}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold truncate">
-                                {manager.first_name || manager.firstName} {manager.last_name || manager.lastName}
+                              <p className="text-sm font-semibold truncate" dir={i18n.language === 'ar' ? 'rtl' : 'ltr'}>
+                                {getEmployeeDisplayName(manager)}
                                 {index === 0 && <span className="ml-2 text-xs text-muted-foreground">(Current Employee)</span>}
                               </p>
                               <p className="text-xs text-muted-foreground truncate">
@@ -2133,30 +2485,30 @@ export default function EmployeeDetailPage() {
                 <CardHeader className="bg-gradient-to-r from-blue-500/10 via-blue-500/5 to-transparent border-b border-white/10">
                   <CardTitle className="flex items-center gap-2 text-xl">
                     <Calendar size={24} className="text-blue-400" />
-                    Annual Leave
+                    {t('leaves.annualLeave')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-6 space-y-4">
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="p-5 bg-gradient-to-br from-blue-500/20 to-blue-500/10 rounded-xl border border-blue-500/30 hover:border-blue-500/50 transition-all shadow-lg">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Accrued</p>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('leaves.accrued')}</p>
                       <p className="text-3xl font-bold text-blue-400 mb-1">{leaveBalance.annual_leave.accrued.toFixed(2)}</p>
-                      <p className="text-xs text-muted-foreground">days</p>
+                      <p className="text-xs text-muted-foreground">{t('leaves.days')}</p>
                     </div>
                     <div className="p-5 bg-gradient-to-br from-orange-500/20 to-orange-500/10 rounded-xl border border-orange-500/30 hover:border-orange-500/50 transition-all shadow-lg">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Used</p>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('leaves.used')}</p>
                       <p className="text-3xl font-bold text-orange-400 mb-1">{leaveBalance.annual_leave.used}</p>
-                      <p className="text-xs text-muted-foreground">days</p>
+                      <p className="text-xs text-muted-foreground">{t('leaves.days')}</p>
                     </div>
                     <div className="p-5 bg-gradient-to-br from-yellow-500/20 to-yellow-500/10 rounded-xl border border-yellow-500/30 hover:border-yellow-500/50 transition-all shadow-lg">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Pending</p>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('leaves.pending')}</p>
                       <p className="text-3xl font-bold text-yellow-400 mb-1">{leaveBalance.annual_leave.pending}</p>
-                      <p className="text-xs text-muted-foreground">days</p>
+                      <p className="text-xs text-muted-foreground">{t('leaves.days')}</p>
                     </div>
                     <div className="p-5 bg-gradient-to-br from-green-500/20 to-green-500/10 rounded-xl border border-green-500/30 hover:border-green-500/50 transition-all shadow-lg">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Available</p>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('leaves.available')}</p>
                       <p className="text-3xl font-bold text-green-400 mb-1">{leaveBalance.annual_leave.available.toFixed(2)}</p>
-                      <p className="text-xs text-muted-foreground">days</p>
+                      <p className="text-xs text-muted-foreground">{t('leaves.days')}</p>
                     </div>
                   </div>
                   {leaveBalance.annual_leave.expired && leaveBalance.annual_leave.expired > 0 && (
@@ -2166,9 +2518,9 @@ export default function EmployeeDetailPage() {
               </div>
               <div>
                         <p className="text-sm font-semibold text-red-400">
-                          Expired: {leaveBalance.annual_leave.expired.toFixed(2)} days
+                          {t('leaves.expiredLeave')}: {leaveBalance.annual_leave.expired.toFixed(2)} {t('leaves.days')}
                         </p>
-                        <p className="text-xs text-muted-foreground">Unused leave expired after 2 years</p>
+                        <p className="text-xs text-muted-foreground">{t('leaves.expiredLeaveDesc')}</p>
               </div>
                     </div>
                   )}
@@ -2179,9 +2531,9 @@ export default function EmployeeDetailPage() {
                       </div>
                       <div>
                         <p className="text-sm font-semibold text-yellow-400">
-                          Expiring Soon: {leaveBalance.annual_leave.expiringSoon.toFixed(2)} days
+                          {t('leaves.expiringSoon')}: {leaveBalance.annual_leave.expiringSoon.toFixed(2)} {t('leaves.days')}
                         </p>
-                        <p className="text-xs text-muted-foreground">Will expire within 3 months</p>
+                        <p className="text-xs text-muted-foreground">{t('leaves.expiringSoonDesc')}</p>
                       </div>
                     </div>
                   )}
@@ -2192,9 +2544,9 @@ export default function EmployeeDetailPage() {
                       </div>
                       <div>
                         <p className="text-sm font-semibold text-muted-foreground">
-                          Not eligible for annual leave yet
+                          {t('leaves.notEligibleYet')}
                         </p>
-                        <p className="text-xs text-muted-foreground">Requires 9 months of service</p>
+                        <p className="text-xs text-muted-foreground">{t('leaves.annualLeaveRestriction')}</p>
                       </div>
                     </div>
                   )}
@@ -2344,6 +2696,162 @@ export default function EmployeeDetailPage() {
           </Card>
         </TabsContent>
 
+        {/* Attendance Tab */}
+        <TabsContent value="attendance" className="mt-6 space-y-6">
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card className="bg-emerald-500/10 border-emerald-500/20">
+              <CardContent className="p-4 flex items-center gap-4">
+                <div className="p-3 rounded-full bg-emerald-500/20 text-emerald-500">
+                  <CheckCircle2 size={24} />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">{t('attendance.present') || 'Present'}</p>
+                  <p className="text-2xl font-bold text-emerald-500">
+                    {attendanceLogs.filter(l => l.status === 'Present').length}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-amber-500/10 border-amber-500/20">
+              <CardContent className="p-4 flex items-center gap-4">
+                <div className="p-3 rounded-full bg-amber-500/20 text-amber-500">
+                  <Clock size={24} />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">{t('attendance.late') || 'Late'}</p>
+                  <p className="text-2xl font-bold text-amber-500">
+                    {attendanceLogs.filter(l => l.status === 'Late').length}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-destructive/10 border-destructive/20">
+              <CardContent className="p-4 flex items-center gap-4">
+                <div className="p-3 rounded-full bg-destructive/20 text-destructive">
+                  <XCircle size={24} />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">{t('attendance.absent') || 'Absent'}</p>
+                  <p className="text-2xl font-bold text-destructive">
+                    {attendanceLogs.filter(l => l.status === 'Absent').length}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Filters and Download */}
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <CardTitle className="flex items-center gap-2">
+                  <CheckCircle2 size={20} />
+                  {t('attendance.title') || 'Attendance Records'}
+                </CardTitle>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={handleDownloadAttendanceReport}>
+                    <Download size={16} className="mr-2 rtl:ml-2 rtl:mr-0" />
+                    {t('attendance.export') || 'Download Report'}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {/* Date Filters */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div className="space-y-2">
+                  <Label>{t('attendance.dateFrom') || 'Date From'}</Label>
+                  <Input
+                    type="date"
+                    value={attendanceDateFrom}
+                    onChange={e => setAttendanceDateFrom(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('attendance.dateTo') || 'Date To'}</Label>
+                  <Input
+                    type="date"
+                    value={attendanceDateTo}
+                    onChange={e => setAttendanceDateTo(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Clear Filters */}
+              {(attendanceDateFrom || attendanceDateTo) && (
+                <div className="mb-4">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setAttendanceDateFrom('');
+                      setAttendanceDateTo('');
+                    }}
+                  >
+                    <X size={16} className="mr-2 rtl:ml-2 rtl:mr-0" />
+                    {t('attendance.clearFilters') || 'Clear Filters'}
+                  </Button>
+                </div>
+              )}
+
+              {/* Attendance Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left rtl:text-right">
+                  <thead className="text-xs text-muted-foreground uppercase bg-white/5">
+                    <tr>
+                      <th className="px-4 py-3 rounded-l-lg rtl:rounded-r-lg rtl:rounded-l-none">{t('attendance.date') || 'Date'}</th>
+                      <th className="px-4 py-3">{t('attendance.checkIn') || 'Check In'}</th>
+                      <th className="px-4 py-3">{t('attendance.checkOut') || 'Check Out'}</th>
+                      <th className="px-4 py-3">{t('attendance.late') || 'Late'} (min)</th>
+                      <th className="px-4 py-3">{t('attendance.overtime') || 'Overtime'} (min)</th>
+                      <th className="px-4 py-3 rounded-r-lg rtl:rounded-l-lg rtl:rounded-r-none">{t('attendance.status') || 'Status'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loadingAttendance ? (
+                      <tr>
+                        <td colSpan={6} className="text-center py-8 text-muted-foreground">
+                          {t('attendance.loading') || 'Loading attendance records...'}
+                        </td>
+                      </tr>
+                    ) : attendanceLogs.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="text-center py-8 text-muted-foreground">
+                          {t('attendance.noRecords') || 'No attendance records found.'}
+                        </td>
+                      </tr>
+                    ) : attendanceLogs.map((record) => (
+                      <tr key={record.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                        <td className="px-4 py-3 font-medium">
+                          {new Date(record.date).toLocaleDateString()}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-primary">
+                          {record.check_in ? new Date(record.check_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-primary">
+                          {record.check_out ? new Date(record.check_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-destructive font-bold">
+                          {record.late_minutes > 0 ? `${record.late_minutes}m` : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-emerald-500 font-bold">
+                          {record.overtime_minutes > 0 ? `${record.overtime_minutes}m` : '-'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge variant={getStatusColor(record.status) as any}>
+                            {record.status}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {/* Requests Tab */}
         <TabsContent value="requests" className="mt-6 space-y-6">
           {/* Leave Requests */}
@@ -2471,14 +2979,14 @@ export default function EmployeeDetailPage() {
                 className="gap-2"
                 onClick={() => handleOpenEducationModal()}
               >
-                <Plus size={16}/> Add Education
+                <Plus size={16}/> {t('employees.addEducation')}
               </Button>
             </CardHeader>
             <CardContent>
               {educationRecords.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <GraduationCap size={48} className="mx-auto mb-4 opacity-50" />
-                  <p>No education records found</p>
+                  <p>{t('employees.noEducationRecords')}</p>
                 </div>
               ) : (
               <div className="space-y-4">
@@ -2489,40 +2997,40 @@ export default function EmployeeDetailPage() {
                           <div className="flex items-center gap-2 mb-2">
                             <h3 className="font-bold text-lg">{edu.institution_name}</h3>
                             {edu.is_primary && (
-                              <Badge variant="default" className="text-xs">Primary</Badge>
+                              <Badge variant="default" className="text-xs">{t('employees.primary')}</Badge>
                             )}
                       </div>
                           <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
-                              <span className="text-muted-foreground">Place:</span>
+                              <span className="text-muted-foreground">{t('employees.place')}:</span>
                               <p className="font-medium">{edu.place_of_graduation}</p>
                       </div>
                             <div>
-                              <span className="text-muted-foreground">Year:</span>
+                              <span className="text-muted-foreground">{t('employees.year')}:</span>
                               <p className="font-medium">{edu.graduation_year}</p>
                     </div>
                             {edu.degree_type && (
                               <div>
-                                <span className="text-muted-foreground">Degree:</span>
+                                <span className="text-muted-foreground">{t('employees.degree')}:</span>
                                 <p className="font-medium">{edu.degree_type}</p>
                               </div>
                             )}
                             {edu.field_of_study && (
                               <div>
-                                <span className="text-muted-foreground">Field:</span>
+                                <span className="text-muted-foreground">{t('employees.field')}:</span>
                                 <p className="font-medium">{edu.field_of_study}</p>
                               </div>
                             )}
                             {edu.grade_or_gpa && (
                               <div>
-                                <span className="text-muted-foreground">Grade/GPA:</span>
+                                <span className="text-muted-foreground">{t('employees.gradeGpa')}:</span>
                                 <p className="font-medium">{edu.grade_or_gpa}</p>
                               </div>
                             )}
                           </div>
                           {edu.notes && (
                             <div className="mt-2">
-                              <span className="text-muted-foreground text-sm">Notes:</span>
+                              <span className="text-muted-foreground text-sm">{t('employees.notes')}:</span>
                               <p className="text-sm">{edu.notes}</p>
                             </div>
                           )}
@@ -2532,7 +3040,7 @@ export default function EmployeeDetailPage() {
                             variant="ghost" 
                             size="icon"
                             onClick={() => handleOpenEducationModal(edu)}
-                            title="Edit"
+                            title={t('common.edit')}
                           >
                             <Edit2 size={18}/>
                           </Button>
@@ -2540,7 +3048,7 @@ export default function EmployeeDetailPage() {
                             variant="ghost" 
                             size="icon"
                             onClick={() => handleDeleteEducation(edu.id)}
-                            title="Delete"
+                            title={t('common.delete')}
                             className="text-red-400 hover:text-red-300"
                           >
                             <Trash2 size={18}/>
@@ -2560,63 +3068,63 @@ export default function EmployeeDetailPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="flex items-center gap-2">
-                <CreditCard size={20} /> Bank Details
+                <CreditCard size={20} /> {t('employees.bankDetails')}
               </CardTitle>
               <Button 
                 size="sm" 
                 className="gap-2"
                 onClick={() => setIsBankModalOpen(true)}
               >
-                <Edit2 size={16}/> {bankDetails ? 'Edit' : 'Add'} Bank Details
+                <Edit2 size={16}/> {bankDetails ? t('employees.editBankDetails') : t('employees.addBankDetails')}
               </Button>
             </CardHeader>
             <CardContent>
               {!bankDetails ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <CreditCard size={48} className="mx-auto mb-4 opacity-50" />
-                  <p>No bank details found</p>
+                  <p>{t('employees.noBankDetails')}</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-6">
                   <div>
-                    <label className="text-xs text-muted-foreground uppercase font-bold">Bank Name</label>
+                    <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.bankName')}</label>
                     <p className="text-lg">{bankDetails.bank_name}</p>
                 </div>
                   <div>
-                    <label className="text-xs text-muted-foreground uppercase font-bold">Account Number</label>
+                    <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.accountNumber')}</label>
                     <p className="text-lg">{bankDetails.account_number}</p>
               </div>
                   <div>
-                    <label className="text-xs text-muted-foreground uppercase font-bold">Account Holder Name</label>
+                    <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.accountHolderName')}</label>
                     <p className="text-lg">{bankDetails.account_holder_name}</p>
                   </div>
                   {bankDetails.branch_name && (
                     <div>
-                      <label className="text-xs text-muted-foreground uppercase font-bold">Branch Name</label>
+                      <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.branchName')}</label>
                       <p className="text-lg">{bankDetails.branch_name}</p>
                     </div>
                   )}
                   {bankDetails.branch_code && (
                     <div>
-                      <label className="text-xs text-muted-foreground uppercase font-bold">Branch Code</label>
+                      <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.branchCode')}</label>
                       <p className="text-lg">{bankDetails.branch_code}</p>
                     </div>
                   )}
                   {bankDetails.iban && (
                     <div>
-                      <label className="text-xs text-muted-foreground uppercase font-bold">IBAN</label>
+                      <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.iban')}</label>
                       <p className="text-lg">{bankDetails.iban}</p>
                     </div>
                   )}
                   {bankDetails.swift_code && (
                     <div>
-                      <label className="text-xs text-muted-foreground uppercase font-bold">SWIFT Code</label>
+                      <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.swiftCode')}</label>
                       <p className="text-lg">{bankDetails.swift_code}</p>
                     </div>
                   )}
                   {bankDetails.account_type && (
                     <div>
-                      <label className="text-xs text-muted-foreground uppercase font-bold">Account Type</label>
+                      <label className="text-xs text-muted-foreground uppercase font-bold">{t('employees.accountType')}</label>
                       <p className="text-lg">{bankDetails.account_type}</p>
                     </div>
                   )}
@@ -2902,29 +3410,29 @@ export default function EmployeeDetailPage() {
           setIsEducationModalOpen(false);
           setEditingEducation(null);
         }} 
-        title={editingEducation ? 'Edit Education' : 'Add Education'}
+        title={editingEducation ? t('employees.editEducation') : t('employees.addEducation')}
         size="lg"
       >
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>Institution Name *</Label>
+            <Label>{t('employees.institutionName')} *</Label>
             <Input
               value={educationForm.institution_name}
               onChange={(e) => setEducationForm({ ...educationForm, institution_name: e.target.value })}
-              placeholder="University, School, College name"
+              placeholder={t('employees.institutionNamePlaceholder')}
             />
           </div>
           <div className="space-y-2">
-            <Label>Place of Graduation *</Label>
+            <Label>{t('employees.placeOfGraduation')} *</Label>
             <Input
               value={educationForm.place_of_graduation}
               onChange={(e) => setEducationForm({ ...educationForm, place_of_graduation: e.target.value })}
-              placeholder="City, Country"
+              placeholder={t('employees.placeOfGraduationPlaceholder')}
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Graduation Year *</Label>
+              <Label>{t('employees.graduationYear')} *</Label>
               <Input
                 type="number"
                 value={educationForm.graduation_year}
@@ -2934,37 +3442,37 @@ export default function EmployeeDetailPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Degree Type</Label>
+              <Label>{t('employees.degreeType')}</Label>
               <Select value={educationForm.degree_type} onValueChange={(value) => setEducationForm({ ...educationForm, degree_type: value })}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select degree type" />
+                  <SelectValue placeholder={t('employees.selectDegreeType')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="High School">High School</SelectItem>
-                  <SelectItem value="Diploma">Diploma</SelectItem>
-                  <SelectItem value="Bachelor">Bachelor</SelectItem>
-                  <SelectItem value="Master">Master</SelectItem>
-                  <SelectItem value="PhD">PhD</SelectItem>
-                  <SelectItem value="Certificate">Certificate</SelectItem>
-                  <SelectItem value="Other">Other</SelectItem>
+                  <SelectItem value="High School">{t('employees.highSchool')}</SelectItem>
+                  <SelectItem value="Diploma">{t('employees.diploma')}</SelectItem>
+                  <SelectItem value="Bachelor">{t('employees.bachelor')}</SelectItem>
+                  <SelectItem value="Master">{t('employees.master')}</SelectItem>
+                  <SelectItem value="PhD">{t('employees.phd')}</SelectItem>
+                  <SelectItem value="Certificate">{t('employees.certificate')}</SelectItem>
+                  <SelectItem value="Other">{t('employees.other')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
           <div className="space-y-2">
-            <Label>Field of Study</Label>
+            <Label>{t('employees.fieldOfStudy')}</Label>
             <Input
               value={educationForm.field_of_study}
               onChange={(e) => setEducationForm({ ...educationForm, field_of_study: e.target.value })}
-              placeholder="e.g., Computer Science, Business Administration"
+              placeholder={t('employees.fieldOfStudyPlaceholder')}
             />
           </div>
           <div className="space-y-2">
-            <Label>Grade/GPA</Label>
+            <Label>{t('employees.gradeOrGpa')}</Label>
             <Input
               value={educationForm.grade_or_gpa}
               onChange={(e) => setEducationForm({ ...educationForm, grade_or_gpa: e.target.value })}
-              placeholder="e.g., 3.8, A+, 85%"
+              placeholder={t('employees.gradeOrGpaPlaceholder')}
             />
           </div>
           <div className="flex items-center gap-2">
@@ -2975,14 +3483,14 @@ export default function EmployeeDetailPage() {
               onChange={(e) => setEducationForm({ ...educationForm, is_primary: e.target.checked })}
               className="w-4 h-4"
             />
-            <Label htmlFor="is_primary" className="cursor-pointer">Mark as primary qualification</Label>
+            <Label htmlFor="is_primary" className="cursor-pointer">{t('employees.markAsPrimary')}</Label>
           </div>
           <div className="space-y-2">
-            <Label>Notes</Label>
+            <Label>{t('employees.notes')}</Label>
             <Textarea
               value={educationForm.notes}
               onChange={(e) => setEducationForm({ ...educationForm, notes: e.target.value })}
-              placeholder="Additional notes"
+              placeholder={t('employees.additionalNotes')}
               rows={3}
             />
           </div>
@@ -2994,10 +3502,10 @@ export default function EmployeeDetailPage() {
                 setEditingEducation(null);
               }}
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleSaveEducation}>
-              {editingEducation ? 'Update' : 'Add'} Education
+              {editingEducation ? t('employees.updateEducation') : t('employees.addEducation')}
             </Button>
           </div>
         </div>
@@ -3007,88 +3515,88 @@ export default function EmployeeDetailPage() {
       <Modal 
         isOpen={isBankModalOpen} 
         onClose={() => setIsBankModalOpen(false)} 
-        title={bankDetails ? 'Edit Bank Details' : 'Add Bank Details'}
+        title={bankDetails ? t('employees.editBankDetails') : t('employees.addBankDetails')}
         size="lg"
       >
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>Bank Name *</Label>
+            <Label>{t('employees.bankName')} *</Label>
             <Input
               value={bankForm.bank_name}
               onChange={(e) => setBankForm({ ...bankForm, bank_name: e.target.value })}
-              placeholder="Bank name"
+              placeholder={t('employees.bankNamePlaceholder')}
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Account Number *</Label>
+              <Label>{t('employees.accountNumber')} *</Label>
               <Input
                 value={bankForm.account_number}
                 onChange={(e) => setBankForm({ ...bankForm, account_number: e.target.value })}
-                placeholder="Account number"
+                placeholder={t('employees.accountNumberPlaceholder')}
               />
             </div>
             <div className="space-y-2">
-              <Label>Account Holder Name *</Label>
+              <Label>{t('employees.accountHolderName')} *</Label>
               <Input
                 value={bankForm.account_holder_name}
                 onChange={(e) => setBankForm({ ...bankForm, account_holder_name: e.target.value })}
-                placeholder="Name on account"
+                placeholder={t('employees.nameOnAccountPlaceholder')}
               />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Branch Name</Label>
+              <Label>{t('employees.branchName')}</Label>
               <Input
                 value={bankForm.branch_name}
                 onChange={(e) => setBankForm({ ...bankForm, branch_name: e.target.value })}
-                placeholder="Branch name"
+                placeholder={t('employees.branchNamePlaceholder')}
               />
             </div>
             <div className="space-y-2">
-              <Label>Branch Code</Label>
+              <Label>{t('employees.branchCode')}</Label>
               <Input
                 value={bankForm.branch_code}
                 onChange={(e) => setBankForm({ ...bankForm, branch_code: e.target.value })}
-                placeholder="Branch code"
+                placeholder={t('employees.branchCodePlaceholder')}
               />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>IBAN</Label>
+              <Label>{t('employees.iban')}</Label>
               <Input
                 value={bankForm.iban}
                 onChange={(e) => setBankForm({ ...bankForm, iban: e.target.value })}
-                placeholder="International Bank Account Number"
+                placeholder={t('employees.ibanPlaceholder')}
               />
             </div>
             <div className="space-y-2">
-              <Label>SWIFT Code</Label>
+              <Label>{t('employees.swiftCode')}</Label>
               <Input
                 value={bankForm.swift_code}
                 onChange={(e) => setBankForm({ ...bankForm, swift_code: e.target.value })}
-                placeholder="SWIFT/BIC code"
+                placeholder={t('employees.swiftCodePlaceholder')}
               />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Account Type</Label>
+              <Label>{t('employees.accountType')}</Label>
               <Select value={bankForm.account_type} onValueChange={(value) => setBankForm({ ...bankForm, account_type: value })}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select account type" />
+                  <SelectValue placeholder={t('employees.selectAccountType')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Savings">Savings</SelectItem>
-                  <SelectItem value="Current">Current</SelectItem>
-                  <SelectItem value="Checking">Checking</SelectItem>
+                  <SelectItem value="Savings">{t('employees.savings')}</SelectItem>
+                  <SelectItem value="Current">{t('employees.current')}</SelectItem>
+                  <SelectItem value="Checking">{t('employees.checking')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Currency</Label>
+              <Label>{t('employees.currency')}</Label>
               <Select value={bankForm.currency} onValueChange={(value) => setBankForm({ ...bankForm, currency: value })}>
                 <SelectTrigger>
                   <SelectValue />
@@ -3105,11 +3613,11 @@ export default function EmployeeDetailPage() {
             </div>
           </div>
           <div className="space-y-2">
-            <Label>Notes</Label>
+            <Label>{t('employees.notes')}</Label>
             <Textarea
               value={bankForm.notes}
               onChange={(e) => setBankForm({ ...bankForm, notes: e.target.value })}
-              placeholder="Additional notes"
+              placeholder={t('employees.additionalNotes')}
               rows={3}
             />
           </div>
@@ -3118,10 +3626,10 @@ export default function EmployeeDetailPage() {
               variant="outline"
               onClick={() => setIsBankModalOpen(false)}
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleSaveBankDetails}>
-              {bankDetails ? 'Update' : 'Save'} Bank Details
+              {bankDetails ? t('employees.updateBankDetails') : t('employees.saveBankDetails')}
             </Button>
           </div>
         </div>
@@ -3141,8 +3649,8 @@ export default function EmployeeDetailPage() {
       >
         <div className="space-y-6">
           {/* Work Permit Section */}
-          <div className="space-y-4 p-4 border border-blue-500/20 rounded-lg bg-blue-500/5">
-            <h3 className="font-semibold text-blue-400 flex items-center gap-2">
+          <div className="space-y-4 p-4 border border-blue-500/20 dark:border-blue-500/20 rounded-lg bg-blue-500/5 dark:bg-blue-500/5">
+            <h3 className="font-semibold text-blue-600 dark:text-blue-400 flex items-center gap-2">
               <FileCheck size={18} />
               Work Permit (Public Authority for Manpower)
             </h3>
@@ -3192,8 +3700,8 @@ export default function EmployeeDetailPage() {
           </div>
 
           {/* Residence Permit Section */}
-          <div className="space-y-4 p-4 border border-purple-500/20 rounded-lg bg-purple-500/5">
-            <h3 className="font-semibold text-purple-400 flex items-center gap-2">
+          <div className="space-y-4 p-4 border border-purple-500/20 dark:border-purple-500/20 rounded-lg bg-purple-500/5 dark:bg-purple-500/5">
+            <h3 className="font-semibold text-purple-600 dark:text-purple-400 flex items-center gap-2">
               <FileCheck size={18} />
               Residence Permit (Article 18) - Ministry of Interior
             </h3>
@@ -3259,8 +3767,8 @@ export default function EmployeeDetailPage() {
           </div>
 
           {/* Passport Section */}
-          <div className="space-y-4 p-4 border border-green-500/20 rounded-lg bg-green-500/5">
-            <h3 className="font-semibold text-green-400 flex items-center gap-2">
+          <div className="space-y-4 p-4 border border-green-500/20 dark:border-green-500/20 rounded-lg bg-green-500/5 dark:bg-green-500/5">
+            <h3 className="font-semibold text-green-600 dark:text-green-400 flex items-center gap-2">
               <FileCheck size={18} />
               Passport Information
             </h3>
@@ -3302,8 +3810,8 @@ export default function EmployeeDetailPage() {
           </div>
 
           {/* Health Insurance Section */}
-          <div className="space-y-4 p-4 border border-cyan-500/20 rounded-lg bg-cyan-500/5">
-            <h3 className="font-semibold text-cyan-400 flex items-center gap-2">
+          <div className="space-y-4 p-4 border border-cyan-500/20 dark:border-cyan-500/20 rounded-lg bg-cyan-500/5 dark:bg-cyan-500/5">
+            <h3 className="font-semibold text-cyan-600 dark:text-cyan-400 flex items-center gap-2">
               <FileCheck size={18} />
               Health Insurance
             </h3>
@@ -3344,8 +3852,8 @@ export default function EmployeeDetailPage() {
           </div>
 
           {/* Civil ID Section */}
-          <div className="space-y-4 p-4 border border-orange-500/20 rounded-lg bg-orange-500/5">
-            <h3 className="font-semibold text-orange-400 flex items-center gap-2">
+          <div className="space-y-4 p-4 border border-orange-500/20 dark:border-orange-500/20 rounded-lg bg-orange-500/5 dark:bg-orange-500/5">
+            <h3 className="font-semibold text-orange-600 dark:text-orange-400 flex items-center gap-2">
               <FileCheck size={18} />
               Civil ID
             </h3>
@@ -3370,8 +3878,8 @@ export default function EmployeeDetailPage() {
           </div>
 
           {/* General Information */}
-          <div className="space-y-4 p-4 border border-indigo-500/20 rounded-lg bg-indigo-500/5">
-            <h3 className="font-semibold text-indigo-400 flex items-center gap-2">
+          <div className="space-y-4 p-4 border border-indigo-500/20 dark:border-indigo-500/20 rounded-lg bg-indigo-500/5 dark:bg-indigo-500/5">
+            <h3 className="font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
               <Globe size={18} />
               General Information
             </h3>
@@ -3629,6 +4137,44 @@ export default function EmployeeDetailPage() {
             <Button type="submit">Save Settings</Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal 
+        isOpen={isDeleteModalOpen} 
+        onClose={() => !deleting && setIsDeleteModalOpen(false)}
+        title={t('employees.deleteEmployee') || 'Delete Employee'}
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-4 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+            <AlertCircle className="text-destructive mt-0.5" size={20} />
+            <div className="flex-1">
+              <p className="font-semibold text-destructive mb-2">
+                {t('employees.deleteEmployeeWarning') || 'Are you sure you want to delete this employee?'}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {t('employees.deleteEmployeeMessage')?.replace('{name}', getEmployeeDisplayName(emp)) || `This will permanently delete ${getEmployeeDisplayName(emp)} and all associated data. This action cannot be undone.`}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4">
+            <Button 
+              variant="outline" 
+              onClick={() => setIsDeleteModalOpen(false)}
+              disabled={deleting}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={handleDeleteEmployee}
+              disabled={deleting}
+            >
+              {deleting ? (t('common.deleting') || 'Deleting...') : t('common.delete')}
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

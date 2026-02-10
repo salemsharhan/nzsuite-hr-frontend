@@ -31,6 +31,7 @@ export interface LeaveRequestFilters {
   date_from?: string;
   date_to?: string;
   employee_name?: string;
+  companyId?: string; // Filter by company ID (for admin users)
   page?: number;
   limit?: number;
 }
@@ -38,12 +39,28 @@ export interface LeaveRequestFilters {
 export const leaveService = {
   async getAll(filters?: LeaveRequestFilters) {
     try {
+      // If companyId is provided, first get all employees for that company
+      let employeeIds: string[] | null = null;
+      if (filters?.companyId) {
+        const { employeeService } = await import('./employeeService');
+        const employees = await employeeService.getAll(filters.companyId);
+        employeeIds = employees.map(emp => emp.id);
+        if (employeeIds.length === 0) {
+          return []; // No employees in this company, return empty
+        }
+      }
+
       // First, get leave requests with employee data
       // For reporting manager, we'll fetch it separately to avoid nested relationship issues
-      let query = '/leave_requests?select=*,employees!leave_requests_employee_id_fkey(id,first_name,last_name,employee_id,avatar_url,reporting_manager_id,department)&order=created_at.desc';
+      let query = '/leave_requests?select=*,employees!leave_requests_employee_id_fkey(id,first_name,last_name,employee_id,avatar_url,reporting_manager_id,department,company_id)&order=created_at.desc';
       
       // Apply filters
       const params: string[] = [];
+      
+      // Filter by employee IDs if company filter is applied
+      if (employeeIds && employeeIds.length > 0) {
+        params.push(`employee_id=in.(${employeeIds.join(',')})`);
+      }
       
       if (filters?.status && filters.status !== 'all') {
         params.push(`status=eq.${filters.status}`);
@@ -73,7 +90,12 @@ export const leaveService = {
       }
       
       const response = await api.get(query);
-      const leaveRequests = response.data as LeaveRequest[];
+      let leaveRequests = response.data as LeaveRequest[];
+      
+      // Additional filter by company_id if needed (double-check)
+      if (filters?.companyId) {
+        leaveRequests = leaveRequests.filter(lr => lr.employees?.company_id === filters.companyId);
+      }
       
       // Fetch reporting managers for all employees in one query (if any have reporting managers)
       const managerIds = leaveRequests
@@ -113,9 +135,25 @@ export const leaveService = {
   
   async getCount(filters?: LeaveRequestFilters) {
     try {
+      // If companyId is provided, first get all employees for that company
+      let employeeIds: string[] | null = null;
+      if (filters?.companyId) {
+        const { employeeService } = await import('./employeeService');
+        const employees = await employeeService.getAll(filters.companyId);
+        employeeIds = employees.map(emp => emp.id);
+        if (employeeIds.length === 0) {
+          return 0; // No employees in this company
+        }
+      }
+
       let query = '/leave_requests?select=id';
       
       const params: string[] = [];
+      
+      // Filter by employee IDs if company filter is applied
+      if (employeeIds && employeeIds.length > 0) {
+        params.push(`employee_id=in.(${employeeIds.join(',')})`);
+      }
       
       if (filters?.status && filters.status !== 'all') {
         params.push(`status=eq.${filters.status}`);
@@ -137,7 +175,20 @@ export const leaveService = {
         query += '&' + params.join('&');
       }
       
-      const response = await api.get(query);
+      const response = await api.get(query, {
+        headers: {
+          'Prefer': 'count=exact'
+        }
+      });
+      
+      const contentRange = response.headers['content-range'] || response.headers['Content-Range'];
+      if (contentRange) {
+        const match = contentRange.match(/\/(\d+)/);
+        if (match) {
+          return parseInt(match[1], 10);
+        }
+      }
+      
       return Array.isArray(response.data) ? response.data.length : 0;
     } catch (error) {
       console.error('Error fetching leave requests count:', error);

@@ -32,3 +32,8 @@ CREATE POLICY "Enable delete for document owners" ON documents
 COMMENT ON COLUMN documents.employee_id IS 'The employee this document belongs to';
 
 
+
+
+
+
+

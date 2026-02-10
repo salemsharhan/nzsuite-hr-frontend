@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import i18n from '../utils/i18n';
+import { getEmployeeDisplayName } from '../utils/employeeName';
 import { 
   Clock, 
   MapPin, 
@@ -20,6 +22,7 @@ import Modal from '../components/common/Modal';
 import { attendanceService, AttendanceLog, AttendanceFilters } from '../services/attendanceService';
 import { employeeService, Employee } from '../services/employeeService';
 import { useAuth } from '../contexts/AuthContext';
+import { toast } from 'sonner';
 
 export default function AttendancePage() {
   const { t } = useTranslation();
@@ -74,24 +77,36 @@ export default function AttendancePage() {
         return;
       }
       
+      // Ensure company_id is available for admin users
+      if (!user?.company_id && user?.role !== 'super_admin') {
+        console.error('Company ID not found for admin user');
+        setAllLogs([]);
+        setLoading(false);
+        return;
+      }
+      
       // First, get all employees to build employee ID mapping
+      // Only fetch employees from the current admin's company
       const employeesData = await employeeService.getAll(user?.company_id);
       const filteredEmployees = employeesData.filter(e => e.employment_type !== 'Consultant');
       setEmployees(filteredEmployees);
       
       // Build filter parameters for API call
+      // Always include companyId to ensure we only get attendance for this company's employees
       const apiFilters: AttendanceFilters = {
         dateFrom: filters.dateFrom || undefined,
         dateTo: filters.dateTo || undefined,
+        companyId: user?.company_id, // Filter by current admin's company - REQUIRED
         page: currentPage,
         limit: itemsPerPage
       };
       
       // If employee name filter is set, find matching employee integer IDs
+      // Note: filteredEmployees is already filtered by company, so all matches are company employees
       if (filters.employeeName) {
         const searchTerm = filters.employeeName.toLowerCase();
         const matchingEmployees = filteredEmployees.filter(emp => {
-          const fullName = `${emp.first_name || emp.firstName || ''} ${emp.last_name || emp.lastName || ''}`.toLowerCase();
+          const fullName = getEmployeeDisplayName(emp).toLowerCase();
           const employeeId = (emp.employee_id || emp.employeeId || '').toLowerCase();
           return fullName.includes(searchTerm) || employeeId.includes(searchTerm);
         });
@@ -99,6 +114,7 @@ export default function AttendancePage() {
         // Map employee UUIDs to integer IDs from attendances table
         // We need to get the integer employee_id for each matching employee
         // This requires checking external_id or parsing employee_id text
+        // All these employees are already from the current company (filtered above)
         const integerIds: number[] = [];
         matchingEmployees.forEach(emp => {
           // Try external_id first
@@ -118,14 +134,17 @@ export default function AttendancePage() {
         });
         
         if (integerIds.length > 0) {
+          // Add employee IDs filter - these are already from the current company
           apiFilters.employeeIds = integerIds;
         } else {
-          // No matching employees found, return empty
+          // No matching employees found in this company, return empty
           setAllLogs([]);
+          setTotalCount(0);
           setLoading(false);
           return;
         }
       }
+      // If no employee name filter, companyId filter in apiFilters ensures only company employees are shown
       
       // Fetch attendance records with API filters
       const response = await attendanceService.getAll(apiFilters);
@@ -209,16 +228,25 @@ export default function AttendancePage() {
     e.preventDefault();
     try {
       // Calculate late/overtime logic here if needed
-      const checkInTime = new Date(`${newPunch.date}T${newPunch.check_in}`);
-      const checkOutTime = newPunch.check_out ? new Date(`${newPunch.date}T${newPunch.check_out}`) : null;
+      // User selects time in Kuwait timezone (UTC+3)
+      // Create date with explicit UTC+3 timezone, JavaScript will convert to UTC automatically
+      const [checkInHours, checkInMinutes] = newPunch.check_in.split(':').map(Number);
+      const checkInTime = new Date(`${newPunch.date}T${String(checkInHours).padStart(2, '0')}:${String(checkInMinutes).padStart(2, '0')}:00+03:00`);
+      
+      const checkOutTime = newPunch.check_out ? (() => {
+        const [checkOutHours, checkOutMinutes] = newPunch.check_out.split(':').map(Number);
+        return new Date(`${newPunch.date}T${String(checkOutHours).padStart(2, '0')}:${String(checkOutMinutes).padStart(2, '0')}:00+03:00`);
+      })() : null;
       
       let status = newPunch.status;
       let lateMinutes = 0;
       
-      // Simple logic: Late if after 9:00 AM
-      if (checkInTime.getHours() > 9 || (checkInTime.getHours() === 9 && checkInTime.getMinutes() > 0)) {
+      // Simple logic: Late if after 9:00 AM (use Kuwait time for comparison)
+      // Get hours in UTC+3 by using getUTCHours() + 3, or create a date in UTC+3
+      const checkInKuwaitHours = checkInHours; // Already in Kuwait time
+      if (checkInKuwaitHours > 9 || (checkInKuwaitHours === 9 && checkInMinutes > 0)) {
         status = 'Late';
-        lateMinutes = (checkInTime.getHours() - 9) * 60 + checkInTime.getMinutes();
+        lateMinutes = (checkInKuwaitHours - 9) * 60 + checkInMinutes;
       }
 
       await attendanceService.createPunch({
@@ -244,7 +272,7 @@ export default function AttendancePage() {
       });
     } catch (error) {
       console.error('Failed to add punch:', error);
-      alert('Failed to add punch. Please check console.');
+      toast.error(t('attendance.failedToAddPunch'));
     }
   };
 
@@ -266,8 +294,8 @@ export default function AttendancePage() {
           <h1 className="text-3xl font-bold font-heading tracking-tight text-foreground">{t('attendance.title')}</h1>
           <p className="text-muted-foreground mt-1">
             {isEmployee 
-              ? (t('attendance.myAttendance') || 'View your attendance records')
-              : 'System-controlled punch logs and regularization.'
+              ? t('attendance.myAttendance')
+              : t('attendance.systemControlledDesc')
             }
           </p>
         </div>
@@ -279,7 +307,7 @@ export default function AttendancePage() {
             </Button>
             <Button variant="primary" onClick={() => setIsModalOpen(true)}>
               <Plus size={18} className="mr-2 rtl:ml-2 rtl:mr-0" />
-              Add Punch
+              {t('attendance.addPunch')}
             </Button>
           </div>
         )}
@@ -287,22 +315,22 @@ export default function AttendancePage() {
 
       {/* Add Punch Modal - Only show for non-employees */}
       {!isEmployee && (
-        <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Add Manual Punch">
+        <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={t('attendance.addManualPunch')}>
         <form onSubmit={handleAddPunch} className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Employee</label>
+            <label className="text-sm font-medium">{t('attendance.employee')}</label>
             <Select 
               value={newPunch.employee_id} 
               onValueChange={(value) => setNewPunch({...newPunch, employee_id: value})}
               required
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select Employee" />
+                <SelectValue placeholder={t('attendance.selectEmployee')} />
               </SelectTrigger>
               <SelectContent>
                 {employees.map(emp => (
                   <SelectItem key={emp.id} value={emp.id}>
-                    {emp.first_name || emp.firstName} {emp.last_name || emp.lastName} ({emp.employee_id || emp.employeeId})
+                    <span dir={i18n.language === 'ar' ? 'rtl' : 'ltr'}>{getEmployeeDisplayName(emp)}</span> ({emp.employee_id || emp.employeeId})
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -310,7 +338,7 @@ export default function AttendancePage() {
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Date</label>
+            <label className="text-sm font-medium">{t('attendance.date')}</label>
             <Input 
               type="date"
               value={newPunch.date}
@@ -321,7 +349,7 @@ export default function AttendancePage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Check In</label>
+              <label className="text-sm font-medium">{t('attendance.checkInTime')}</label>
               <Input 
                 type="time"
                 value={newPunch.check_in}
@@ -330,7 +358,7 @@ export default function AttendancePage() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Check Out</label>
+              <label className="text-sm font-medium">{t('attendance.checkOutTime')}</label>
               <Input 
                 type="time"
                 value={newPunch.check_out}
@@ -355,7 +383,7 @@ export default function AttendancePage() {
               <CheckCircle size={24} />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Present</p>
+              <p className="text-sm text-muted-foreground">{t('attendance.present')}</p>
               <p className="text-2xl font-bold text-emerald-500">
                 {filteredLogs.filter(l => l.status === 'Present').length}
               </p>
@@ -368,7 +396,7 @@ export default function AttendancePage() {
               <Clock size={24} />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Late</p>
+              <p className="text-sm text-muted-foreground">{t('attendance.late')}</p>
               <p className="text-2xl font-bold text-amber-500">
                 {filteredLogs.filter(l => l.status === 'Late').length}
               </p>
@@ -381,7 +409,7 @@ export default function AttendancePage() {
               <XCircle size={24} />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Absent</p>
+              <p className="text-sm text-muted-foreground">{t('attendance.absent')}</p>
               <p className="text-2xl font-bold text-destructive">
                 {filteredLogs.filter(l => l.status === 'Absent').length}
               </p>
@@ -394,7 +422,7 @@ export default function AttendancePage() {
               <AlertCircle size={24} />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">On Leave</p>
+              <p className="text-sm text-muted-foreground">{t('attendance.onLeave')}</p>
               <p className="text-2xl font-bold text-blue-500">
                 {filteredLogs.filter(l => l.status === 'On Leave').length}
               </p>
@@ -591,7 +619,7 @@ export default function AttendancePage() {
                 ) : paginatedLogs.map((record) => (
                   <tr key={record.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                     <td className="px-4 py-3 font-medium">
-                      {record.employees ? `${record.employees.first_name} ${record.employees.last_name}` : record.employee_id}
+                      {record.employees ? <span dir={i18n.language === 'ar' ? 'rtl' : 'ltr'}>{getEmployeeDisplayName(record.employees as any)}</span> : record.employee_id}
                     </td>
                     <td className="px-4 py-3">{new Date(record.date).toLocaleDateString()}</td>
                     <td className="px-4 py-3 font-mono text-primary">

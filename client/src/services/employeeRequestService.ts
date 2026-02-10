@@ -32,6 +32,7 @@ export interface EmployeeRequestFilters {
   request_category?: string;
   date_from?: string;
   date_to?: string;
+  companyId?: string; // Filter by company ID (for admin users)
   page?: number;
   limit?: number;
 }
@@ -39,16 +40,30 @@ export interface EmployeeRequestFilters {
 export const employeeRequestService = {
   async getAll(filters?: EmployeeRequestFilters): Promise<EmployeeRequest[]> {
     try {
-      let query = '/employee_requests?select=*,employees!employee_requests_employee_id_fkey(id,first_name,last_name,employee_id,email,department)&order=submitted_at.desc';
+      // If companyId is provided, first get all employees for that company
+      let employeeIds: string[] | null = null;
+      if (filters?.companyId) {
+        const { employeeService } = await import('./employeeService');
+        const employees = await employeeService.getAll(filters.companyId);
+        employeeIds = employees.map(emp => emp.id);
+        if (employeeIds.length === 0) {
+          return []; // No employees in this company
+        }
+      }
+
+      let query = '/employee_requests?select=*,employees!employee_requests_employee_id_fkey(id,first_name,last_name,employee_id,email,department,company_id)&order=submitted_at.desc';
       
       const params: string[] = [];
       
-      if (filters?.status && filters.status !== 'all') {
-        params.push(`status=eq.${filters.status}`);
+      // Filter by employee IDs if company filter is applied
+      if (employeeIds && employeeIds.length > 0) {
+        params.push(`employee_id=in.(${employeeIds.join(',')})`);
+      } else if (filters?.employee_id) {
+        params.push(`employee_id=eq.${filters.employee_id}`);
       }
       
-      if (filters?.employee_id) {
-        params.push(`employee_id=eq.${filters.employee_id}`);
+      if (filters?.status && filters.status !== 'all') {
+        params.push(`status=eq.${filters.status}`);
       }
       
       if (filters?.request_type) {
@@ -79,7 +94,14 @@ export const employeeRequestService = {
       }
       
       const response = await api.get(query);
-      return response.data as EmployeeRequest[];
+      let employeeRequests = response.data as EmployeeRequest[];
+      
+      // Additional filter by company_id if needed (double-check)
+      if (filters?.companyId) {
+        employeeRequests = employeeRequests.filter(er => er.employees?.company_id === filters.companyId);
+      }
+      
+      return employeeRequests;
     } catch (error) {
       console.error('Error fetching employee requests:', error);
       return [];
@@ -189,16 +211,30 @@ export const employeeRequestService = {
 
   async getCount(filters?: EmployeeRequestFilters): Promise<number> {
     try {
+      // If companyId is provided, first get all employees for that company
+      let employeeIds: string[] | null = null;
+      if (filters?.companyId) {
+        const { employeeService } = await import('./employeeService');
+        const employees = await employeeService.getAll(filters.companyId);
+        employeeIds = employees.map(emp => emp.id);
+        if (employeeIds.length === 0) {
+          return 0; // No employees in this company
+        }
+      }
+
       let query = '/employee_requests?select=id';
       
       const params: string[] = [];
       
-      if (filters?.status && filters.status !== 'all') {
-        params.push(`status=eq.${filters.status}`);
+      // Filter by employee IDs if company filter is applied
+      if (employeeIds && employeeIds.length > 0) {
+        params.push(`employee_id=in.(${employeeIds.join(',')})`);
+      } else if (filters?.employee_id) {
+        params.push(`employee_id=eq.${filters.employee_id}`);
       }
       
-      if (filters?.employee_id) {
-        params.push(`employee_id=eq.${filters.employee_id}`);
+      if (filters?.status && filters.status !== 'all') {
+        params.push(`status=eq.${filters.status}`);
       }
       
       if (filters?.request_type) {
@@ -228,13 +264,24 @@ export const employeeRequestService = {
       });
       
       // Get count from response headers
-      const count = response.headers['content-range']?.split('/')[1] || '0';
-      return parseInt(count, 10);
+      const contentRange = response.headers['content-range'] || response.headers['Content-Range'];
+      if (contentRange) {
+        const match = contentRange.match(/\/(\d+)/);
+        if (match) {
+          return parseInt(match[1], 10);
+        }
+      }
+      
+      return 0;
     } catch (error) {
       console.error('Error getting employee request count:', error);
       return 0;
     }
   }
 };
+
+
+
+
 
 

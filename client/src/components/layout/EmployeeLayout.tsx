@@ -12,17 +12,26 @@ import {
   Menu,
   X,
   Bell,
-  Settings
+  Settings,
+  Sun,
+  Moon,
+  Globe
 } from 'lucide-react';
 import { cn } from '../common/UIComponents';
 import { useLanguage } from '../../context/LanguageContext';
+import { useTheme } from '../../contexts/ThemeContext';
 
 export const EmployeeLayout = ({ children }: { children: React.ReactNode }) => {
   const [location, setLocation] = useLocation();
   const { user, signOut } = useAuth();
-  const { direction } = useLanguage();
+  const { language, changeLanguage, direction } = useLanguage();
+  const { theme, toggleTheme } = useTheme();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+
+  const toggleLanguage = () => {
+    changeLanguage(language === 'en' ? 'ar' : 'en');
+  };
 
   // Get employee name
   const employeeName = user ? 
@@ -49,12 +58,14 @@ export const EmployeeLayout = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  const { t } = useTranslation();
+  
   const navItems = [
-    { icon: LayoutDashboard, label: 'Dashboard', href: '/self-service', exact: true },
-    { icon: Clock, label: 'Attendance', href: '/self-service/attendance' },
-    { icon: Calendar, label: 'Leaves', href: '/self-service/leaves' },
-    { icon: FileText, label: 'Requests', href: '/self-service/requests' },
-    { icon: User, label: 'Profile', href: '/self-service/profile' },
+    { icon: LayoutDashboard, label: t('common.dashboard'), href: '/self-service', exact: true },
+    { icon: Clock, label: t('layout.attendance'), href: '/self-service/attendance' },
+    { icon: Calendar, label: t('layout.leaves'), href: '/self-service/leaves' },
+    { icon: FileText, label: t('layout.requests'), href: '/self-service/requests' },
+    { icon: User, label: t('layout.profile'), href: '/self-service/profile' },
   ];
 
   const isActive = (href: string, exact?: boolean) => {
@@ -77,11 +88,30 @@ export const EmployeeLayout = ({ children }: { children: React.ReactNode }) => {
             />
             <div>
               <h1 className="text-lg font-bold text-foreground">NZSuite</h1>
-              <p className="text-xs text-muted-foreground">Employee Portal</p>
+              <p className="text-xs text-muted-foreground">{t('common.employeePortal')}</p>
             </div>
           </div>
           
           <div className="flex items-center gap-2">
+            <button 
+              onClick={toggleLanguage}
+              className="p-2 hover:bg-muted rounded-full text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
+              title={`Switch to ${language === 'en' ? 'Arabic' : 'English'}`}
+            >
+              <Globe size={16} />
+              <span className="text-xs font-medium uppercase">{language}</span>
+            </button>
+            
+            {toggleTheme && (
+              <button 
+                onClick={toggleTheme}
+                className="p-2 hover:bg-muted rounded-full text-muted-foreground hover:text-foreground transition-colors"
+                title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+              >
+                {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+              </button>
+            )}
+            
             <button className="p-2 hover:bg-muted rounded-full relative">
               <Bell className="w-5 h-5 text-muted-foreground" />
               <span className="absolute top-1 right-1 w-2 h-2 bg-destructive rounded-full border-2 border-background" />
@@ -98,30 +128,34 @@ export const EmployeeLayout = ({ children }: { children: React.ReactNode }) => {
               </button>
               
               {showProfileMenu && (
-                <div className="absolute right-0 top-full mt-2 w-48 bg-card border border-border rounded-lg shadow-lg z-50">
+                <div className={cn(
+                  "absolute top-full mt-2 w-48 bg-card border border-border rounded-lg shadow-lg z-50",
+                  direction === 'rtl' ? "left-0" : "right-0",
+                  "max-w-[calc(100vw-2rem)]" // Ensure it doesn't overflow viewport
+                )}>
                   <div className="p-3 border-b border-border">
-                    <p className="font-medium text-sm">{employeeName}</p>
-                    <p className="text-xs text-muted-foreground">Employee</p>
+                    <p className="font-medium text-sm truncate">{employeeName}</p>
+                    <p className="text-xs text-muted-foreground">{t('common.employee')}</p>
                   </div>
                   <div className="p-1">
                     <Link href="/self-service/profile">
                       <div className="flex items-center gap-2 px-3 py-2 hover:bg-muted rounded-lg cursor-pointer text-sm">
-                        <User className="w-4 h-4" />
-                        Profile
+                        <User className="w-4 h-4 flex-shrink-0" />
+                        <span className="truncate">{t('common.profile')}</span>
                       </div>
                     </Link>
                     <Link href="/self-service/settings">
                       <div className="flex items-center gap-2 px-3 py-2 hover:bg-muted rounded-lg cursor-pointer text-sm">
-                        <Settings className="w-4 h-4" />
-                        Settings
+                        <Settings className="w-4 h-4 flex-shrink-0" />
+                        <span className="truncate">{t('common.settings')}</span>
                       </div>
                     </Link>
                     <div
                       onClick={handleLogout}
                       className="flex items-center gap-2 px-3 py-2 hover:bg-destructive/10 text-destructive rounded-lg cursor-pointer text-sm"
                     >
-                      <LogOut className="w-4 h-4" />
-                      Logout
+                      <LogOut className="w-4 h-4 flex-shrink-0" />
+                      <span className="truncate">{t('common.logout')}</span>
                     </div>
                   </div>
                 </div>

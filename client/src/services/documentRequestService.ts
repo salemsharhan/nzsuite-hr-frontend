@@ -39,6 +39,7 @@ export interface DocumentRequestFilters {
   document_type?: string;
   date_from?: string;
   date_to?: string;
+  companyId?: string; // Filter by company ID (for admin users)
   page?: number;
   limit?: number;
 }
@@ -46,16 +47,30 @@ export interface DocumentRequestFilters {
 export const documentRequestService = {
   async getAll(filters?: DocumentRequestFilters): Promise<DocumentRequest[]> {
     try {
-      let query = '/document_requests?select=*,employees!document_requests_employee_id_fkey(id,first_name,last_name,employee_id,email,department),documents!document_requests_document_id_fkey(id,name,url,type)&order=requested_at.desc';
+      // If companyId is provided, first get all employees for that company
+      let employeeIds: string[] | null = null;
+      if (filters?.companyId) {
+        const { employeeService } = await import('./employeeService');
+        const employees = await employeeService.getAll(filters.companyId);
+        employeeIds = employees.map(emp => emp.id);
+        if (employeeIds.length === 0) {
+          return []; // No employees in this company
+        }
+      }
+
+      let query = '/document_requests?select=*,employees!document_requests_employee_id_fkey(id,first_name,last_name,employee_id,email,department,company_id),documents!document_requests_document_id_fkey(id,name,url,type)&order=requested_at.desc';
       
       const params: string[] = [];
       
-      if (filters?.status && filters.status !== 'all') {
-        params.push(`status=eq.${filters.status}`);
+      // Filter by employee IDs if company filter is applied
+      if (employeeIds && employeeIds.length > 0) {
+        params.push(`employee_id=in.(${employeeIds.join(',')})`);
+      } else if (filters?.employee_id) {
+        params.push(`employee_id=eq.${filters.employee_id}`);
       }
       
-      if (filters?.employee_id) {
-        params.push(`employee_id=eq.${filters.employee_id}`);
+      if (filters?.status && filters.status !== 'all') {
+        params.push(`status=eq.${filters.status}`);
       }
       
       if (filters?.document_type) {
@@ -82,7 +97,14 @@ export const documentRequestService = {
       }
       
       const response = await api.get(query);
-      return response.data as DocumentRequest[];
+      let documentRequests = response.data as DocumentRequest[];
+      
+      // Additional filter by company_id if needed (double-check)
+      if (filters?.companyId) {
+        documentRequests = documentRequests.filter(dr => dr.employees?.company_id === filters.companyId);
+      }
+      
+      return documentRequests;
     } catch (error) {
       console.error('Error fetching document requests:', error);
       return [];
@@ -258,16 +280,30 @@ export const documentRequestService = {
 
   async getCount(filters?: DocumentRequestFilters): Promise<number> {
     try {
+      // If companyId is provided, first get all employees for that company
+      let employeeIds: string[] | null = null;
+      if (filters?.companyId) {
+        const { employeeService } = await import('./employeeService');
+        const employees = await employeeService.getAll(filters.companyId);
+        employeeIds = employees.map(emp => emp.id);
+        if (employeeIds.length === 0) {
+          return 0; // No employees in this company
+        }
+      }
+
       let query = '/document_requests?select=id';
       
       const params: string[] = [];
       
-      if (filters?.status && filters.status !== 'all') {
-        params.push(`status=eq.${filters.status}`);
+      // Filter by employee IDs if company filter is applied
+      if (employeeIds && employeeIds.length > 0) {
+        params.push(`employee_id=in.(${employeeIds.join(',')})`);
+      } else if (filters?.employee_id) {
+        params.push(`employee_id=eq.${filters.employee_id}`);
       }
       
-      if (filters?.employee_id) {
-        params.push(`employee_id=eq.${filters.employee_id}`);
+      if (filters?.status && filters.status !== 'all') {
+        params.push(`status=eq.${filters.status}`);
       }
       
       if (filters?.document_type) {
@@ -301,5 +337,9 @@ export const documentRequestService = {
     }
   }
 };
+
+
+
+
 
 

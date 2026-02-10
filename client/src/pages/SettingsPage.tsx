@@ -11,8 +11,9 @@ import { jobService, Job } from '../services/jobService';
 import { companyService, Company, CreateCompanyData } from '../services/companyService';
 import { companySettingsService, CompanySettings, RoleSalaryConfig, RolePermissionsConfig } from '../services/companySettingsService';
 import { useAuth } from '../contexts/AuthContext';
-import { Clock, DollarSign, Calendar, Settings as SettingsIcon, MapPin } from 'lucide-react';
+import { Clock, DollarSign, Calendar, Settings as SettingsIcon, MapPin, MessageSquare } from 'lucide-react';
 import { attendanceLocationService, AttendanceLocationSettings } from '../services/attendanceLocationService';
+import { messageService, MessageApiConfig } from '../services/messageService';
 
 export default function SettingsPage() {
   const { t } = useTranslation();
@@ -77,6 +78,21 @@ export default function SettingsPage() {
     require_face_verification: true,
     is_active: true
   });
+
+  // Message API Settings state
+  const [messageApiConfig, setMessageApiConfig] = useState<MessageApiConfig | null>(null);
+  const [isMessageApiModalOpen, setIsMessageApiModalOpen] = useState(false);
+  const [newMessageApiConfig, setNewMessageApiConfig] = useState<Partial<MessageApiConfig>>({
+    api_type: 'single',
+    api_url: '',
+    enabled: true,
+    user_id: 0,
+    message_type: 0,
+    mode: 2,
+    custom_message_template: '',
+    auth_token: '',
+    auth_header: 'Authorization'
+  });
   const [newSalaryConfig, setNewSalaryConfig] = useState<Partial<RoleSalaryConfig>>({
     role_id: '',
     job_id: '',
@@ -119,6 +135,9 @@ export default function SettingsPage() {
     }
     if (activeTab === 'attendance-location' && user?.company_id) {
       loadAttendanceLocationSettings();
+    }
+    if (activeTab === 'message-api' && user?.company_id) {
+      loadMessageApiConfig();
     }
   }, [activeTab, user?.company_id]);
 
@@ -430,6 +449,54 @@ export default function SettingsPage() {
       }
     } catch (error) {
       console.error('Failed to load attendance location settings:', error);
+    }
+  };
+
+  // Message API Settings functions
+  const loadMessageApiConfig = async () => {
+    if (!user?.company_id) return;
+    try {
+      const config = await messageService.getConfig(user.company_id);
+      setMessageApiConfig(config);
+      if (config) {
+        setNewMessageApiConfig({
+          ...config
+        });
+      } else {
+        setNewMessageApiConfig({
+          api_type: 'single',
+          api_url: '',
+          enabled: true,
+          user_id: 0,
+          message_type: 0,
+          mode: 2,
+          custom_message_template: '',
+          auth_token: '',
+          auth_header: 'Authorization'
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load message API config:', error);
+    }
+  };
+
+  const handleSaveMessageApiConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user?.company_id) return;
+    try {
+      const configToSave: MessageApiConfig = {
+        ...newMessageApiConfig,
+        company_id: user.company_id,
+        id: messageApiConfig?.id
+      } as MessageApiConfig;
+      
+      await messageService.saveConfig(configToSave);
+      await loadMessageApiConfig();
+      setIsMessageApiModalOpen(false);
+      alert('Message API settings saved successfully!');
+    } catch (error: any) {
+      console.error('Failed to save message API config:', error);
+      alert(`Failed to save: ${error?.message || 'Unknown error'}`);
     }
   };
 
@@ -1222,6 +1289,97 @@ export default function SettingsPage() {
       );
     }
 
+    if (activeTab === 'message-api' && user?.company_id) {
+      return (
+        <>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MessageSquare size={24} />
+              Message API Configuration
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {messageApiConfig ? (
+              <div className="space-y-4">
+                <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-semibold">Current Configuration</h3>
+                    <Badge variant={messageApiConfig.enabled ? 'success' : 'outline'}>
+                      {messageApiConfig.enabled ? 'Enabled' : 'Disabled'}
+                    </Badge>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">API Type: </span>
+                      <span className="font-semibold">{messageApiConfig.api_type === 'single' ? 'Single Message' : 'Bulk Messages'}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">API URL: </span>
+                      <span className="font-mono text-xs break-all">{messageApiConfig.api_url}</span>
+                    </div>
+                    {messageApiConfig.api_type === 'single' && (
+                      <>
+                        <div>
+                          <span className="text-muted-foreground">User ID: </span>
+                          <span className="font-semibold">{messageApiConfig.user_id || 'Not set'}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Message Type: </span>
+                          <span className="font-semibold">{messageApiConfig.message_type || 0}</span>
+                        </div>
+                      </>
+                    )}
+                    {messageApiConfig.api_type === 'bulk' && (
+                      <>
+                        <div>
+                          <span className="text-muted-foreground">Mode: </span>
+                          <span className="font-semibold">{messageApiConfig.mode || 2}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Message Type: </span>
+                          <span className="font-semibold">{messageApiConfig.message_type || 1}</span>
+                        </div>
+                        {messageApiConfig.custom_message_template && (
+                          <div>
+                            <span className="text-muted-foreground">Custom Template: </span>
+                            <span className="font-semibold">{messageApiConfig.custom_message_template}</span>
+                          </div>
+                        )}
+                      </>
+                    )}
+                    {messageApiConfig.auth_header && (
+                      <div>
+                        <span className="text-muted-foreground">Auth Header: </span>
+                        <span className="font-semibold">{messageApiConfig.auth_header}</span>
+                      </div>
+                    )}
+                    {messageApiConfig.auth_token && (
+                      <div>
+                        <span className="text-muted-foreground">Auth Token: </span>
+                        <span className="font-mono text-xs">••••••••</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <Button onClick={() => setIsMessageApiModalOpen(true)}>
+                  <Edit size={16} className="mr-2" />
+                  Edit Configuration
+                </Button>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground mb-4">No message API configuration found.</p>
+                <Button onClick={() => setIsMessageApiModalOpen(true)}>
+                  <Plus size={16} className="mr-2" />
+                  Configure Message API
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </>
+      );
+    }
+
     return null;
   };
 
@@ -1244,6 +1402,7 @@ export default function SettingsPage() {
               { icon: Database, label: t('settings.companies'), tab: 'companies', superAdminOnly: true },
               { icon: SettingsIcon, label: t('settings.companySettings'), tab: 'company-settings', adminOnly: true },
               { icon: MapPin, label: 'Attendance Location', tab: 'attendance-location', adminOnly: true },
+              { icon: MessageSquare, label: 'Message API', tab: 'message-api', adminOnly: true },
               { icon: Bell, label: t('common.notifications'), tab: 'notifications' },
               { icon: Database, label: t('common.import'), tab: 'import' },
               { icon: Smartphone, label: t('settings.mobileApp'), tab: 'mobile' },
@@ -1834,6 +1993,142 @@ export default function SettingsPage() {
                 loadAttendanceLocationSettings();
               }}
             >
+              Cancel
+            </Button>
+            <Button type="submit">Save Settings</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Message API Settings Modal */}
+      <Modal 
+        isOpen={isMessageApiModalOpen} 
+        onClose={() => {
+          setIsMessageApiModalOpen(false);
+          loadMessageApiConfig();
+        }} 
+        title="Message API Configuration"
+        size="lg"
+      >
+        <form onSubmit={handleSaveMessageApiConfig} className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">API Type *</label>
+            <Select
+              value={newMessageApiConfig.api_type || 'single'}
+              onValueChange={(value: 'single' | 'bulk') => setNewMessageApiConfig({ ...newMessageApiConfig, api_type: value })}
+              required
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="single">Single Message API (SendMessage)</SelectItem>
+                <SelectItem value="bulk">Bulk Message API (SendBulkMessages)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">API URL *</label>
+            <Input
+              required
+              value={newMessageApiConfig.api_url || ''}
+              onChange={(e) => setNewMessageApiConfig({ ...newMessageApiConfig, api_url: e.target.value })}
+              placeholder="https://ershadapi.nuzum.tech/api/Whatsaap/SendMessage"
+            />
+          </div>
+
+          {newMessageApiConfig.api_type === 'single' && (
+            <>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">User ID</label>
+                <Input
+                  type="number"
+                  value={newMessageApiConfig.user_id || 0}
+                  onChange={(e) => setNewMessageApiConfig({ ...newMessageApiConfig, user_id: parseInt(e.target.value) || 0 })}
+                  placeholder="28"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Message Type</label>
+                <Input
+                  type="number"
+                  value={newMessageApiConfig.message_type || 0}
+                  onChange={(e) => setNewMessageApiConfig({ ...newMessageApiConfig, message_type: parseInt(e.target.value) || 0 })}
+                  placeholder="0"
+                />
+              </div>
+            </>
+          )}
+
+          {newMessageApiConfig.api_type === 'bulk' && (
+            <>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Mode</label>
+                <Input
+                  type="number"
+                  value={newMessageApiConfig.mode || 2}
+                  onChange={(e) => setNewMessageApiConfig({ ...newMessageApiConfig, mode: parseInt(e.target.value) || 2 })}
+                  placeholder="2"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Custom Message Template</label>
+                <Input
+                  value={newMessageApiConfig.custom_message_template || ''}
+                  onChange={(e) => setNewMessageApiConfig({ ...newMessageApiConfig, custom_message_template: e.target.value })}
+                  placeholder="tt"
+                />
+                <p className="text-xs text-muted-foreground">
+                  This will be used for bulk messages. Employee name and number will be added automatically.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Message Type</label>
+                <Input
+                  type="number"
+                  value={newMessageApiConfig.message_type || 1}
+                  onChange={(e) => setNewMessageApiConfig({ ...newMessageApiConfig, message_type: parseInt(e.target.value) || 1 })}
+                  placeholder="1"
+                />
+              </div>
+            </>
+          )}
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Auth Header Name</label>
+            <Input
+              value={newMessageApiConfig.auth_header || 'Authorization'}
+              onChange={(e) => setNewMessageApiConfig({ ...newMessageApiConfig, auth_header: e.target.value })}
+              placeholder="Authorization"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Auth Token</label>
+            <Input
+              type="password"
+              value={newMessageApiConfig.auth_token || ''}
+              onChange={(e) => setNewMessageApiConfig({ ...newMessageApiConfig, auth_token: e.target.value })}
+              placeholder="Bearer token or API key"
+            />
+          </div>
+
+          <div className="flex items-center gap-2 pt-4 border-t border-white/10">
+            <input
+              type="checkbox"
+              id="enabled"
+              checked={newMessageApiConfig.enabled || false}
+              onChange={(e) => setNewMessageApiConfig({ ...newMessageApiConfig, enabled: e.target.checked })}
+            />
+            <label htmlFor="enabled" className="text-sm font-medium">Enable Message API</label>
+          </div>
+
+          <div className="pt-4 flex justify-end gap-3 border-t border-white/10">
+            <Button type="button" variant="outline" onClick={() => {
+              setIsMessageApiModalOpen(false);
+              loadMessageApiConfig();
+            }}>
               Cancel
             </Button>
             <Button type="submit">Save Settings</Button>

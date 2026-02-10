@@ -28,6 +28,7 @@ export interface TimesheetFilters {
   is_submitted?: boolean;
   report_type?: 'daily' | 'weekly';
   week_start_date?: string;
+  companyId?: string; // Filter by company ID (for admin users)
   page?: number;
   limit?: number;
 }
@@ -43,15 +44,29 @@ export const timesheetService = {
    */
   async getAll(filters?: TimesheetFilters): Promise<TimesheetResponse> {
     try {
+      // If companyId is provided, first get all employees for that company
+      let employeeIds: string[] | null = null;
+      if (filters?.companyId) {
+        const { employeeService } = await import('./employeeService');
+        const employees = await employeeService.getAll(filters.companyId);
+        employeeIds = employees.map(emp => emp.id);
+        if (employeeIds.length === 0) {
+          return { data: [], totalCount: 0 }; // No employees in this company
+        }
+      }
+
       const params: any = {
-        select: '*,employees(first_name,last_name,employee_id)',
+        select: '*,employees(first_name,last_name,employee_id,company_id)',
         order: 'date.desc,created_at.desc'
       };
 
       // Only show submitted entries for admin
       params.is_submitted = 'eq.true';
 
-      if (filters?.employee_id) {
+      // Filter by employee IDs if company filter is applied
+      if (employeeIds && employeeIds.length > 0) {
+        params.employee_id = `in.(${employeeIds.join(',')})`;
+      } else if (filters?.employee_id) {
         params.employee_id = `eq.${filters.employee_id}`;
       }
 
@@ -98,6 +113,11 @@ export const timesheetService = {
           const entryDate = new Date(entry.date);
           return entryDate <= dateTo;
         });
+      }
+      
+      // Additional filter by company_id if needed (double-check)
+      if (filters?.companyId) {
+        data = data.filter(entry => entry.employees?.company_id === filters.companyId);
       }
       
       const contentRange = response.headers['content-range'] || response.headers['Content-Range'];

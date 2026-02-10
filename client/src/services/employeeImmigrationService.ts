@@ -98,11 +98,29 @@ export const employeeImmigrationService = {
     is_expatriate?: boolean;
     next_renewal_date_from?: string;
     next_renewal_date_to?: string;
+    companyId?: string; // Filter by company ID (for admin users)
   }): Promise<EmployeeImmigration[]> => {
-    let query = '/employee_immigration?order=next_renewal_date.asc';
+    // If companyId is provided, first get all employees for that company
+    let employeeIds: string[] | null = null;
+    if (filters?.companyId) {
+      const { employeeService } = await import('./employeeService');
+      const employees = await employeeService.getAll(filters.companyId);
+      employeeIds = employees.map(emp => emp.id);
+      if (employeeIds.length === 0) {
+        return []; // No employees in this company
+      }
+    }
+
+    let query = '/employee_immigration?select=*,employees!employee_immigration_employee_id_fkey(id,first_name,last_name,employee_id,company_id)&order=next_renewal_date.asc';
+    
+    const params: string[] = [];
+    
+    // Filter by employee IDs if company filter is applied
+    if (employeeIds && employeeIds.length > 0) {
+      params.push(`employee_id=in.(${employeeIds.join(',')})`);
+    }
     
     if (filters) {
-      const params: string[] = [];
       if (filters.status) {
         params.push(`or=(work_permit_status.eq.${filters.status},residence_permit_status.eq.${filters.status},health_insurance_status.eq.${filters.status})`);
       }
@@ -118,13 +136,21 @@ export const employeeImmigrationService = {
       if (filters.next_renewal_date_to) {
         params.push(`next_renewal_date=lte.${filters.next_renewal_date_to}`);
       }
-      if (params.length > 0) {
-        query += '&' + params.join('&');
-      }
+    }
+    
+    if (params.length > 0) {
+      query += '&' + params.join('&');
     }
     
     const response = await adminApi.get(query);
-    return response.data || [];
+    let immigrations = response.data || [];
+    
+    // Additional filter by company_id if needed (double-check)
+    if (filters?.companyId) {
+      immigrations = immigrations.filter((imm: any) => imm.employees?.company_id === filters.companyId);
+    }
+    
+    return immigrations;
   },
 
   // Create or update immigration record (upsert)
@@ -220,4 +246,8 @@ export const employeeImmigrationService = {
     };
   }
 };
+
+
+
+
 

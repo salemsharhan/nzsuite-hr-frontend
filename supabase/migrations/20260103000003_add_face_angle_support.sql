@@ -9,3 +9,8 @@ CREATE INDEX IF NOT EXISTS idx_employee_face_images_angle
 -- Update comment
 COMMENT ON COLUMN employee_face_images.capture_angle IS 'Angle of face capture: front, left, right, up, down';
 
+
+
+
+
+

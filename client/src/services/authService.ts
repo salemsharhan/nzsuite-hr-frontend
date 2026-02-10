@@ -63,7 +63,12 @@ class AuthService {
 
       // Store user in session storage
       sessionStorage.setItem('user', JSON.stringify(user));
-      sessionStorage.setItem('access_token', authData.session?.access_token || '');
+      if (authData.session?.access_token) {
+        sessionStorage.setItem('access_token', authData.session.access_token);
+      }
+      if (authData.session?.refresh_token) {
+        sessionStorage.setItem('refresh_token', authData.session.refresh_token);
+      }
 
       return { user, error: null };
     } catch (error) {
@@ -155,9 +160,11 @@ class AuthService {
       await supabase.auth.signOut();
       sessionStorage.removeItem('user');
       sessionStorage.removeItem('access_token');
+      sessionStorage.removeItem('refresh_token');
       sessionStorage.removeItem('employee_data');
       localStorage.removeItem('user');
       localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
       localStorage.removeItem('manus-runtime-user-info');
     } catch (error) {
       console.error('Error during sign out:', error);

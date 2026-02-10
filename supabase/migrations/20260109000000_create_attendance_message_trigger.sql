@@ -1,0 +1,93 @@
+-- This migration provides instructions for setting up automatic WhatsApp message sending
+-- when attendance is recorded. Use Supabase Webhooks (recommended approach).
+
+-- ============================================================================
+-- RECOMMENDED: Use Supabase Webhooks (No code changes needed)
+-- ============================================================================
+-- 
+-- 1. Go to Supabase Dashboard: https://supabase.com/dashboard/project/wqfbltrnlwngyohvxjjq
+-- 2. Navigate to: Database > Webhooks
+-- 3. Click "Create a new webhook"
+-- 4. Configure:
+--    - Name: "Send Attendance Message"
+--    - Table: attendances
+--    - Events: INSERT (check only INSERT)
+--    - HTTP Request
+--      - URL: https://wqfbltrnlwngyohvxjjq.supabase.co/functions/v1/send-attendance-message
+--      - Method: POST
+--      - Headers: 
+--        {
+--          "Content-Type": "application/json",
+--          "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"
+--        }
+--      - Body (optional): Leave empty or use: {"type": "INSERT", "record": {{record}}}
+-- 5. Click "Save"
+--
+-- The webhook will automatically call the edge function whenever a new attendance record is inserted.
+
+-- ============================================================================
+-- ALTERNATIVE: Database Trigger with pg_net (if webhooks are not available)
+-- ============================================================================
+-- 
+-- Uncomment the following code if you prefer to use a database trigger:
+--
+-- -- Enable pg_net extension (if not already enabled)
+-- CREATE EXTENSION IF NOT EXISTS pg_net;
+--
+-- -- Create function to call the edge function
+-- CREATE OR REPLACE FUNCTION send_attendance_message()
+-- RETURNS TRIGGER AS $$
+-- DECLARE
+--   payload JSONB;
+--   edge_function_url TEXT;
+--   service_role_key TEXT;
+-- BEGIN
+--   IF TG_OP = 'INSERT' AND (NEW.status1 IS TRUE OR NEW.status2 IS TRUE) THEN
+--     -- Get configuration from environment or use defaults
+--     edge_function_url := COALESCE(
+--       current_setting('app.settings.edge_function_url', true),
+--       'https://wqfbltrnlwngyohvxjjq.supabase.co/functions/v1'
+--     );
+--     
+--     service_role_key := current_setting('app.settings.service_role_key', true);
+--     
+--     IF service_role_key IS NULL OR service_role_key = '' THEN
+--       RAISE WARNING 'Service role key not configured. Message not sent.';
+--       RETURN NEW;
+--     END IF;
+--     
+--     -- Build payload for edge function
+--     payload := jsonb_build_object(
+--       'type', 'INSERT',
+--       'record', row_to_json(NEW),
+--       'old_record', NULL
+--     );
+--     
+--     -- Call the edge function asynchronously
+--     PERFORM
+--       net.http_post(
+--         url := edge_function_url || '/send-attendance-message',
+--         headers := jsonb_build_object(
+--           'Content-Type', 'application/json',
+--           'Authorization', 'Bearer ' || service_role_key
+--         ),
+--         body := payload::text
+--       );
+--   END IF;
+--   
+--   RETURN NEW;
+-- END;
+-- $$ LANGUAGE plpgsql SECURITY DEFINER;
+--
+-- -- Create trigger on attendances table
+-- DROP TRIGGER IF EXISTS trigger_send_attendance_message ON attendances;
+-- CREATE TRIGGER trigger_send_attendance_message
+--   AFTER INSERT ON attendances
+--   FOR EACH ROW
+--   WHEN (NEW.status1 IS TRUE OR NEW.status2 IS TRUE)
+--   EXECUTE FUNCTION send_attendance_message();
+--
+-- -- Set configuration (run these commands separately in SQL Editor):
+-- -- ALTER DATABASE postgres SET app.settings.edge_function_url = 'https://wqfbltrnlwngyohvxjjq.supabase.co/functions/v1';
+-- -- ALTER DATABASE postgres SET app.settings.service_role_key = 'YOUR_SERVICE_ROLE_KEY_HERE';
+

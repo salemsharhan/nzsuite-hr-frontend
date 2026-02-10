@@ -14,6 +14,7 @@
     "supabase:db:push": "supabase db push",
     "supabase:db:reset": "supabase db reset",
     "supabase:status": "supabase status",
+    "supabase:functions:deploy": "supabase functions deploy",
     "test": "vitest run",
     "db:push": "drizzle-kit generate && drizzle-kit migrate"
   },

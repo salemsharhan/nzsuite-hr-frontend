@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Plus, Clock, Calendar, DollarSign, AlertCircle, Download, Eye, FileText, Save, Send } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { Plus, Clock, Calendar, DollarSign, AlertCircle, Download, Eye, FileText, Save, Send, TrendingUp, CheckCircle2, XCircle, BarChart3, Activity } from 'lucide-react';
 import { selfServiceApi, Request, Payslip } from '../services/selfServiceApi';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { EmptyState } from '../components/common/EmptyState';
@@ -7,8 +8,9 @@ import { SubmitRequestModal } from '../components/selfservice/SubmitRequestModal
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'sonner';
 import { getEmployeeLeaveBalance } from '../services/leaveBalanceService';
-import { attendanceService } from '../services/attendanceService';
+import { attendanceService, AttendanceLog } from '../services/attendanceService';
 import { timesheetService, TimesheetEntry } from '../services/timesheetService';
+import { leaveService, LeaveRequest } from '../services/leaveService';
 import Modal from '../components/common/Modal';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -17,15 +19,23 @@ import { Button } from '../components/common/UIComponents';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
 export default function EmployeeDashboard() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const [dashboardData, setDashboardData] = useState({
     checkInTime: '--:--' as string | null,
     leaveBalance: 0,
     nextPayday: 'TBD' as string | null,
-    pendingRequestsCount: 0
+    pendingRequestsCount: 0,
+    weeklyHours: 0,
+    monthlyHours: 0,
+    attendanceThisMonth: 0,
+    attendanceRate: 0
   });
   const [recentRequests, setRecentRequests] = useState<Request[]>([]);
   const [recentPayslips, setRecentPayslips] = useState<Payslip[]>([]);
+  const [recentAttendance, setRecentAttendance] = useState<AttendanceLog[]>([]);
+  const [upcomingLeaves, setUpcomingLeaves] = useState<LeaveRequest[]>([]);
+  const [recentTimesheets, setRecentTimesheets] = useState<TimesheetEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
   const [todayTimesheet, setTodayTimesheet] = useState<TimesheetEntry | null>(null);
@@ -83,12 +93,14 @@ export default function EmployeeDashboard() {
       }
 
       // Fetch real data
-      const [leaveBalance, attendanceLogs, allRequests, recentRequests, payslips] = await Promise.all([
+      const [leaveBalance, attendanceLogs, allRequests, recentRequests, payslips, leaveRequests, timesheetEntries] = await Promise.all([
         getEmployeeLeaveBalance(employeeId, companyId),
         attendanceService.getByEmployee(employeeId),
         selfServiceApi.getAllRequests(),
         selfServiceApi.getRecentRequests(5),
-        selfServiceApi.getRecentPayslips(3)
+        selfServiceApi.getRecentPayslips(3),
+        leaveService.getByEmployee(employeeId),
+        timesheetService.getByEmployee(employeeId, { dateFrom: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0] })
       ]);
 
       // Get today's check-in time
@@ -111,14 +123,69 @@ export default function EmployeeDashboard() {
       // Get next payday (for now, using a placeholder - would need payroll service)
       const nextPayday = 'TBD'; // TODO: Implement payroll service to get actual next payday
 
+      // Calculate weekly hours (last 7 days)
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      const weeklyHours = timesheetEntries
+        .filter(entry => new Date(entry.date) >= weekAgo)
+        .reduce((sum, entry) => sum + (entry.hours_worked || 0), 0);
+
+      // Calculate monthly hours (last 30 days)
+      const monthAgo = new Date();
+      monthAgo.setDate(monthAgo.getDate() - 30);
+      const monthlyHours = timesheetEntries
+        .filter(entry => new Date(entry.date) >= monthAgo)
+        .reduce((sum, entry) => sum + (entry.hours_worked || 0), 0);
+
+      // Calculate attendance stats for current month
+      const currentMonth = new Date().getMonth();
+      const currentYear = new Date().getFullYear();
+      const monthAttendance = attendanceLogs.filter(log => {
+        const logDate = new Date(log.date);
+        return logDate.getMonth() === currentMonth && logDate.getFullYear() === currentYear;
+      });
+      const attendanceThisMonth = monthAttendance.length;
+      
+      // Calculate attendance rate (assuming 22 working days per month)
+      const workingDaysThisMonth = 22; // Could be calculated more accurately
+      const attendanceRate = workingDaysThisMonth > 0 
+        ? Math.round((attendanceThisMonth / workingDaysThisMonth) * 100) 
+        : 0;
+
+      // Get recent attendance (last 5 days)
+      const recentAttendanceLogs = attendanceLogs
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, 5);
+
+      // Get upcoming approved leaves
+      const upcomingLeavesList = leaveRequests
+        .filter(leave => 
+          leave.status === 'Approved' && 
+          new Date(leave.start_date) >= new Date()
+        )
+        .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())
+        .slice(0, 3);
+
+      // Get recent timesheet entries (last 5)
+      const recentTimesheetEntries = timesheetEntries
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, 5);
+
       setDashboardData({
         checkInTime,
         leaveBalance: Math.floor(totalLeaveBalance),
         nextPayday,
-        pendingRequestsCount
+        pendingRequestsCount,
+        weeklyHours: Math.round(weeklyHours * 10) / 10,
+        monthlyHours: Math.round(monthlyHours * 10) / 10,
+        attendanceThisMonth,
+        attendanceRate
       });
       setRecentRequests(recentRequests);
       setRecentPayslips(payslips);
+      setRecentAttendance(recentAttendanceLogs);
+      setUpcomingLeaves(upcomingLeavesList);
+      setRecentTimesheets(recentTimesheetEntries);
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
       toast.error('Failed to load dashboard data');
@@ -157,12 +224,12 @@ export default function EmployeeDashboard() {
         : null);
     
     if (!employeeId) {
-      toast.error('Employee ID not found');
+      toast.error(t('timesheet.employeeIdNotFound'));
       return;
     }
 
     if (timesheetForm.hours_worked <= 0) {
-      toast.error('Please enter hours worked');
+      toast.error(t('timesheet.pleaseEnterHours'));
       return;
     }
 
@@ -177,7 +244,7 @@ export default function EmployeeDashboard() {
         project_name: timesheetForm.project_name,
         task_type: timesheetForm.task_type
       });
-      toast.success('Timesheet saved successfully!');
+      toast.success(t('timesheet.savedSuccessfully'));
       await loadTodayTimesheet();
       setIsTimesheetModalOpen(false);
     } catch (error: any) {
@@ -195,7 +262,7 @@ export default function EmployeeDashboard() {
         : null);
     
     if (!employeeId) {
-      toast.error('Employee ID not found');
+      toast.error(t('timesheet.employeeIdNotFound'));
       return;
     }
 
@@ -218,7 +285,7 @@ export default function EmployeeDashboard() {
         
         const today = new Date().toISOString().split('T')[0];
         await timesheetService.submitDaily(employeeId, today);
-        toast.success('Daily timesheet report submitted successfully!');
+        toast.success(t('timesheet.submittedSuccessfully'));
       } else {
         // Weekly submission
         const today = new Date();
@@ -228,7 +295,7 @@ export default function EmployeeDashboard() {
         const weekStartDate = weekStart.toISOString().split('T')[0];
         
         await timesheetService.submitWeekly(employeeId, weekStartDate);
-        toast.success('Weekly timesheet report submitted successfully!');
+        toast.success(t('timesheet.submittedSuccessfully'));
       }
       
       await loadTodayTimesheet();
@@ -274,7 +341,7 @@ export default function EmployeeDashboard() {
     <div className="space-y-4">
       {/* Welcome Header - Mobile App Style */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-foreground mb-1">Welcome back!</h1>
+        <h1 className="text-2xl font-bold text-foreground mb-1">{t('employeeDashboard.welcomeBack')}</h1>
         <p className="text-muted-foreground text-sm">{employeeFirstName}</p>
       </div>
 
@@ -285,14 +352,14 @@ export default function EmployeeDashboard() {
           className="flex items-center justify-center gap-2 px-4 py-3 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-colors font-medium shadow-lg shadow-primary/20"
         >
           <Plus className="w-4 h-4" />
-          Submit Request
+          {t('employeeDashboard.submitRequest')}
         </button>
         <button
           onClick={() => setIsTimesheetModalOpen(true)}
           className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors font-medium shadow-lg shadow-blue-500/20"
         >
           <Clock className="w-4 h-4" />
-          {todayTimesheet ? 'Edit Timesheet' : 'Log Time'}
+          {todayTimesheet ? t('employeeDashboard.editTimesheet') : t('employeeDashboard.logTime')}
         </button>
       </div>
 
@@ -300,30 +367,159 @@ export default function EmployeeDashboard() {
       <div className="grid grid-cols-2 gap-3">
         <KPICard
           icon={Clock}
-          title="Check-in Time"
+          title={t('employeeDashboard.checkInTime')}
           value={dashboardData.checkInTime || '--:--'}
-          trend="+2.5%"
         />
         <KPICard
           icon={Calendar}
-          title="Leave Balance"
-          value={`${dashboardData.leaveBalance} Days`}
+          title={t('employeeDashboard.leaveBalance')}
+          value={`${dashboardData.leaveBalance} ${t('employeeDashboard.days')}`}
         />
         <KPICard
-          icon={DollarSign}
-          title="Next Payday"
-          value={dashboardData.nextPayday || 'TBD'}
+          icon={BarChart3}
+          title={t('employeeDashboard.weeklyHours')}
+          value={`${dashboardData.weeklyHours}h`}
+        />
+        <KPICard
+          icon={TrendingUp}
+          title={t('employeeDashboard.monthlyHours')}
+          value={`${dashboardData.monthlyHours}h`}
+        />
+        <KPICard
+          icon={Activity}
+          title={t('employeeDashboard.attendanceRate')}
+          value={`${dashboardData.attendanceRate}%`}
         />
         <KPICard
           icon={AlertCircle}
-          title="Pending Requests"
+          title={t('employeeDashboard.pendingRequests')}
           value={dashboardData.pendingRequestsCount}
-          trend={dashboardData.pendingRequestsCount > 0 ? '-5%' : undefined}
         />
       </div>
 
-      {/* Two Panels - Mobile App Style (Stacked) */}
+      {/* Additional Data Panels - Mobile App Style (Stacked) */}
       <div className="space-y-4">
+        {/* Recent Attendance */}
+        <div className="bg-card border border-border rounded-2xl p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold text-foreground">{t('employeeDashboard.recentAttendance')}</h2>
+            <a href="/self-service/attendance" className="text-xs text-primary hover:underline font-medium">
+              {t('employeeDashboard.viewAll')}
+            </a>
+          </div>
+
+          {recentAttendance.length === 0 ? (
+            <EmptyState
+              icon={Clock}
+              title={t('employeeDashboard.noAttendanceRecords')}
+              description={t('employeeDashboard.attendanceRecordsWillAppear')}
+            />
+          ) : (
+            <div className="space-y-2">
+              {recentAttendance.map((log, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between p-3 bg-muted/30 rounded-xl hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex-1">
+                    <p className="font-medium text-sm text-foreground">
+                      {new Date(log.date).toLocaleDateString('en-US', { 
+                        weekday: 'short', 
+                        month: 'short', 
+                        day: 'numeric' 
+                      })}
+                    </p>
+                    <div className="flex items-center gap-3 mt-1">
+                      {log.checkIn && (
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-green-400" />
+                          In: {new Date(log.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                      {log.checkOut && (
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                          <XCircle className="w-3 h-3 text-red-400" />
+                          Out: {new Date(log.checkOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {log.totalHours && (
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-foreground">{log.totalHours.toFixed(1)}h</p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Upcoming Leaves */}
+        {upcomingLeaves.length > 0 && (
+          <div className="bg-card border border-border rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold text-foreground">{t('employeeDashboard.upcomingLeaves')}</h2>
+              <a href="/self-service/leaves" className="text-xs text-primary hover:underline font-medium">
+                View All
+              </a>
+            </div>
+            <div className="space-y-2">
+              {upcomingLeaves.map((leave) => (
+                <div
+                  key={leave.id}
+                  className="flex items-center justify-between p-3 bg-muted/30 rounded-xl hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex-1">
+                    <p className="font-medium text-sm text-foreground">{leave.leave_type}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(leave.start_date).toLocaleDateString()} - {new Date(leave.end_date).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <StatusBadge status={leave.status} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Recent Timesheets */}
+        {recentTimesheets.length > 0 && (
+          <div className="bg-card border border-border rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold text-foreground">{t('employeeDashboard.recentTimesheets')}</h2>
+              <a href="/self-service/timesheet" className="text-xs text-primary hover:underline font-medium">
+                View All
+              </a>
+            </div>
+            <div className="space-y-2">
+              {recentTimesheets.slice(0, 3).map((entry) => (
+                <div
+                  key={entry.id}
+                  className="flex items-center justify-between p-3 bg-muted/30 rounded-xl hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex-1">
+                    <p className="font-medium text-sm text-foreground">
+                      {new Date(entry.date).toLocaleDateString('en-US', { 
+                        month: 'short', 
+                        day: 'numeric',
+                        year: 'numeric'
+                      })}
+                    </p>
+                    {entry.project_name && (
+                      <p className="text-xs text-muted-foreground">{entry.project_name}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold text-foreground">{entry.hours_worked}h</span>
+                    <StatusBadge status={entry.is_submitted ? 'Completed' : 'Draft'} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Recent Payslips */}
         <div className="bg-card border border-border rounded-2xl p-4 shadow-sm">
           <div className="flex items-center justify-between mb-4">
@@ -417,23 +613,23 @@ export default function EmployeeDashboard() {
       {todayTimesheet && (
         <div className="bg-card border border-border rounded-2xl p-3 md:p-4 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
-            <h2 className="text-sm md:text-base font-semibold text-foreground">Today's Timesheet</h2>
+            <h2 className="text-sm md:text-base font-semibold text-foreground">{t('employeeDashboard.todayTimesheet')}</h2>
             <StatusBadge status={todayTimesheet.is_submitted ? 'Completed' : 'Draft'} />
           </div>
           <div className="space-y-2 mb-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs md:text-sm text-muted-foreground">Hours Worked</span>
+              <span className="text-xs md:text-sm text-muted-foreground">{t('employeeDashboard.hoursWorked')}</span>
               <span className="font-semibold text-sm md:text-base">{todayTimesheet.hours_worked}h</span>
             </div>
             {todayTimesheet.description && (
               <div className="text-xs md:text-sm">
-                <span className="text-muted-foreground">Description: </span>
+                <span className="text-muted-foreground">{t('employeeDashboard.description')}: </span>
                 <span className="line-clamp-2">{todayTimesheet.description}</span>
               </div>
             )}
             {todayTimesheet.project_name && (
               <div className="text-xs md:text-sm">
-                <span className="text-muted-foreground">Project: </span>
+                <span className="text-muted-foreground">{t('employeeDashboard.project')}: </span>
                 <span>{todayTimesheet.project_name}</span>
               </div>
             )}
@@ -451,14 +647,14 @@ export default function EmployeeDashboard() {
                 className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 md:py-2 bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors text-sm font-medium"
               >
                 <Save className="w-4 h-4" />
-                Edit
+                {t('common.edit')}
               </button>
                 <button
                   onClick={() => handleSubmitTimesheetReport('daily')}
                   className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 md:py-2 bg-green-500/10 text-green-500 rounded-lg hover:bg-green-500/20 transition-colors text-sm font-medium"
                 >
                   <Send className="w-4 h-4" />
-                  Submit Report
+                  {t('employeeDashboard.submitReport')}
                 </button>
               </div>
             )}
@@ -476,18 +672,18 @@ export default function EmployeeDashboard() {
       <Modal
         isOpen={isTimesheetModalOpen}
         onClose={() => setIsTimesheetModalOpen(false)}
-        title={todayTimesheet ? 'Edit Timesheet Entry' : 'Log Time Today'}
+        title={todayTimesheet ? t('timesheet.editTimesheet') : t('timesheet.logTime')}
         size="md"
       >
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>Hours Worked *</Label>
+            <Label>{t('timesheet.hoursWorked')} *</Label>
             <Input
               type="number"
               step="0.25"
               min="0"
               max="24"
-              value={timesheetForm.hours_worked}
+              value={timesheetForm.hours_worked || ''}
               onChange={(e) => setTimesheetForm({ ...timesheetForm, hours_worked: parseFloat(e.target.value) || 0 })}
               placeholder="8.5"
             />
@@ -495,18 +691,18 @@ export default function EmployeeDashboard() {
           </div>
 
           <div className="space-y-2">
-            <Label>Project Name</Label>
+            <Label>{t('timesheet.projectName')}</Label>
             <Input
-              value={timesheetForm.project_name}
+              value={timesheetForm.project_name || ''}
               onChange={(e) => setTimesheetForm({ ...timesheetForm, project_name: e.target.value })}
               placeholder="Project name (optional)"
             />
           </div>
 
           <div className="space-y-2">
-            <Label>Task Type</Label>
+            <Label>{t('timesheet.taskType')}</Label>
             <Select
-              value={timesheetForm.task_type}
+              value={timesheetForm.task_type || ''}
               onValueChange={(value) => setTimesheetForm({ ...timesheetForm, task_type: value })}
             >
               <SelectTrigger>
@@ -525,9 +721,9 @@ export default function EmployeeDashboard() {
           </div>
 
           <div className="space-y-2">
-            <Label>Description</Label>
+            <Label>{t('timesheet.description')}</Label>
             <Textarea
-              value={timesheetForm.description}
+              value={timesheetForm.description || ''}
               onChange={(e) => setTimesheetForm({ ...timesheetForm, description: e.target.value })}
               placeholder="What work did you do today? (optional)"
               rows={4}

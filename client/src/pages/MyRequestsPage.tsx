@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Search, Filter, Eye, Plus } from 'lucide-react';
 import { selfServiceApi, Request } from '../services/selfServiceApi';
 import { StatusBadge, RequestStatus } from '../components/common/StatusBadge';
@@ -9,6 +10,7 @@ import { REQUEST_CATEGORIES } from '../config/selfServiceRequests';
 import { toast } from 'sonner';
 
 export default function MyRequestsPage() {
+  const { t } = useTranslation();
   const [requests, setRequests] = useState<Request[]>([]);
   const [filteredRequests, setFilteredRequests] = useState<Request[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,7 +39,7 @@ export default function MyRequestsPage() {
       setRequests(data);
     } catch (error) {
       console.error('Failed to load requests:', error);
-      toast.error('Failed to load requests');
+      toast.error(t('requests.failedToLoad'));
     } finally {
       setLoading(false);
     }
@@ -79,7 +81,7 @@ export default function MyRequestsPage() {
 
   const handleRequestSubmitted = () => {
     loadRequests();
-    toast.success('Request submitted successfully!');
+    toast.success(t('requests.requestSubmittedSuccess'));
   };
 
   if (loading) {
@@ -95,15 +97,15 @@ export default function MyRequestsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">My Requests</h1>
-          <p className="text-muted-foreground mt-1">View and track all your submitted requests</p>
+          <h1 className="text-3xl font-bold text-foreground">{t('requests.title')}</h1>
+          <p className="text-muted-foreground mt-1">{t('requests.subtitle')}</p>
         </div>
         <button
           onClick={() => setIsSubmitModalOpen(true)}
           className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium"
         >
           <Plus className="w-5 h-5" />
-          New Request
+          {t('requests.newRequest')}
         </button>
       </div>
 
@@ -116,7 +118,7 @@ export default function MyRequestsPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="Search by ID or type..."
+                placeholder={t('requests.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground"
@@ -130,12 +132,12 @@ export default function MyRequestsPage() {
             onChange={(e) => setStatusFilter(e.target.value as RequestStatus | '')}
             className="px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground"
           >
-            <option value="">All Statuses</option>
-            <option value="Pending">Pending</option>
-            <option value="In Review">In Review</option>
-            <option value="Approved">Approved</option>
-            <option value="Rejected">Rejected</option>
-            <option value="Cancelled">Cancelled</option>
+            <option value="">{t('requests.allStatuses')}</option>
+            <option value="Pending">{t('requests.pending')}</option>
+            <option value="In Review">{t('requests.inReview')}</option>
+            <option value="Approved">{t('requests.approved')}</option>
+            <option value="Rejected">{t('requests.rejected')}</option>
+            <option value="Cancelled">{t('requests.cancelled')}</option>
           </select>
 
           {/* Category Filter */}
@@ -144,7 +146,7 @@ export default function MyRequestsPage() {
             onChange={(e) => setCategoryFilter(e.target.value)}
             className="px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground"
           >
-            <option value="">All Categories</option>
+            <option value="">{t('requests.allCategories')}</option>
             {REQUEST_CATEGORIES.map(cat => (
               <option key={cat.id} value={cat.title}>{cat.title}</option>
             ))}
@@ -157,15 +159,15 @@ export default function MyRequestsPage() {
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
               className="flex-1 px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground"
-              placeholder="From"
+              placeholder={t('requests.from')}
             />
-            <span className="text-muted-foreground">to</span>
+            <span className="text-muted-foreground">{t('requests.to')}</span>
             <input
               type="date"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
               className="flex-1 px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground"
-              placeholder="To"
+              placeholder={t('requests.to')}
             />
           </div>
         </div>
@@ -173,20 +175,20 @@ export default function MyRequestsPage() {
         {/* Active Filters Summary */}
         {(statusFilter || categoryFilter || searchQuery || dateFrom || dateTo) && (
           <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border">
-            <span className="text-sm text-muted-foreground">Active filters:</span>
+            <span className="text-sm text-muted-foreground">{t('requests.activeFilters')}</span>
             {statusFilter && (
               <span className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full">
-                Status: {statusFilter}
+                {t('requests.status')}: {statusFilter}
               </span>
             )}
             {categoryFilter && (
               <span className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full">
-                Category: {categoryFilter}
+                {t('requests.category')}: {categoryFilter}
               </span>
             )}
             {searchQuery && (
               <span className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full">
-                Search: {searchQuery}
+                {t('requests.search')}: {searchQuery}
               </span>
             )}
             <button
@@ -199,7 +201,7 @@ export default function MyRequestsPage() {
               }}
               className="ml-auto text-sm text-primary hover:underline"
             >
-              Clear all
+              {t('requests.clearAll')}
             </button>
           </div>
         )}
@@ -209,12 +211,12 @@ export default function MyRequestsPage() {
       {filteredRequests.length === 0 ? (
         <EmptyState
           icon={Filter}
-          title="No requests found"
+          title={t('requests.noRequestsFound')}
           description={requests.length === 0 
-            ? "You haven't submitted any requests yet" 
-            : "No requests match your current filters"}
+            ? t('requests.noRequestsDescription')
+            : t('requests.noRequestsMatchFilters')}
           action={requests.length === 0 ? {
-            label: 'Submit Request',
+            label: t('requests.submitRequest'),
             onClick: () => setIsSubmitModalOpen(true)
           } : undefined}
         />
@@ -225,25 +227,25 @@ export default function MyRequestsPage() {
               <thead>
                 <tr className="border-b border-border bg-muted/50">
                   <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Request ID
+                    {t('requests.requestId')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Type
+                    {t('requests.type')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Category
+                    {t('requests.categoryLabel')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Date
+                    {t('requests.date')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Status
+                    {t('requests.statusLabel')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Current Approver
+                    {t('requests.currentApprover')}
                   </th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Actions
+                    {t('requests.actions')}
                   </th>
                 </tr>
               </thead>
@@ -283,7 +285,7 @@ export default function MyRequestsPage() {
                         className="inline-flex items-center gap-1 px-3 py-1 text-sm text-primary hover:bg-primary/10 rounded-lg transition-colors"
                       >
                         <Eye className="w-4 h-4" />
-                        View
+                        {t('requests.view')}
                       </button>
                     </td>
                   </tr>

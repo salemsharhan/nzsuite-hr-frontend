@@ -102,25 +102,44 @@ export const documentService = {
   },
 
   // Document operations
-  async getAll(employeeId?: string) {
+  async getAll(employeeId?: string, companyId?: string) {
     try {
+      // If companyId is provided, first get all employees for that company
+      let employeeIds: string[] | null = null;
+      if (companyId && !employeeId) {
+        const { employeeService } = await import('./employeeService');
+        const employees = await employeeService.getAll(companyId);
+        employeeIds = employees.map(emp => emp.id);
+        if (employeeIds.length === 0) {
+          return []; // No employees in this company
+        }
+      }
+
       const params: any = {
-        select: '*,folders(*)',
+        select: '*,folders(*),employees!documents_employee_id_fkey(id,company_id)',
         order: 'created_at.desc'
       };
       
-      // Filter by employee_id if provided
-      if (employeeId) {
+      // Filter by employee IDs if company filter is applied
+      if (employeeIds && employeeIds.length > 0) {
+        params.employee_id = `in.(${employeeIds.join(',')})`;
+      } else if (employeeId) {
         params.employee_id = `eq.${employeeId}`;
       }
       
       const response = await adminApi.get('/documents', { params });
       // Map database columns to interface
-      const documents = (response.data || []).map((doc: any) => ({
+      let documents = (response.data || []).map((doc: any) => ({
         ...doc,
         folder: doc.folders?.name || doc.folder || doc.category, // Use folder name from relation
         folder_id: doc.folder_id || doc.folders?.id
       }));
+      
+      // Additional filter by company_id if needed (double-check)
+      if (companyId) {
+        documents = documents.filter((doc: any) => doc.employees?.company_id === companyId);
+      }
+      
       return documents as Document[];
     } catch (error: any) {
       if (error.response && error.response.status === 404) {

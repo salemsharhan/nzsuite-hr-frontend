@@ -93,7 +93,7 @@ function App() {
   return (
     <ErrorBoundary>
       <LanguageProvider>
-        <ThemeProvider defaultTheme="dark">
+        <ThemeProvider defaultTheme="dark" switchable={true}>
           <AuthProvider>
             <TooltipProvider>
               <Toaster />

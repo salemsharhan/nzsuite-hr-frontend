@@ -129,10 +129,14 @@ export interface Employee {
   createdAt?: string;
   updatedAt?: string;
   
-  // Legacy field names for compatibility
+  // Legacy field names for compatibility (API snake_case and display helpers)
   employee_id?: string;
   first_name?: string;
+  middle_name?: string;
   last_name?: string;
+  arabic_first_name?: string;
+  arabic_middle_name?: string;
+  arabic_last_name?: string;
   designation?: string;
   join_date?: string;
   employment_type?: 'Full Time' | 'Part Time' | 'Consultant';

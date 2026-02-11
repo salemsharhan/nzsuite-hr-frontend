@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { leaveService, LeaveRequest } from '@/services/leaveService';
 import { useAuth } from '@/contexts/AuthContext';
 import { employeeService } from '@/services/employeeService';
+import { getEmployeeDisplayName } from '@/utils/employeeName';
 
 interface CalendarEvent {
   id: string;
@@ -106,8 +107,8 @@ export default function LeaveCalendarTab() {
         })
         .map(req => {
           const employee = employeesData.find(emp => emp.id === req.employee_id);
-          const employeeName = employee 
-            ? `${employee.firstName || employee.first_name || ''} ${employee.lastName || employee.last_name || ''}`.trim() || 'Unknown'
+          const employeeName = employee
+            ? getEmployeeDisplayName(employee) || 'Unknown'
             : 'Unknown';
           
           const getLeaveTypeColor = (type: string) => {

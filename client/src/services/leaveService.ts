@@ -11,15 +11,24 @@ export interface LeaveRequest {
   created_at: string;
   employees?: {
     first_name: string;
+    middle_name?: string;
     last_name: string;
+    arabic_first_name?: string;
+    arabic_middle_name?: string;
+    arabic_last_name?: string;
     employee_id: string;
     avatar_url?: string;
     reporting_manager_id?: string;
     department?: string;
+    company_id?: string;
     reporting_manager?: {
       id: string;
       first_name: string;
+      middle_name?: string;
       last_name: string;
+      arabic_first_name?: string;
+      arabic_middle_name?: string;
+      arabic_last_name?: string;
       employee_id: string;
     };
   };
@@ -52,7 +61,7 @@ export const leaveService = {
 
       // First, get leave requests with employee data
       // For reporting manager, we'll fetch it separately to avoid nested relationship issues
-      let query = '/leave_requests?select=*,employees!leave_requests_employee_id_fkey(id,first_name,last_name,employee_id,avatar_url,reporting_manager_id,department,company_id)&order=created_at.desc';
+      let query = '/leave_requests?select=*,employees!leave_requests_employee_id_fkey(id,first_name,middle_name,last_name,arabic_first_name,arabic_middle_name,arabic_last_name,employee_id,avatar_url,reporting_manager_id,department,company_id)&order=created_at.desc';
       
       // Apply filters
       const params: string[] = [];
@@ -103,13 +112,11 @@ export const leaveService = {
         .filter((id): id is string => !!id);
       
       if (managerIds.length > 0) {
-        const uniqueManagerIds = [...new Set(managerIds)];
+        const uniqueManagerIds = Array.from(new Set(managerIds));
         // Use 'in' filter to get all managers in one query
-        const managerQuery = `/employees?select=id,first_name,last_name,employee_id&id=in.(${uniqueManagerIds.join(',')})`;
+        const managerQuery = `/employees?select=id,first_name,middle_name,last_name,arabic_first_name,arabic_middle_name,arabic_last_name,employee_id&id=in.(${uniqueManagerIds.join(',')})`;
         const managerResponse = await api.get(managerQuery);
-        const managers = managerResponse.data as Array<{id: string; first_name: string; last_name: string; employee_id: string}>;
-        
-        // Map managers to leave requests
+        const managers = managerResponse.data as Array<{ id: string; first_name: string; middle_name?: string; last_name: string; arabic_first_name?: string; arabic_middle_name?: string; arabic_last_name?: string; employee_id: string }>;
         const managerMap = new Map(managers.map(m => [m.id, m]));
         leaveRequests.forEach(lr => {
           if (lr.employees?.reporting_manager_id) {
@@ -118,7 +125,11 @@ export const leaveService = {
               lr.employees.reporting_manager = {
                 id: manager.id,
                 first_name: manager.first_name,
+                middle_name: manager.middle_name,
                 last_name: manager.last_name,
+                arabic_first_name: manager.arabic_first_name,
+                arabic_middle_name: manager.arabic_middle_name,
+                arabic_last_name: manager.arabic_last_name,
                 employee_id: manager.employee_id
               };
             }

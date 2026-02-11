@@ -11,6 +11,7 @@ import { getEmployeeLeaveBalance } from '../services/leaveBalanceService';
 import { attendanceService, AttendanceLog } from '../services/attendanceService';
 import { timesheetService, TimesheetEntry } from '../services/timesheetService';
 import { leaveService, LeaveRequest } from '../services/leaveService';
+import { getEmployeeDisplayName } from '../utils/employeeName';
 import Modal from '../components/common/Modal';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -48,12 +49,10 @@ export default function EmployeeDashboard() {
     task_type: ''
   });
 
-  // Get employee name from session storage or user
-  const employeeFirstName = user ? 
-    (sessionStorage.getItem('employee_data') 
-      ? JSON.parse(sessionStorage.getItem('employee_data') || '{}')?.first_name || 'Employee'
-      : (user as any)?.first_name || 'Employee')
-    : 'Employee';
+  // Get employee name (Arabic when language is Arabic)
+  const employeeDataRaw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('employee_data') : null;
+  const employeeDataObj = employeeDataRaw ? (() => { try { return JSON.parse(employeeDataRaw); } catch { return null; } })() : null;
+  const employeeFirstName = user && employeeDataObj ? getEmployeeDisplayName(employeeDataObj as any) || 'Employee' : (user ? 'Employee' : 'Employee');
 
   useEffect(() => {
     loadDashboardData();
@@ -106,8 +105,8 @@ export default function EmployeeDashboard() {
       // Get today's check-in time
       const today = new Date().toISOString().split('T')[0];
       const todayLog = attendanceLogs.find(log => log.date === today);
-      const checkInTime = todayLog?.checkIn 
-        ? new Date(todayLog.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      const checkInTime = todayLog?.check_in 
+        ? new Date(todayLog.check_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         : null;
 
       // Calculate total leave balance (annual + sick + emergency)
@@ -430,25 +429,30 @@ export default function EmployeeDashboard() {
                       })}
                     </p>
                     <div className="flex items-center gap-3 mt-1">
-                      {log.checkIn && (
+                      {log.check_in && (
                         <span className="text-xs text-muted-foreground flex items-center gap-1">
                           <CheckCircle2 className="w-3 h-3 text-green-400" />
-                          In: {new Date(log.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          In: {new Date(log.check_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
                       )}
-                      {log.checkOut && (
+                      {log.check_out && (
                         <span className="text-xs text-muted-foreground flex items-center gap-1">
                           <XCircle className="w-3 h-3 text-red-400" />
-                          Out: {new Date(log.checkOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          Out: {new Date(log.check_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
                       )}
                     </div>
                   </div>
-                  {log.totalHours && (
-                    <div className="text-right">
-                      <p className="text-sm font-semibold text-foreground">{log.totalHours.toFixed(1)}h</p>
-                    </div>
-                  )}
+                  {log.check_in && log.check_out && (() => {
+                    const inMs = new Date(log.check_in).getTime();
+                    const outMs = new Date(log.check_out).getTime();
+                    const hours = (outMs - inMs) / (1000 * 60 * 60);
+                    return hours > 0 ? (
+                      <div className="text-right">
+                        <p className="text-sm font-semibold text-foreground">{hours.toFixed(1)}h</p>
+                      </div>
+                    ) : null;
+                  })()}
                 </div>
               ))}
             </div>

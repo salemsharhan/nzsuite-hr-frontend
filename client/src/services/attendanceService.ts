@@ -979,28 +979,16 @@ export const attendanceService = {
         order: 'timestamp.desc'
       };
       
-      // Apply date range filter on timestamp field
-      // PostgREST requires separate parameters for gte and lte
-      if (filters?.dateFrom) {
-        // Convert date to start of day timestamp
-        const dateFromTimestamp = new Date(`${filters.dateFrom}T00:00:00.000Z`).toISOString();
-        params.timestamp = `gte.${dateFromTimestamp}`;
-      }
-      
-      if (filters?.dateTo) {
-        // Convert date to end of day timestamp
-        const dateToTimestamp = new Date(`${filters.dateTo}T23:59:59.999Z`).toISOString();
-        // If dateFrom is also set, we need to use both filters
-        // PostgREST will AND them automatically when both are present
-        if (filters?.dateFrom) {
-          // We need to make two separate requests or use a different approach
-          // For now, we'll filter on the client side for dateTo if dateFrom is also set
-          // Or we can use a range query
-          params['timestamp'] = `gte.${new Date(`${filters.dateFrom}T00:00:00.000Z`).toISOString()}`;
-          // Store dateTo for client-side filtering
-        } else {
-          params.timestamp = `lte.${dateToTimestamp}`;
-        }
+      // Apply date range filter on timestamp field.
+      // PostgREST accepts multiple filters on the same column: send both gte and lte so the server returns only records in range.
+      const dateFromISO = filters?.dateFrom ? new Date(`${filters.dateFrom}T00:00:00.000Z`).toISOString() : null;
+      const dateToISO = filters?.dateTo ? new Date(`${filters.dateTo}T23:59:59.999Z`).toISOString() : null;
+      if (dateFromISO && dateToISO) {
+        params.timestamp = [`gte.${dateFromISO}`, `lte.${dateToISO}`];
+      } else if (dateFromISO) {
+        params.timestamp = `gte.${dateFromISO}`;
+      } else if (dateToISO) {
+        params.timestamp = `lte.${dateToISO}`;
       }
       
       // Filter by employee IDs (integer IDs from attendances table)
@@ -1018,10 +1006,19 @@ export const attendanceService = {
       params.limit = 10000; // Fetch up to 10,000 records for aggregation
       params.offset = 0; // Start from beginning
       
+      // Serialize params so multiple values for the same key (e.g. timestamp=gte & timestamp=lte) are sent as repeated keys, not as timestamp[]=...
+      const paramsSerializer = (p: Record<string, unknown>) =>
+        Object.entries(p).flatMap(([k, v]) =>
+          Array.isArray(v)
+            ? v.map((val) => `${encodeURIComponent(k)}=${encodeURIComponent(String(val))}`)
+            : [`${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`]
+        ).join('&');
+
       // Fetch attendance records with filters (all records, no pagination yet)
       // Request total count in headers
       const response = await adminApi.get<RawAttendance[]>('/attendances', { 
         params,
+        paramsSerializer,
         headers: {
           'Prefer': 'count=exact'
         }

@@ -1090,5 +1090,26 @@
     "profile": "Profile",
     "attendance": "Attendance",
     "leaves": "Leaves"
+  },
+  "payrollReport": {
+    "sn": "#",
+    "code": "Code",
+    "name": "Name",
+    "join": "Join",
+    "scheduled": "Sched.",
+    "present": "Present",
+    "leave": "Leave",
+    "absent": "Absent",
+    "basic": "Basic",
+    "salary": "Salary",
+    "paidLeave": "Paid leave",
+    "housing": "Housing",
+    "other": "Other",
+    "gross": "Gross",
+    "net": "Net",
+    "toPay": "To pay",
+    "method": "Method",
+    "refund": "Refund",
+    "notes": "Notes"
   }
 }

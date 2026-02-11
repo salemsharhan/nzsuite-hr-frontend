@@ -20,14 +20,14 @@ export function getEmployeeDisplayName(
   if (!employee) return options.fallback || '';
 
   const { includeMiddle = true } = options;
-  const currentLang = i18n.language || 'en';
+  const currentLang = (i18n.language || 'en').split('-')[0];
   const isArabic = currentLang === 'ar';
 
   if (isArabic) {
     // In Arabic mode: prefer Arabic name, fallback to English
-    const arabicFirst = employee.arabic_first_name || employee.arabicFirstName;
-    const arabicMiddle = includeMiddle ? (employee.arabic_middle_name || employee.arabicMiddleName) : null;
-    const arabicLast = employee.arabic_last_name || employee.arabicLastName;
+    const arabicFirst = employee.arabicFirstName || employee.arabicFirstName;
+    const arabicMiddle = includeMiddle ? (employee.arabicMiddleName || employee.arabicMiddleName) : null;
+    const arabicLast = employee.arabicLastName || employee.arabicLastName;
 
     if (arabicFirst || arabicMiddle || arabicLast) {
       // Arabic name exists
@@ -59,7 +59,7 @@ export function getEmployeeDisplayName(
  */
 export function getEmployeeFirstName(employee: Employee | null | undefined): string {
   if (!employee) return '';
-  const currentLang = i18n.language || 'en';
+  const currentLang = (i18n.language || 'en').split('-')[0];
   const isArabic = currentLang === 'ar';
 
   if (isArabic) {
@@ -73,7 +73,7 @@ export function getEmployeeFirstName(employee: Employee | null | undefined): str
  */
 export function getEmployeeLastName(employee: Employee | null | undefined): string {
   if (!employee) return '';
-  const currentLang = i18n.language || 'en';
+  const currentLang = (i18n.language || 'en').split('-')[0];
   const isArabic = currentLang === 'ar';
 
   if (isArabic) {
@@ -87,7 +87,7 @@ export function getEmployeeLastName(employee: Employee | null | undefined): stri
  */
 export function getEmployeeInitials(employee: Employee | null | undefined): string {
   if (!employee) return 'U';
-  const currentLang = i18n.language || 'en';
+  const currentLang = (i18n.language || 'en').split('-')[0];
   const isArabic = currentLang === 'ar';
 
   if (isArabic) {

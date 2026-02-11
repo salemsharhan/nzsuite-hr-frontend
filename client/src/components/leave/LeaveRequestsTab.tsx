@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { leaveService, LeaveRequest } from '@/services/leaveService';
 import { useAuth } from '@/contexts/AuthContext';
+import { getEmployeeDisplayName } from '@/utils/employeeName';
 import { toast } from 'sonner';
 
 // Interface for display
@@ -42,12 +43,12 @@ interface DisplayLeaveRequest {
 
 // Helper function to map API response to display format
 function mapLeaveRequestToDisplay(request: LeaveRequest): DisplayLeaveRequest {
-  const employeeName = request.employees 
-    ? `${request.employees.first_name || ''} ${request.employees.last_name || ''}`.trim() || 'Unknown'
+  const employeeName = request.employees
+    ? getEmployeeDisplayName(request.employees as any) || 'Unknown'
     : 'Unknown';
-  
+
   const reportingManagerName = request.employees?.reporting_manager
-    ? `${request.employees.reporting_manager.first_name || ''} ${request.employees.reporting_manager.last_name || ''}`.trim() || 'N/A'
+    ? getEmployeeDisplayName(request.employees.reporting_manager as any) || 'N/A'
     : 'N/A';
   
   const getLeaveTypeColor = (type: string) => {

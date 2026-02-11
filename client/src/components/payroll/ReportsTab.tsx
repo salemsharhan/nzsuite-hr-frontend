@@ -1,11 +1,135 @@
-import { Download, FileText, TrendingUp, DollarSign } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Download, FileText, TrendingUp, DollarSign, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useAuth } from '@/contexts/AuthContext';
+import { buildKdaPayrollReport } from '@/services/payrollReportService';
+import { buildKdaPayrollCsv, downloadCsv } from '@/utils/payrollReportExport';
+import { employeeService } from '@/services/employeeService';
+import { toast } from 'sonner';
+
+const MONTHS = [
+  { value: '1', label: 'January' }, { value: '2', label: 'February' }, { value: '3', label: 'March' },
+  { value: '4', label: 'April' }, { value: '5', label: 'May' }, { value: '6', label: 'June' },
+  { value: '7', label: 'July' }, { value: '8', label: 'August' }, { value: '9', label: 'September' },
+  { value: '10', label: 'October' }, { value: '11', label: 'November' }, { value: '12', label: 'December' }
+];
 
 export default function ReportsTab() {
+  const { user } = useAuth();
+  const [kdaMonth, setKdaMonth] = useState('12');
+  const [kdaYear, setKdaYear] = useState('2025');
+  const [kdaDepartment, setKdaDepartment] = useState<string>('all');
+  const [departmentOptions, setDepartmentOptions] = useState<{ value: string; label: string }[]>([]);
+  const [kdaLoading, setKdaLoading] = useState(false);
+
+  const companyId = user?.company_id;
+
+  useEffect(() => {
+    if (!companyId) return;
+    employeeService.getAll(companyId).then((employees) => {
+      const depts = new Set<string>();
+      employees.forEach((e) => {
+        const d = e.department || (e as any).departments?.name;
+        if (d) depts.add(d);
+      });
+      setDepartmentOptions([
+        { value: 'all', label: 'All Departments' },
+        ...Array.from(depts).sort().map((d) => ({ value: d, label: d }))
+      ]);
+    });
+  }, [companyId]);
+
+  const handleGenerateKdaReport = async () => {
+    if (!companyId) {
+      toast.error('Company not set. Please log in with a company account.');
+      return;
+    }
+    setKdaLoading(true);
+    try {
+      const report = await buildKdaPayrollReport({
+        companyId,
+        month: parseInt(kdaMonth, 10),
+        year: parseInt(kdaYear, 10),
+        department: kdaDepartment === 'all' ? undefined : kdaDepartment
+      });
+      const csv = buildKdaPayrollCsv({
+        companyName: report.companyName,
+        companyNameArabic: report.companyNameArabic,
+        periodLabel: report.periodLabel,
+        departmentLabel: report.departmentLabel,
+        rows: report.rows
+      });
+      const monthName = MONTHS.find((m) => m.value === kdaMonth)?.label || kdaMonth;
+      const filename = `Payroll_Report_${monthName}_${report.periodLabel.replace(/\s/g, '_')}.csv`;
+      downloadCsv(csv, filename);
+      toast.success(`Report generated: ${report.rows.length} employees. Opening download.`);
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to generate payroll report. Please try again.');
+    } finally {
+      setKdaLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {/* KDA Bilingual Payroll Report (Excel-like) */}
+      <Card className="p-6 border-primary/20 bg-primary/5">
+        <h4 className="font-semibold mb-1">Bilingual Payroll Report (KDA Format)</h4>
+        <p className="text-sm text-muted-foreground mb-4">
+          Generate a payroll report matching the Kuwait Dyslexia Association template: bilingual headers (Arabic / English), pro-rated salary, paid leave, allowances, deductions, net salary, and payment method. Export opens in Excel.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+          <div>
+            <label className="text-sm font-medium mb-2 block">Month</label>
+            <Select value={kdaMonth} onValueChange={setKdaMonth}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {MONTHS.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-2 block">Year</label>
+            <Select value={kdaYear} onValueChange={setKdaYear}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="2024">2024</SelectItem>
+                <SelectItem value="2025">2025</SelectItem>
+                <SelectItem value="2026">2026</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-2 block">Department</label>
+            <Select value={kdaDepartment} onValueChange={setKdaDepartment}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {departmentOptions.map((d) => (
+                  <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-end">
+            <Button onClick={handleGenerateKdaReport} disabled={kdaLoading}>
+              {kdaLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+              Generate & Download CSV
+            </Button>
+          </div>
+        </div>
+      </Card>
+
       {/* Report Generation */}
       <Card className="p-6">
         <h4 className="font-semibold mb-4">Generate Reports</h4>

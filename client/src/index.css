@@ -254,4 +254,15 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+
+  /* Payroll number inputs: hide spinners so values (e.g. 370.000) are fully visible */
+  .num-input[type="number"] {
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+  .num-input[type="number"]::-webkit-outer-spin-button,
+  .num-input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
 }

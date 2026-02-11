@@ -20,6 +20,7 @@ import {
 import { cn } from '../common/UIComponents';
 import { useLanguage } from '../../context/LanguageContext';
 import { useTheme } from '../../contexts/ThemeContext';
+import { getEmployeeDisplayName } from '../../utils/employeeName';
 
 export const EmployeeLayout = ({ children }: { children: React.ReactNode }) => {
   const [location, setLocation] = useLocation();
@@ -33,12 +34,10 @@ export const EmployeeLayout = ({ children }: { children: React.ReactNode }) => {
     changeLanguage(language === 'en' ? 'ar' : 'en');
   };
 
-  // Get employee name
-  const employeeName = user ? 
-    (sessionStorage.getItem('employee_data') 
-      ? JSON.parse(sessionStorage.getItem('employee_data') || '{}')?.first_name || 'Employee'
-      : 'Employee')
-    : 'Employee';
+  // Get employee name (Arabic when language is Arabic)
+  const employeeData = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('employee_data') : null;
+  const employeeObj = employeeData ? (() => { try { return JSON.parse(employeeData); } catch { return null; } })() : null;
+  const employeeName = user && employeeObj ? getEmployeeDisplayName(employeeObj as any) || 'Employee' : (user ? 'Employee' : 'Employee');
 
   const handleLogout = async (e: React.MouseEvent) => {
     e.preventDefault();

@@ -10,6 +10,7 @@ import LeaveBalancesTab from '../components/leave/LeaveBalancesTab';
 import LeaveCalendarTab from '@/components/leave/LeaveCalendarTab';
 import LeaveReportsTab from '@/components/leave/LeaveReportsTab';
 import { leaveService, LeaveRequest } from '@/services/leaveService';
+import { getEmployeeDisplayName } from '@/utils/employeeName';
 
 export default function LeaveManagementPage() {
   const [activeTab, setActiveTab] = useState('overview');
@@ -79,14 +80,14 @@ export default function LeaveManagementPage() {
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .slice(0, 5)
     .map(req => {
-      const employeeName = req.employees 
-        ? `${req.employees.first_name || ''} ${req.employees.last_name || ''}`.trim() || 'Unknown'
+      const employeeName = req.employees
+        ? getEmployeeDisplayName(req.employees as any) || 'Unknown'
         : 'Unknown';
       const start = new Date(req.start_date);
       const end = new Date(req.end_date);
       const diffTime = Math.abs(end.getTime() - start.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-      
+
       return {
         id: req.id,
         employee: employeeName,
@@ -111,14 +112,14 @@ export default function LeaveManagementPage() {
     .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())
     .slice(0, 3)
     .map(req => {
-      const employeeName = req.employees 
-        ? `${req.employees.first_name || ''} ${req.employees.last_name || ''}`.trim() || 'Unknown'
+      const employeeName = req.employees
+        ? getEmployeeDisplayName(req.employees as any) || 'Unknown'
         : 'Unknown';
       const start = new Date(req.start_date);
       const end = new Date(req.end_date);
       const diffTime = Math.abs(end.getTime() - start.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-      
+
       return {
         employee: employeeName,
         department: 'N/A',

@@ -5,9 +5,11 @@ import type { PayrollReportExportMeta } from './payrollReportTableColumns';
 const COL_COUNT = PAYROLL_TABLE_COLUMNS.length;
 
 const STYLES = `
-  .pr-wrap { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; color: #111; background: #fff; padding: 20px 24px; box-sizing: border-box; }
-  .pr-title { font-size: 18px; font-weight: 700; margin: 0 0 4px; }
-  .pr-sub { font-size: 13px; color: #555; margin: 0 0 14px; }
+  .pr-wrap { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; color: #111111; background: #ffffff; padding: 20px 24px; box-sizing: border-box; }
+  .pr-banner { border: 2px solid #294172; border-radius: 6px; overflow: hidden; margin-bottom: 14px; }
+  .pr-banner-title { background: #294172; color: #ffffff; font-size: 18px; font-weight: 700; text-align: center; padding: 14px 16px; margin: 0; }
+  .pr-banner-period { background: #e8eef7; color: #1e3a5f; font-size: 14px; font-weight: 700; text-align: center; padding: 10px 16px; margin: 0; border-top: 1px solid #9ca3af; }
+  .pr-banner-dept { background: #f4f7fb; color: #334155; font-size: 12px; text-align: center; padding: 8px 16px; margin: 0; border-top: 1px solid #9ca3af; }
   .pr-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; }
   .pr-table th, .pr-table td { border: 1px solid #9ca3af; padding: 5px 6px; vertical-align: middle; word-wrap: break-word; overflow-wrap: anywhere; }
   .pr-table thead th { background: #d9e1f2; font-weight: 700; text-align: center; line-height: 1.25; }
@@ -39,8 +41,16 @@ function esc(s: string | number): string {
     .replace(/"/g, '&quot;');
 }
 
+function formatDepartmentBannerHtml(departmentLabel: string): string {
+  const dept = departmentLabel.replace(/^Department\s*\/\s*/i, '').trim();
+  if (!dept || departmentLabel.toLowerCase().includes('all')) {
+    return 'القسم / Department · جميع الأقسام / All Departments';
+  }
+  return `القسم / Department · ${esc(dept)}`;
+}
+
 export function getPayrollReportInnerHtml(meta: PayrollReportExportMeta, rows: KdaPayrollReportRow[]): string {
-  const companyLine = [meta.companyNameArabic, meta.companyName].filter(Boolean).join(' — ');
+  const companyLine = [meta.companyNameArabic, meta.companyName].filter(Boolean).join('  —  ');
   const t = computePayrollTotals(rows);
 
   const subHeaders = `
@@ -98,8 +108,11 @@ export function getPayrollReportInnerHtml(meta: PayrollReportExportMeta, rows: K
   return `
     <style>${STYLES}</style>
     <div class="pr-wrap" style="width:${COL_COUNT * 92}px">
-      <p class="pr-title">${esc(companyLine)}</p>
-      <p class="pr-sub">${esc(meta.periodLabel)} · ${esc(meta.departmentLabel)}</p>
+      <div class="pr-banner">
+        <p class="pr-banner-title">${esc(companyLine)}</p>
+        <p class="pr-banner-period">${esc(meta.periodLabel)}</p>
+        <p class="pr-banner-dept">${formatDepartmentBannerHtml(meta.departmentLabel)}</p>
+      </div>
       <table class="pr-table">
         <colgroup>
           ${PAYROLL_TABLE_COLUMNS.map((col) => {

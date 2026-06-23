@@ -24,10 +24,9 @@ export function getEmployeeDisplayName(
   const isArabic = currentLang === 'ar';
 
   if (isArabic) {
-    // In Arabic mode: prefer Arabic name, fallback to English
-    const arabicFirst = employee.arabicFirstName || employee.arabicFirstName;
-    const arabicMiddle = includeMiddle ? (employee.arabicMiddleName || employee.arabicMiddleName) : null;
-    const arabicLast = employee.arabicLastName || employee.arabicLastName;
+    const arabicFirst = employee.arabic_first_name || employee.arabicFirstName;
+    const arabicMiddle = includeMiddle ? (employee.arabic_middle_name || employee.arabicMiddleName) : null;
+    const arabicLast = employee.arabic_last_name || employee.arabicLastName;
 
     if (arabicFirst || arabicMiddle || arabicLast) {
       // Arabic name exists

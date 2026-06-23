@@ -102,3 +102,27 @@ export async function savePayrollReport(
   if (!created) throw new Error('Failed to create payroll report');
   return created;
 }
+
+/**
+ * Reset approval workflow back to draft so the payroll can be edited and re-submitted.
+ */
+export async function revertPayrollApproval(reportId: string): Promise<SavedPayrollReport> {
+  const res = await adminApi.patch<SavedPayrollReport[]>(
+    `/payroll_reports?id=eq.${reportId}`,
+    {
+      approval_status: 'draft',
+      submitted_at: null,
+      submitted_by_user_id: null,
+      submitted_by_email: null,
+      approved_at: null,
+      approved_by_name: null,
+      approval_note: null,
+      whats_task_id: null,
+      whats_task_owner_id: null
+    },
+    { headers: { Prefer: 'return=representation' } }
+  );
+  const updated = Array.isArray(res.data) ? res.data[0] : (res.data as unknown as SavedPayrollReport);
+  if (!updated) throw new Error('Failed to revert payroll approval');
+  return updated;
+}

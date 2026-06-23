@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { Download, FileDown, FileSpreadsheet, FileText, Loader2, RefreshCw, Save, Send, Upload } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Download, FileDown, FileSpreadsheet, FileText, Loader2, RefreshCw, RotateCcw, Save, Send, Upload } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -28,14 +29,14 @@ import { downloadPayrollCsv } from '@/utils/payrollReportCsvExport';
 import { downloadPayrollPdf } from '@/utils/payrollReportPdfExport';
 import {
   buildPayrollApprovalAttachment,
-  PAYROLL_APPROVAL_FORMAT_OPTIONS,
   type PayrollApprovalAttachmentFormat
 } from '@/utils/payrollReportApprovalAttachment';
 import { importPayrollExcel } from '@/utils/payrollReportExcelImport';
 import { PAYROLL_MONTH_DIVISOR } from '@/utils/payrollTemplate';
-import { employeeService } from '@/services/employeeService';
+import { employeeService, type Employee } from '@/services/employeeService';
 import {
   getSavedPayrollReport,
+  revertPayrollApproval,
   savePayrollReport,
   type PayrollApprovalStatus,
   type SavedPayrollReport
@@ -45,20 +46,33 @@ import {
   submitPayrollForApproval
 } from '@/services/payrollApprovalService';
 import { toast } from 'sonner';
+import {
+  formatPayrollCompanyTitle,
+  formatPayrollDepartmentLabel,
+  formatPayrollPeriodLabel,
+  getPayrollEmployeeDisplayName,
+  getPayrollMonthLabel,
+  PAYROLL_MONTH_KEYS,
+  translatePaymentMethod
+} from '@/utils/payrollDisplay';
 
-const MONTHS = [
-  { value: '1', label: 'January' }, { value: '2', label: 'February' }, { value: '3', label: 'March' },
-  { value: '4', label: 'April' }, { value: '5', label: 'May' }, { value: '6', label: 'June' },
-  { value: '7', label: 'July' }, { value: '8', label: 'August' }, { value: '9', label: 'September' },
-  { value: '10', label: 'October' }, { value: '11', label: 'November' }, { value: '12', label: 'December' }
-];
+const APPROVAL_FORMAT_I18N: Record<
+  PayrollApprovalAttachmentFormat,
+  { label: string; description: string }
+> = {
+  excel: { label: 'approvalFormatExcel', description: 'approvalFormatExcelDesc' },
+  csv: { label: 'approvalFormatCsv', description: 'approvalFormatCsvDesc' },
+  pdf: { label: 'approvalFormatPdf', description: 'approvalFormatPdfDesc' }
+};
 
 export default function PayrollReportTab() {
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const [month, setMonth] = useState('12');
   const [year, setYear] = useState('2025');
   const [department, setDepartment] = useState<string>('all');
   const [departmentOptions, setDepartmentOptions] = useState<{ value: string; label: string }[]>([]);
+  const [employeesById, setEmployeesById] = useState<Record<string, Employee>>({});
   const [loading, setLoading] = useState(false);
   const [meta, setMeta] = useState<{
     companyName: string;
@@ -79,6 +93,7 @@ export default function PayrollReportTab() {
   } | null>(null);
   const [saving, setSaving] = useState(false);
   const [submittingApproval, setSubmittingApproval] = useState(false);
+  const [revertingApproval, setRevertingApproval] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [reportSource, setReportSource] = useState<'saved' | 'generated' | 'imported' | null>(null);
   const [importing, setImporting] = useState(false);
@@ -94,20 +109,34 @@ export default function PayrollReportTab() {
 
   const companyId = user?.company_id;
 
+  const months = useMemo(
+    () =>
+      PAYROLL_MONTH_KEYS.map((key, i) => ({
+        value: String(i + 1),
+        label: t(`payroll.months.${key}`)
+      })),
+    [t, i18n.language]
+  );
+
+  const col = useCallback((key: string) => t(`payroll.columns.${key}`), [t]);
+
   useEffect(() => {
     if (!companyId) return;
     employeeService.getAll(companyId).then((employees) => {
+      const byId: Record<string, Employee> = {};
       const depts = new Set<string>();
       employees.forEach((e) => {
+        byId[e.id] = e;
         const d = e.department || (e as any).departments?.name;
         if (d) depts.add(d);
       });
+      setEmployeesById(byId);
       setDepartmentOptions([
-        { value: 'all', label: 'All Departments' },
+        { value: 'all', label: t('payroll.allDepartments') },
         ...Array.from(depts).sort().map((d) => ({ value: d, label: d }))
       ]);
     });
-  }, [companyId]);
+  }, [companyId, t, i18n.language]);
 
   const applySavedReport = (saved: SavedPayrollReport) => {
     setMeta(saved.report_data.meta);
@@ -128,14 +157,14 @@ export default function PayrollReportTab() {
 
   const loadReport = useCallback(async (options?: { forceRegenerate?: boolean }) => {
     if (!companyId) {
-      toast.error('Company not set.');
+      toast.error(t('payroll.companyNotSet'));
       return;
     }
     if (
       reportSourceRef.current === 'imported' &&
       dirtyRef.current &&
       !options?.forceRegenerate &&
-      !window.confirm('You have unsaved imported payroll data. Reload will discard it and load from the system or saved report. Continue?')
+      !window.confirm(t('payroll.confirmReloadImport'))
     ) {
       return;
     }
@@ -149,7 +178,12 @@ export default function PayrollReportTab() {
         const saved = await getSavedPayrollReport(companyId, y, m, department);
         if (saved?.report_data?.meta && Array.isArray(saved?.report_data?.rows)) {
           applySavedReport(saved);
-          toast.success(`Loaded saved payroll for ${MONTHS.find((mo) => mo.value === month)?.label} ${year} (${saved.report_data.rows.length} employees).`);
+          toast.success(
+            t('payroll.loadedSaved', {
+              period: formatPayrollPeriodLabel(month, year, t),
+              count: saved.report_data.rows.length
+            })
+          );
           return;
         }
       }
@@ -180,16 +214,16 @@ export default function PayrollReportTab() {
       setReportSource('generated');
       toast.success(
         forceRegenerate
-          ? `Rebuilt payroll from attendance (${report.rows.length} employees). Save when edits are done.`
-          : `Built payroll for ${report.rows.length} employees. Edit values, then Save.`
+          ? t('payroll.rebuiltPayroll', { count: report.rows.length })
+          : t('payroll.builtPayroll', { count: report.rows.length })
       );
     } catch (e) {
       console.error(e);
-      toast.error('Failed to load payroll report.');
+      toast.error(t('payroll.loadFailed'));
     } finally {
       setLoading(false);
     }
-  }, [companyId, month, year, department]);
+  }, [companyId, month, year, department, t]);
 
   /** Auto-load when month/year/department changes */
   useEffect(() => {
@@ -205,7 +239,7 @@ export default function PayrollReportTab() {
   }, [companyId, month, year, department, loadReport]);
 
   const handleRegenerate = useCallback(async () => {
-    if (dirty && !window.confirm('You have unsaved edits. Rebuild from attendance and discard them?')) {
+    if (dirty && !window.confirm(t('payroll.confirmRebuild'))) {
       return;
     }
     await loadReport({ forceRegenerate: true });
@@ -213,7 +247,7 @@ export default function PayrollReportTab() {
 
   const handleSaveReport = useCallback(async () => {
     if (!companyId || !user || !meta || rows.length === 0) {
-      toast.error('Load a report first.');
+      toast.error(t('payroll.toast.loadFirst'));
       return;
     }
     setSaving(true);
@@ -240,25 +274,25 @@ export default function PayrollReportTab() {
       });
       setDirty(false);
       setReportSource('saved');
-      toast.success('Payroll saved. It will load automatically next time you pick this month and year.');
+      toast.success(t('payroll.toast.saveSuccess'));
     } catch (e) {
       console.error(e);
-      toast.error('Failed to save report.');
+      toast.error(t('payroll.toast.saveFailed'));
     } finally {
       setSaving(false);
     }
-  }, [companyId, user, meta, rows, year, month, department]);
+  }, [companyId, user, meta, rows, year, month, department, t]);
 
   const approvalStatus = savedInfo?.approvalStatus ?? 'draft';
   const isApprovalLocked = approvalStatus === 'pending_approval' || approvalStatus === 'approved';
 
   const handleSubmitForApproval = useCallback(async (format: PayrollApprovalAttachmentFormat) => {
     if (!companyId || !user || !meta || rows.length === 0) {
-      toast.error('Load a report first.');
+      toast.error(t('payroll.toast.loadFirst'));
       return;
     }
     if (isApprovalLocked) {
-      toast.error(`Payroll is already ${payrollApprovalStatusLabel(approvalStatus).toLowerCase()}.`);
+      toast.error(t('payroll.toast.alreadyStatus', { status: payrollApprovalStatusLabel(approvalStatus) }));
       return;
     }
 
@@ -266,7 +300,7 @@ export default function PayrollReportTab() {
     try {
       const y = parseInt(year, 10);
       const m = parseInt(month, 10);
-      const monthName = MONTHS.find((mo) => mo.value === month)?.label || month;
+      const monthName = getPayrollMonthLabel(month, t);
 
       const saved = await savePayrollReport(
         companyId,
@@ -304,14 +338,33 @@ export default function PayrollReportTab() {
       });
 
       setApprovalDialogOpen(false);
-      toast.success('Payroll sent for approval. The approver will receive a WhatsApp poll.');
+      toast.success(t('payroll.toast.approvalSent'));
     } catch (e) {
       console.error(e);
-      toast.error(e instanceof Error ? e.message : 'Failed to send for approval.');
+      toast.error(e instanceof Error ? e.message : t('payroll.toast.approvalFailed'));
     } finally {
       setSubmittingApproval(false);
     }
-  }, [companyId, user, meta, rows, year, month, department, isApprovalLocked, approvalStatus]);
+  }, [companyId, user, meta, rows, year, month, department, isApprovalLocked, approvalStatus, t]);
+
+  const canRevertApproval = Boolean(savedInfo?.reportId && approvalStatus !== 'draft');
+
+  const handleRevertApproval = useCallback(async () => {
+    if (!savedInfo?.reportId) return;
+    if (!window.confirm(t('payroll.revertApprovalConfirm'))) return;
+
+    setRevertingApproval(true);
+    try {
+      const updated = await revertPayrollApproval(savedInfo.reportId);
+      applySavedReport(updated);
+      toast.success(t('payroll.toast.approvalReverted'));
+    } catch (e) {
+      console.error(e);
+      toast.error(e instanceof Error ? e.message : t('payroll.toast.approvalRevertFailed'));
+    } finally {
+      setRevertingApproval(false);
+    }
+  }, [savedInfo?.reportId, t]);
 
   const round3 = (n: number) => Math.round(n * 1000) / 1000;
 
@@ -401,10 +454,10 @@ export default function PayrollReportTab() {
   const handleImportExcel = useCallback(
     async (file: File) => {
       if (!companyId) {
-        toast.error('Company not set.');
+        toast.error(t('payroll.companyNotSet'));
         return;
       }
-      if (dirty && !window.confirm('You have unsaved edits. Import from Excel and replace them?')) {
+      if (dirty && !window.confirm(t('payroll.confirmImportReplace'))) {
         return;
       }
       setImporting(true);
@@ -429,25 +482,22 @@ export default function PayrollReportTab() {
         setReportSource('imported');
 
         const unmatched = result.unmatchedNames.length;
-        let msg = `Imported ${result.rows.length} row(s) from Excel`;
-        if (result.matched > 0) {
-          msg += ` (${result.matched} matched by name`;
-          if (unmatched > 0) msg += `, ${unmatched} added without match`;
-          msg += ')';
-        } else if (unmatched > 0) {
-          msg += ` (${unmatched} without employee match — still added)`;
-        }
-        msg += '. Save when ready.';
-        toast.success(msg);
+        toast.success(
+          t('payroll.toast.importSuccess', {
+            count: result.rows.length,
+            unmatched:
+              unmatched > 0 ? t('payroll.toast.importUnmatched', { count: unmatched }) : ''
+          })
+        );
       } catch (e) {
         console.error(e);
-        toast.error(e instanceof Error ? e.message : 'Failed to import Excel.');
+        toast.error(e instanceof Error ? e.message : t('payroll.toast.importFailed'));
       } finally {
         setImporting(false);
         if (fileInputRef.current) fileInputRef.current.value = '';
       }
     },
-    [companyId, department, dirty, rows]
+    [companyId, department, dirty, rows, t]
   );
 
   const onImportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -457,64 +507,67 @@ export default function PayrollReportTab() {
 
   const handleExport = async () => {
     if (!meta || rows.length === 0) {
-      toast.error('Load report first.');
+      toast.error(t('payroll.toast.loadFirst'));
       return;
     }
     try {
-      const monthName = MONTHS.find((m) => m.value === month)?.label || month;
+      const monthName = getPayrollMonthLabel(month, t);
       const filename = `Payroll_${monthName}_${year}.xlsx`;
       const exportRows = rows.map((row) => ({ ...row }));
       await downloadPayrollExcel({ ...meta, rows: exportRows }, filename);
-      toast.success(`Excel exported with ${exportRows.length} employee row(s).`);
+      toast.success(t('payroll.toast.excelExported', { count: exportRows.length }));
     } catch (e) {
       console.error(e);
-      toast.error(e instanceof Error ? e.message : 'Failed to export Excel report.');
+      toast.error(e instanceof Error ? e.message : t('payroll.toast.excelExportFailed'));
     }
   };
 
   const handleExportCsv = async () => {
     if (!meta || rows.length === 0) {
-      toast.error('Load report first.');
+      toast.error(t('payroll.toast.loadFirst'));
       return;
     }
     try {
-      const monthName = MONTHS.find((m) => m.value === month)?.label || month;
+      const monthName = getPayrollMonthLabel(month, t);
       const filename = `Payroll_${monthName}_${year}.xlsx`;
       const exportRows = rows.map((row) => ({ ...row }));
       await downloadPayrollCsv(meta, exportRows, filename);
-      toast.success(`Table exported with ${exportRows.length} employee row(s).`);
+      toast.success(t('payroll.toast.tableExported', { count: exportRows.length }));
     } catch (e) {
       console.error(e);
-      toast.error(e instanceof Error ? e.message : 'Failed to export table.');
+      toast.error(e instanceof Error ? e.message : t('payroll.toast.tableExportFailed'));
     }
   };
 
   const handleExportPdf = async () => {
     if (!meta || rows.length === 0) {
-      toast.error('Load report first.');
+      toast.error(t('payroll.toast.loadFirst'));
       return;
     }
     try {
-      const monthName = MONTHS.find((m) => m.value === month)?.label || month;
+      const monthName = getPayrollMonthLabel(month, t);
       const filename = `Payroll_${monthName}_${year}.pdf`;
       const exportRows = rows.map((row) => ({ ...row }));
       await downloadPayrollPdf(meta, exportRows, filename);
-      toast.success(`PDF exported with ${exportRows.length} employee row(s).`);
+      toast.success(t('payroll.toast.pdfExported', { count: exportRows.length }));
     } catch (e) {
       console.error(e);
-      toast.error(e instanceof Error ? e.message : 'Failed to export PDF report.');
+      toast.error(e instanceof Error ? e.message : t('payroll.toast.pdfExportFailed'));
     }
   };
 
   const totalNet = rows.reduce((s, r) => s + r.netSalaryKwd, 0);
   const totalRefund = rows.reduce((s, r) => s + r.salaryRefund, 0);
   const totalGross = rows.reduce((s, r) => s + r.totalGrossKwd, 0);
+  const displayPeriod = meta ? formatPayrollPeriodLabel(month, year, t) : '';
+  const displayDepartment = formatPayrollDepartmentLabel(department, t);
+  const companyTitle = meta ? formatPayrollCompanyTitle(meta.companyName, meta.companyNameArabic) : '';
 
   return (
     <div className="space-y-6">
       <Card className="p-6 rounded-xl border-2 shadow-sm bg-gradient-to-br from-card to-muted/20">
         <h4 className="font-semibold mb-2 text-foreground flex flex-wrap items-center gap-2">
-          Payroll Report
+          {t('payroll.reportTitle')}
           {savedInfo?.approvalStatus && savedInfo.approvalStatus !== 'draft' && (
             <Badge
               variant={
@@ -528,10 +581,28 @@ export default function PayrollReportTab() {
               {payrollApprovalStatusLabel(savedInfo.approvalStatus)}
             </Badge>
           )}
+          {canRevertApproval && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => void handleRevertApproval()}
+              disabled={revertingApproval || submittingApproval || saving}
+            >
+              {revertingApproval ? (
+                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+              ) : (
+                <RotateCcw className="w-3 h-3 mr-1" />
+              )}
+              {t('payroll.revertApproval')}
+            </Button>
+          )}
         </h4>
-        <p className="text-sm text-muted-foreground mb-4">
-          Pick a month and year — a saved payroll loads automatically if one exists, otherwise it builds from attendance and leave. Edit values on screen, <strong>Import Excel</strong> (shows all rows from the file; matches names when possible), then <strong>Save Payroll</strong> or <strong>Save &amp; Send for Approval</strong>.
-        </p>
+        <p
+          className="text-sm text-muted-foreground mb-4"
+          dangerouslySetInnerHTML={{ __html: t('payroll.reportIntro') }}
+        />
         <input
           ref={fileInputRef}
           type="file"
@@ -541,20 +612,20 @@ export default function PayrollReportTab() {
         />
         <div className="flex flex-wrap items-end gap-4">
           <div>
-            <label className="text-sm font-medium mb-1 block">Month</label>
+            <label className="text-sm font-medium mb-1 block">{t('payroll.month')}</label>
             <Select value={month} onValueChange={setMonth}>
               <SelectTrigger className="w-[140px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {MONTHS.map((m) => (
+                {months.map((m) => (
                   <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div>
-            <label className="text-sm font-medium mb-1 block">Year</label>
+            <label className="text-sm font-medium mb-1 block">{t('payroll.year')}</label>
             <Select value={year} onValueChange={setYear}>
               <SelectTrigger className="w-[100px]">
                 <SelectValue />
@@ -567,7 +638,7 @@ export default function PayrollReportTab() {
             </Select>
           </div>
           <div>
-            <label className="text-sm font-medium mb-1 block">Department</label>
+            <label className="text-sm font-medium mb-1 block">{t('payroll.department')}</label>
             <Select value={department} onValueChange={setDepartment}>
               <SelectTrigger className="w-[180px]">
                 <SelectValue />
@@ -584,21 +655,21 @@ export default function PayrollReportTab() {
             disabled={loading || importing}
             onClick={() => fileInputRef.current?.click()}
           >
-            {importing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
-            Import Excel
+            {importing ? <Loader2 className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0 animate-spin" /> : <Upload className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />}
+            {t('payroll.importExcel')}
           </Button>
           <Button onClick={() => loadReport()} disabled={loading || importing} variant="outline">
-            {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-            Reload
+            {loading ? <Loader2 className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />}
+            {t('payroll.reload')}
           </Button>
           <Button onClick={handleRegenerate} disabled={loading || importing} variant="outline">
-            Rebuild from attendance
+            {t('payroll.rebuildFromAttendance')}
           </Button>
           {rows.length > 0 && (
             <>
               <Button variant="default" onClick={handleSaveReport} disabled={saving || submittingApproval || isApprovalLocked}>
-                {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-                Save Payroll
+                {saving ? <Loader2 className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0 animate-spin" /> : <Save className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />}
+                {t('payroll.savePayroll')}
               </Button>
               <Button
                 variant="secondary"
@@ -606,55 +677,58 @@ export default function PayrollReportTab() {
                 disabled={saving || submittingApproval || isApprovalLocked}
               >
                 {submittingApproval ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0 animate-spin" />
                 ) : (
-                  <Send className="w-4 h-4 mr-2" />
+                  <Send className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />
                 )}
-                Save &amp; Send for Approval
+                {t('payroll.saveAndSendApproval')}
               </Button>
               <Button variant="outline" onClick={handleExport}>
-                <Download className="w-4 h-4 mr-2" />
-                Export Excel
+                <Download className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                {t('payroll.exportExcel')}
               </Button>
               <Button variant="outline" onClick={() => void handleExportCsv()}>
-                <FileText className="w-4 h-4 mr-2" />
-                Export Table
+                <FileText className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                {t('payroll.exportTable')}
               </Button>
               <Button variant="outline" onClick={() => void handleExportPdf()}>
-                <FileDown className="w-4 h-4 mr-2" />
-                Export PDF
+                <FileDown className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                {t('payroll.exportPdf')}
               </Button>
             </>
           )}
         </div>
         {dirty && rows.length > 0 && (
-          <p className="text-sm text-amber-600 mt-3 font-medium">Unsaved changes — click Save Payroll to keep your edits.</p>
+          <p className="text-sm text-amber-600 mt-3 font-medium">{t('payroll.unsavedChanges')}</p>
         )}
         {reportSource === 'imported' && !dirty && (
           <p className="text-sm text-muted-foreground mt-3">
-            Loaded from imported Excel file ({rows.length} row{rows.length === 1 ? '' : 's'}). Save to keep this data.
+            {t('payroll.importedLoaded', { count: rows.length })}
           </p>
         )}
         {reportSource === 'imported' && dirty && (
           <p className="text-sm text-amber-600 mt-3 font-medium">
-            Imported Excel ({rows.length} row{rows.length === 1 ? '' : 's'}) — unsaved. Export uses exactly these rows; save before reload.
+            {t('payroll.importedDirty', { count: rows.length })}
           </p>
         )}
         {reportSource === 'saved' && savedInfo && !dirty && (
           <p className="text-sm text-muted-foreground mt-3">
-            Showing saved payroll from {new Date(savedInfo.savedAt).toLocaleString()}
-            {savedInfo.savedByEmail ? ` by ${savedInfo.savedByEmail}` : ''}.
+            {t('payroll.savedShowing', {
+              date: new Date(savedInfo.savedAt).toLocaleString(),
+              by: savedInfo.savedByEmail ? t('payroll.savedBy', { email: savedInfo.savedByEmail }) : ''
+            })}
             {savedInfo.approvalStatus === 'pending_approval' && savedInfo.submittedAt && (
-              <> Submitted for approval {new Date(savedInfo.submittedAt).toLocaleString()}.</>
+              <>{t('payroll.submittedForApproval', { date: new Date(savedInfo.submittedAt).toLocaleString() })}</>
             )}
             {savedInfo.approvalStatus === 'approved' && savedInfo.approvedAt && (
               <>
-                {' '}
-                Approved {new Date(savedInfo.approvedAt).toLocaleString()}
-                {savedInfo.approvedByName ? ` by ${savedInfo.approvedByName}` : ''}.
+                {t('payroll.approvedOn', {
+                  date: new Date(savedInfo.approvedAt).toLocaleString(),
+                  by: savedInfo.approvedByName ? t('payroll.approvedBy', { name: savedInfo.approvedByName }) : ''
+                })}
               </>
             )}
-            {savedInfo.approvalNote ? ` Note: ${savedInfo.approvalNote}` : ''}
+            {savedInfo.approvalNote ? t('payroll.approvalNote', { note: savedInfo.approvalNote }) : ''}
           </p>
         )}
       </Card>
@@ -663,26 +737,29 @@ export default function PayrollReportTab() {
         <>
           <div className="flex flex-wrap gap-4">
             <Card className="p-4 flex-1 min-w-[160px] rounded-xl border-2 bg-gradient-to-br from-primary/5 to-transparent border-primary/20 shadow-sm">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Total Gross (KWD)</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('payroll.totalGross')}</p>
               <p className="text-xl font-bold tabular-nums mt-1 text-foreground">{totalGross.toFixed(3)}</p>
             </Card>
             <Card className="p-4 flex-1 min-w-[160px] rounded-xl border-2 bg-gradient-to-br from-muted/40 to-transparent border-border shadow-sm">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Total Net (KWD)</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('payroll.totalNet')}</p>
               <p className="text-xl font-bold tabular-nums mt-1 text-foreground">{totalNet.toFixed(3)}</p>
             </Card>
             <Card className="p-4 flex-1 min-w-[160px] rounded-xl border-2 bg-gradient-to-br from-amber-500/10 to-transparent border-amber-500/30 shadow-sm">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Total Refund (KWD)</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('payroll.totalRefund')}</p>
               <p className="text-xl font-bold tabular-nums mt-1 text-amber-600">{totalRefund.toFixed(3)}</p>
             </Card>
           </div>
 
           <Card className="overflow-hidden w-screen max-w-[80vw] relative left-1/2 -translate-x-1/2 rounded-xl border-2 shadow-lg shadow-black/5">
             <div className="p-4 border-b bg-gradient-to-r from-muted/50 to-muted/30">
-              <p className="font-semibold text-foreground">{meta.companyNameArabic} — {meta.companyName}</p>
-              <p className="text-sm text-muted-foreground mt-0.5">{meta.periodLabel} · {meta.departmentLabel}</p>
+              <p className="font-semibold text-foreground">{companyTitle}</p>
+              <p className="text-sm text-muted-foreground mt-0.5">{displayPeriod} · {displayDepartment}</p>
               {savedInfo && (
                 <p className="text-xs text-muted-foreground mt-2 pt-2 border-t border-border/50">
-                  Last saved: {new Date(savedInfo.savedAt).toLocaleString()} by {savedInfo.savedByEmail || '—'}
+                  {t('payroll.lastSaved', {
+                    date: new Date(savedInfo.savedAt).toLocaleString(),
+                    email: savedInfo.savedByEmail || '—'
+                  })}
                 </p>
               )}
             </div>
@@ -690,32 +767,32 @@ export default function PayrollReportTab() {
               <table className="w-full text-sm border-collapse min-w-[2400px]">
                 <thead className="sticky top-0 z-10">
                   <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:font-semibold [&>th]:text-foreground border-b-2 border-primary/20 bg-[#D9E1F2]">
-                    <th rowSpan={2} className="text-center border-r border-border/60">S/N</th>
-                    <th rowSpan={2} className="text-center min-w-[80px] border-r border-border/60">Emp. Code<br />كود</th>
-                    <th rowSpan={2} className="text-left min-w-[160px] border-r border-border/60">Name / Arabic<br />الاسم / عربي</th>
-                    <th rowSpan={2} className="text-center min-w-[90px] border-r border-border/60">Join Date<br />تاريخ التعيين</th>
-                    <th rowSpan={2} className="text-right min-w-[88px] border-r border-border/60">Basic Salary KWD<br />الراتب الأساسي</th>
-                    <th rowSpan={2} className="text-center min-w-[72px] border-r border-border/60">Actual Working Days<br />أيام العمل الفعلية</th>
-                    <th rowSpan={2} className="text-center min-w-[72px] border-r border-primary/30">Paid leave Days<br />اجازات مدفوعة</th>
-                    <th colSpan={6} className="text-center border-r border-primary/30 bg-[#FFF2CC]">Gross Accrual Month</th>
-                    <th colSpan={4} className="text-center border-r border-primary/30 bg-[#FFF2CC]">Deductions</th>
-                    <th rowSpan={2} className="text-right min-w-[88px] border-r border-border/60">Net Salary KWD<br />صافي الراتب</th>
-                    <th rowSpan={2} className="text-right min-w-[100px] border-r border-border/60">The amount scheduled to pay</th>
-                    <th rowSpan={2} className="text-left min-w-[120px] border-r border-border/60">Method of payment</th>
-                    <th rowSpan={2} className="text-right min-w-[88px] bg-amber-500/15 border-r border-amber-500/30">SALARY REFUND</th>
-                    <th rowSpan={2} className="text-left min-w-[90px]">Notes<br />ملاحظات</th>
+                    <th rowSpan={2} className="text-center border-r border-border/60">{col('sn')}</th>
+                    <th rowSpan={2} className="text-center min-w-[80px] border-r border-border/60">{col('empCode')}</th>
+                    <th rowSpan={2} className="text-left min-w-[160px] border-r border-border/60">{col('nameArabic')}</th>
+                    <th rowSpan={2} className="text-center min-w-[90px] border-r border-border/60">{col('joinDate')}</th>
+                    <th rowSpan={2} className="text-right min-w-[88px] border-r border-border/60">{col('basicSalary')}</th>
+                    <th rowSpan={2} className="text-center min-w-[72px] border-r border-border/60">{col('actualWorkingDays')}</th>
+                    <th rowSpan={2} className="text-center min-w-[72px] border-r border-primary/30">{col('paidLeaveDays')}</th>
+                    <th colSpan={6} className="text-center border-r border-primary/30 bg-[#FFF2CC]">{col('grossAccrualMonth')}</th>
+                    <th colSpan={4} className="text-center border-r border-primary/30 bg-[#FFF2CC]">{col('deductions')}</th>
+                    <th rowSpan={2} className="text-right min-w-[88px] border-r border-border/60">{col('netSalary')}</th>
+                    <th rowSpan={2} className="text-right min-w-[100px] border-r border-border/60">{col('amountScheduled')}</th>
+                    <th rowSpan={2} className="text-left min-w-[120px] border-r border-border/60">{col('methodOfPayment')}</th>
+                    <th rowSpan={2} className="text-right min-w-[88px] bg-amber-500/15 border-r border-amber-500/30">{col('salaryRefund')}</th>
+                    <th rowSpan={2} className="text-left min-w-[90px]">{col('notes')}</th>
                   </tr>
                   <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:font-semibold [&>th]:text-foreground border-b-2 border-primary/20 bg-[#D9E1F2]">
-                    <th className="text-right min-w-[80px] border-r border-border/50">Salary KWD<br />الراتب د.ك</th>
-                    <th className="text-right min-w-[80px] border-r border-border/50">Paid Leave KWD<br />اجازات مدفوعة د.ك</th>
-                    <th className="text-right min-w-[80px] border-r border-border/50">Over Time KWD<br />إضافي د.ك</th>
-                    <th className="text-right min-w-[80px] border-r border-border/50">housing allowance KWD<br />بدل سكن د.ك</th>
-                    <th className="text-right min-w-[80px] border-r border-border/50">Other<br />أخرى</th>
-                    <th className="text-right min-w-[80px] border-r border-primary/30">Total<br />الإجمالي</th>
-                    <th className="text-right min-w-[80px] border-r border-border/50">Penalties<br />جزاءات</th>
-                    <th className="text-right min-w-[80px] border-r border-border/50">Deductions<br />خصومات</th>
-                    <th className="text-right min-w-[80px] border-r border-border/50">Loan<br />سلف</th>
-                    <th className="text-right min-w-[80px] border-r border-primary/30">Other<br />أخرى</th>
+                    <th className="text-right min-w-[80px] border-r border-border/50">{col('salaryKwd')}</th>
+                    <th className="text-right min-w-[80px] border-r border-border/50">{col('paidLeaveKwd')}</th>
+                    <th className="text-right min-w-[80px] border-r border-border/50">{col('overTimeKwd')}</th>
+                    <th className="text-right min-w-[80px] border-r border-border/50">{col('housingKwd')}</th>
+                    <th className="text-right min-w-[80px] border-r border-border/50">{col('other')}</th>
+                    <th className="text-right min-w-[80px] border-r border-primary/30">{col('total')}</th>
+                    <th className="text-right min-w-[80px] border-r border-border/50">{col('penalties')}</th>
+                    <th className="text-right min-w-[80px] border-r border-border/50">{col('deductionsCol')}</th>
+                    <th className="text-right min-w-[80px] border-r border-border/50">{col('loan')}</th>
+                    <th className="text-right min-w-[80px] border-r border-primary/30">{col('deductionsOther')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -726,7 +803,7 @@ export default function PayrollReportTab() {
                     >
                       <td className="px-2 py-2 align-middle tabular-nums text-center border-r border-border/40">{r.sn}</td>
                       <td className="px-2 py-2 font-mono text-xs align-middle text-center border-r border-border/40">{r.empCode}</td>
-                      <td className="px-2 py-2 max-w-[200px] truncate align-middle border-r border-border/40" title={r.nameArabicEnglish}>{r.nameArabicEnglish}</td>
+                      <td className="px-2 py-2 max-w-[200px] truncate align-middle border-r border-border/40" title={getPayrollEmployeeDisplayName(r, employeesById)}>{getPayrollEmployeeDisplayName(r, employeesById)}</td>
                       <td className="px-2 py-2 text-center align-middle tabular-nums border-r border-border/40">{r.joinDate}</td>
                       <td className="px-2 py-2 align-middle border-r border-border/40">
                         <Input type="number" step="0.001" min="0" className="num-input h-8 min-w-[6rem] w-full text-right tabular-nums" value={r.basicSalaryKwd === 0 ? '' : r.basicSalaryKwd} onChange={(e) => updateNumericAndRecalc(r.employeeId, { basicSalaryKwd: parseFloat(e.target.value) || 0 })} />
@@ -771,11 +848,13 @@ export default function PayrollReportTab() {
                       <td className="px-2 py-2 text-right align-middle tabular-nums font-medium border-r border-border/40">{r.amountScheduledToPay.toFixed(3)}</td>
                       <td className="px-2 py-2 align-middle border-r border-border/40">
                         <Select value={r.methodOfPayment} onValueChange={(v) => updateRow(r.employeeId, { methodOfPayment: v })}>
-                          <SelectTrigger className="h-8 min-w-[110px]"><SelectValue /></SelectTrigger>
+                          <SelectTrigger className="h-8 min-w-[110px]">
+                            <SelectValue>{translatePaymentMethod(r.methodOfPayment, t)}</SelectValue>
+                          </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="Bank transfer">Bank transfer</SelectItem>
-                            <SelectItem value="Check">Check</SelectItem>
-                            <SelectItem value="Cash">Cash</SelectItem>
+                            <SelectItem value="Bank transfer">{t('payroll.payment.bankTransfer')}</SelectItem>
+                            <SelectItem value="Check">{t('payroll.payment.check')}</SelectItem>
+                            <SelectItem value="Cash">{t('payroll.payment.cash')}</SelectItem>
                           </SelectContent>
                         </Select>
                       </td>
@@ -797,47 +876,45 @@ export default function PayrollReportTab() {
       {!loading && rows.length === 0 && meta === null && (
         <Card className="p-12 text-center text-muted-foreground">
           <FileSpreadsheet className="w-12 h-12 mx-auto mb-4 opacity-50" />
-          <p>Select month and year above. A saved payroll loads automatically, or a new one is built from attendance.</p>
+          <p>{t('payroll.emptyState')}</p>
         </Card>
       )}
 
       <Dialog open={approvalDialogOpen} onOpenChange={setApprovalDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Send payroll for approval</DialogTitle>
-            <DialogDescription>
-              Payroll will be saved and sent to the configured approver via WhatsApp. Choose the attachment format.
-            </DialogDescription>
+            <DialogTitle>{t('payroll.approvalDialogTitle')}</DialogTitle>
+            <DialogDescription>{t('payroll.approvalDialogDesc')}</DialogDescription>
           </DialogHeader>
           <RadioGroup
             value={approvalAttachmentFormat}
             onValueChange={(v) => setApprovalAttachmentFormat(v as PayrollApprovalAttachmentFormat)}
             className="gap-3 py-2"
           >
-            {PAYROLL_APPROVAL_FORMAT_OPTIONS.map((opt) => (
-              <div key={opt.value} className="flex items-start gap-3 rounded-lg border p-3">
-                <RadioGroupItem value={opt.value} id={`approval-format-${opt.value}`} className="mt-0.5" />
-                <Label htmlFor={`approval-format-${opt.value}`} className="cursor-pointer font-normal leading-snug">
-                  <span className="font-medium text-foreground">{opt.label}</span>
-                  <span className="block text-sm text-muted-foreground">{opt.description}</span>
+            {(Object.keys(APPROVAL_FORMAT_I18N) as PayrollApprovalAttachmentFormat[]).map((opt) => (
+              <div key={opt} className="flex items-start gap-3 rounded-lg border p-3">
+                <RadioGroupItem value={opt} id={`approval-format-${opt}`} className="mt-0.5" />
+                <Label htmlFor={`approval-format-${opt}`} className="cursor-pointer font-normal leading-snug">
+                  <span className="font-medium text-foreground">{t(`payroll.${APPROVAL_FORMAT_I18N[opt].label}`)}</span>
+                  <span className="block text-sm text-muted-foreground">{t(`payroll.${APPROVAL_FORMAT_I18N[opt].description}`)}</span>
                 </Label>
               </div>
             ))}
           </RadioGroup>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setApprovalDialogOpen(false)} disabled={submittingApproval}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               onClick={() => void handleSubmitForApproval(approvalAttachmentFormat)}
               disabled={submittingApproval}
             >
               {submittingApproval ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                <Loader2 className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0 animate-spin" />
               ) : (
-                <Send className="w-4 h-4 mr-2" />
+                <Send className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />
               )}
-              Save &amp; Send
+              {t('payroll.approvalSend')}
             </Button>
           </DialogFooter>
         </DialogContent>

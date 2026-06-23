@@ -217,8 +217,8 @@ function getNameArabicEnglish(emp: Employee): string {
   const arabic = arabicParts.length ? arabicParts.join(' ') : '';
   const english = englishParts.length ? englishParts.join(' ') : '';
   if (arabic && english) return `${arabic} / ${english}`;
-  if (english) return english;
-  return arabic || '';
+  if (arabic) return arabic;
+  return english || '';
 }
 
 /**

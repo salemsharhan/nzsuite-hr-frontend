@@ -66,19 +66,9 @@ export async function submitPayrollForApproval(
   return data as SubmitPayrollApprovalResult;
 }
 
+import i18n from '@/utils/i18n';
+
 export function payrollApprovalStatusLabel(status?: string): string {
-  switch (status) {
-    case 'pending_approval':
-      return 'Pending Approval';
-    case 'approved':
-      return 'Approved';
-    case 'rejected':
-      return 'Rejected';
-    case 'on_hold':
-      return 'On Hold';
-    case 'need_update':
-      return 'Needs Update';
-    default:
-      return 'Draft';
-  }
+  const key = status || 'draft';
+  return i18n.t(`payroll.approvalStatus.${key}`, { defaultValue: key });
 }

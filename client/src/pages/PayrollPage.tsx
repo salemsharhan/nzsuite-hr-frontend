@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { DollarSign, Users, FileText, TrendingUp } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,6 +10,7 @@ import PayrollReportTab from '@/components/payroll/PayrollReportTab';
 import ReportsTab from '@/components/payroll/ReportsTab';
 
 export default function PayrollManagementPage() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
   const [stats, setStats] = useState<{
@@ -48,14 +50,12 @@ export default function PayrollManagementPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Payroll Management</h2>
-          <p className="text-muted-foreground">
-            Manage payroll, track returns, and monitor compliance adjustments
-          </p>
+          <h2 className="text-3xl font-bold tracking-tight">{t('payroll.title')}</h2>
+          <p className="text-muted-foreground">{t('payroll.subtitle')}</p>
         </div>
         <Button size="lg" onClick={() => setActiveTab('payroll-report')}>
-          <DollarSign className="w-5 h-5 mr-2" />
-          Payroll Report
+          <DollarSign className="w-5 h-5 mr-2 rtl:ml-2 rtl:mr-0" />
+          {t('payroll.payrollReportBtn')}
         </Button>
       </div>
 
@@ -63,11 +63,9 @@ export default function PayrollManagementPage() {
         <Card className="p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-muted-foreground mb-1">Total Employees</p>
-              <p className="text-3xl font-bold">
-                {stats.loading ? '—' : stats.totalEmployees}
-              </p>
-              <p className="text-xs text-muted-foreground mt-2">Active (excl. consultants)</p>
+              <p className="text-sm text-muted-foreground mb-1">{t('payroll.totalEmployees')}</p>
+              <p className="text-3xl font-bold">{stats.loading ? '—' : stats.totalEmployees}</p>
+              <p className="text-xs text-muted-foreground mt-2">{t('payroll.totalEmployeesHint')}</p>
             </div>
             <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
               <Users className="w-6 h-6 text-primary" />
@@ -77,11 +75,11 @@ export default function PayrollManagementPage() {
         <Card className="p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-muted-foreground mb-1">Total Base Salary (KWD)</p>
+              <p className="text-sm text-muted-foreground mb-1">{t('payroll.totalBaseSalary')}</p>
               <p className="text-3xl font-bold">
                 {stats.loading ? '—' : stats.totalBaseSalary.toLocaleString('en-US', { minimumFractionDigits: 3 })}
               </p>
-              <p className="text-xs text-muted-foreground mt-2">Sum of base salaries</p>
+              <p className="text-xs text-muted-foreground mt-2">{t('payroll.totalBaseSalaryHint')}</p>
             </div>
             <div className="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center">
               <DollarSign className="w-6 h-6 text-blue-600" />
@@ -91,11 +89,11 @@ export default function PayrollManagementPage() {
         <Card className="p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-muted-foreground mb-1">Total Housing Allowance (KWD)</p>
+              <p className="text-sm text-muted-foreground mb-1">{t('payroll.totalHousing')}</p>
               <p className="text-3xl font-bold">
                 {stats.loading ? '—' : stats.totalHousing.toLocaleString('en-US', { minimumFractionDigits: 3 })}
               </p>
-              <p className="text-xs text-muted-foreground mt-2">Sum of housing allowances</p>
+              <p className="text-xs text-muted-foreground mt-2">{t('payroll.totalHousingHint')}</p>
             </div>
             <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center">
               <TrendingUp className="w-6 h-6 text-green-600" />
@@ -106,26 +104,27 @@ export default function PayrollManagementPage() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="payroll-report">Payroll Report</TabsTrigger>
-          <TabsTrigger value="reports">Reports</TabsTrigger>
+          <TabsTrigger value="overview">{t('payroll.tabOverview')}</TabsTrigger>
+          <TabsTrigger value="payroll-report">{t('payroll.tabPayrollReport')}</TabsTrigger>
+          <TabsTrigger value="reports">{t('payroll.tabReports')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
           <Card className="p-6">
-            <h4 className="font-semibold mb-4">Quick actions</h4>
+            <h4 className="font-semibold mb-4">{t('payroll.quickActions')}</h4>
             <div className="flex flex-wrap gap-3">
               <Button onClick={() => setActiveTab('payroll-report')}>
-                <FileText className="w-4 h-4 mr-2" />
-                Build payroll report
+                <FileText className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                {t('payroll.buildPayrollReport')}
               </Button>
               <Button variant="outline" onClick={() => setActiveTab('reports')}>
-                Export payroll Excel
+                {t('payroll.exportPayrollExcel')}
               </Button>
             </div>
-            <p className="text-sm text-muted-foreground mt-4">
-              Use <strong>Payroll Report</strong> to load a month with working days from attendance and leave from approved requests, edit amounts, and export the styled Excel. Use <strong>Reports</strong> for quick Excel export.
-            </p>
+            <p
+              className="text-sm text-muted-foreground mt-4"
+              dangerouslySetInnerHTML={{ __html: t('payroll.overviewHelp') }}
+            />
           </Card>
         </TabsContent>
 

@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Download, FileText, TrendingUp, DollarSign, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,15 +10,10 @@ import { downloadPayrollExcel } from '@/utils/payrollReportExcelExport';
 import { detectPayrollTemplate } from '@/utils/payrollTemplate';
 import { employeeService } from '@/services/employeeService';
 import { toast } from 'sonner';
-
-const MONTHS = [
-  { value: '1', label: 'January' }, { value: '2', label: 'February' }, { value: '3', label: 'March' },
-  { value: '4', label: 'April' }, { value: '5', label: 'May' }, { value: '6', label: 'June' },
-  { value: '7', label: 'July' }, { value: '8', label: 'August' }, { value: '9', label: 'September' },
-  { value: '10', label: 'October' }, { value: '11', label: 'November' }, { value: '12', label: 'December' }
-];
+import { getPayrollMonthLabel, PAYROLL_MONTH_KEYS } from '@/utils/payrollDisplay';
 
 export default function ReportsTab() {
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const [kdaMonth, setKdaMonth] = useState('12');
   const [kdaYear, setKdaYear] = useState('2025');
@@ -26,6 +22,15 @@ export default function ReportsTab() {
   const [kdaLoading, setKdaLoading] = useState(false);
 
   const companyId = user?.company_id;
+
+  const months = useMemo(
+    () =>
+      PAYROLL_MONTH_KEYS.map((key, i) => ({
+        value: String(i + 1),
+        label: t(`payroll.months.${key}`)
+      })),
+    [t, i18n.language]
+  );
 
   useEffect(() => {
     if (!companyId) return;
@@ -36,15 +41,15 @@ export default function ReportsTab() {
         if (d) depts.add(d);
       });
       setDepartmentOptions([
-        { value: 'all', label: 'All Departments' },
+        { value: 'all', label: t('payroll.allDepartments') },
         ...Array.from(depts).sort().map((d) => ({ value: d, label: d }))
       ]);
     });
-  }, [companyId]);
+  }, [companyId, t, i18n.language]);
 
   const handleGenerateKdaReport = async () => {
     if (!companyId) {
-      toast.error('Company not set. Please log in with a company account.');
+      toast.error(t('payroll.reports.companyNotSet'));
       return;
     }
     setKdaLoading(true);
@@ -65,7 +70,7 @@ export default function ReportsTab() {
         paidLeaveDaysByEmployeeId: leaveDays,
         actualDaysByEmployeeId: actualDaysMap
       });
-      const monthName = MONTHS.find((m) => m.value === kdaMonth)?.label || kdaMonth;
+      const monthName = getPayrollMonthLabel(kdaMonth, t);
       const filename = `Payroll_${monthName}_${kdaYear}.xlsx`;
       await downloadPayrollExcel(
         {
@@ -78,10 +83,10 @@ export default function ReportsTab() {
         },
         filename
       );
-      toast.success(`Report generated: ${report.rows.length} employees. Excel download started.`);
+      toast.success(t('payroll.reports.generateSuccess'));
     } catch (e) {
       console.error(e);
-      toast.error('Failed to generate payroll report. Please try again.');
+      toast.error(t('payroll.reports.generateFailed'));
     } finally {
       setKdaLoading(false);
     }
@@ -91,26 +96,24 @@ export default function ReportsTab() {
     <div className="space-y-6">
       {/* KDA Bilingual Payroll Report (Excel-like) */}
       <Card className="p-6 border-primary/20 bg-primary/5">
-        <h4 className="font-semibold mb-1">Bilingual Payroll Report</h4>
-        <p className="text-sm text-muted-foreground mb-4">
-          Generate a payroll report matching the June 2026 template from docs: bilingual headers, gross accrual, deductions, net salary, scheduled payment, and refund. Exports the same styled Excel (BEC or DYLX template).
-        </p>
+        <h4 className="font-semibold mb-1">{t('payroll.reports.generateTitle')}</h4>
+        <p className="text-sm text-muted-foreground mb-4">{t('payroll.reports.generateDesc')}</p>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
           <div>
-            <label className="text-sm font-medium mb-2 block">Month</label>
+            <label className="text-sm font-medium mb-2 block">{t('payroll.month')}</label>
             <Select value={kdaMonth} onValueChange={setKdaMonth}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {MONTHS.map((m) => (
+                {months.map((m) => (
                   <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div>
-            <label className="text-sm font-medium mb-2 block">Year</label>
+            <label className="text-sm font-medium mb-2 block">{t('payroll.year')}</label>
             <Select value={kdaYear} onValueChange={setKdaYear}>
               <SelectTrigger>
                 <SelectValue />
@@ -123,7 +126,7 @@ export default function ReportsTab() {
             </Select>
           </div>
           <div>
-            <label className="text-sm font-medium mb-2 block">Department</label>
+            <label className="text-sm font-medium mb-2 block">{t('payroll.department')}</label>
             <Select value={kdaDepartment} onValueChange={setKdaDepartment}>
               <SelectTrigger>
                 <SelectValue />
@@ -137,8 +140,8 @@ export default function ReportsTab() {
           </div>
           <div className="flex items-end">
             <Button onClick={handleGenerateKdaReport} disabled={kdaLoading}>
-              {kdaLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
-              Generate & Download Excel
+              {kdaLoading ? <Loader2 className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0 animate-spin" /> : <Download className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />}
+              {t('payroll.reports.generateBtn')}
             </Button>
           </div>
         </div>

@@ -17,6 +17,9 @@ const MONEY_COL_INDEXES = new Set(
 const COLUMN_WIDTHS = [6.5, 14, 42, 14, 16, 12, 12, 14, 14, 12, 12, 10, 12, 12, 12, 10, 10, 16, 18, 20, 14, 28];
 
 const FILL_HEADER = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFD9E1F2' } };
+const FILL_TITLE_BAR = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FF294172' } };
+const FILL_META_BAR = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFE8EEF7' } };
+const FILL_META_BAR_LIGHT = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFF4F7FB' } };
 const FILL_GROUP = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFFF2CC' } };
 const FILL_REFUND = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFDE68A' } };
 const FILL_ALT = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFF4F4F5' } };
@@ -61,6 +64,52 @@ function styleCell(
   if (opts.border !== false) cell.border = THIN_BORDER;
 }
 
+function styleBannerRow(
+  ws: ExcelJS.Worksheet,
+  rowNum: number,
+  lastCol: string,
+  value: string,
+  opts: {
+    fontSize: number;
+    bold?: boolean;
+    fontColor?: string;
+    fill: ExcelJS.Fill;
+    align?: 'left' | 'center' | 'right';
+    height: number;
+    topBorder?: 'medium' | 'thin';
+    bottomBorder?: 'medium' | 'thin';
+  }
+) {
+  ws.mergeCells(`A${rowNum}:${lastCol}${rowNum}`);
+  const cell = ws.getCell(`A${rowNum}`);
+  cell.value = value;
+  cell.font = {
+    name: 'Calibri',
+    size: opts.fontSize,
+    bold: opts.bold ?? false,
+    color: opts.fontColor ? { argb: opts.fontColor } : undefined
+  };
+  cell.alignment = { vertical: 'middle', horizontal: opts.align ?? 'center', wrapText: true };
+  cell.fill = opts.fill;
+  const edge = { argb: 'FF294172' };
+  const line = { argb: 'FF9CA3AF' };
+  cell.border = {
+    top: opts.topBorder ? { style: opts.topBorder, color: edge } : undefined,
+    bottom: opts.bottomBorder ? { style: opts.bottomBorder, color: opts.bottomBorder === 'medium' ? edge : line } : undefined,
+    left: { style: 'thin', color: edge },
+    right: { style: 'thin', color: edge }
+  };
+  ws.getRow(rowNum).height = opts.height;
+}
+
+function formatDepartmentBanner(departmentLabel: string): string {
+  const dept = departmentLabel.replace(/^Department\s*\/\s*/i, '').trim();
+  if (!dept || departmentLabel.toLowerCase().includes('all')) {
+    return 'القسم / Department · جميع الأقسام / All Departments';
+  }
+  return `القسم / Department · ${dept}`;
+}
+
 export async function buildPayrollStyledWorkbook(
   meta: PayrollReportExportMeta,
   rows: KdaPayrollReportRow[]
@@ -76,23 +125,39 @@ export async function buildPayrollStyledWorkbook(
   });
 
   const lastCol = colLetter(COL_COUNT);
-  const companyLine = [meta.companyNameArabic, meta.companyName].filter(Boolean).join(' — ');
+  const companyLine = [meta.companyNameArabic, meta.companyName].filter(Boolean).join('  —  ');
 
-  ws.mergeCells(`A1:${lastCol}1`);
-  const titleCell = ws.getCell('A1');
-  titleCell.value = companyLine;
-  styleCell(titleCell, { bold: true, align: 'left' });
-  titleCell.font = { name: 'Calibri', size: 14, bold: true };
-  ws.getRow(1).height = 28;
+  styleBannerRow(ws, 1, lastCol, companyLine, {
+    fontSize: 16,
+    bold: true,
+    fontColor: 'FFFFFFFF',
+    fill: FILL_TITLE_BAR,
+    align: 'center',
+    height: 38,
+    topBorder: 'medium',
+    bottomBorder: 'thin'
+  });
 
-  ws.mergeCells(`A2:${lastCol}2`);
-  styleCell(ws.getCell('A2'), { align: 'left' });
-  ws.getCell('A2').value = meta.periodLabel;
+  styleBannerRow(ws, 2, lastCol, meta.periodLabel, {
+    fontSize: 13,
+    bold: true,
+    fontColor: 'FF1E3A5F',
+    fill: FILL_META_BAR,
+    align: 'center',
+    height: 28,
+    bottomBorder: 'thin'
+  });
 
-  ws.mergeCells(`A3:${lastCol}3`);
-  styleCell(ws.getCell('A3'), { align: 'left' });
-  ws.getCell('A3').value = `Department: ${meta.departmentLabel}`;
-  ws.getRow(4).height = 6;
+  styleBannerRow(ws, 3, lastCol, formatDepartmentBanner(meta.departmentLabel), {
+    fontSize: 11,
+    fontColor: 'FF334155',
+    fill: FILL_META_BAR_LIGHT,
+    align: 'center',
+    height: 24,
+    bottomBorder: 'medium'
+  });
+
+  ws.getRow(4).height = 8;
 
   const h1 = 5;
   const h2 = 6;
@@ -107,8 +172,8 @@ export async function buildPayrollStyledWorkbook(
     { en: 'Basic Salary KWD', ar: 'الراتب الأساسي', rowspan: 2, align: 'right' as const },
     { en: 'Actual Working Days', ar: 'أيام العمل الفعلية', rowspan: 2, align: 'center' as const },
     { en: 'Paid leave Days', ar: 'اجازات مدفوعة', rowspan: 2, align: 'center' as const },
-    { en: 'Gross Accrual Month', ar: '', colspan: 6, group: true },
-    { en: 'Deductions', ar: '', colspan: 4, group: true },
+    { en: 'Gross Accrual Month', ar: 'استحقاق الإجمالي للشهر', colspan: 6, group: true },
+    { en: 'Deductions', ar: 'الخصومات', colspan: 4, group: true },
     { en: 'Net Salary KWD', ar: 'صافي الراتب', rowspan: 2, align: 'right' as const },
     { en: 'The amount scheduled to pay', ar: '', rowspan: 2, align: 'right' as const },
     { en: 'Method of payment', ar: '', rowspan: 2 },
@@ -120,8 +185,9 @@ export async function buildPayrollStyledWorkbook(
   for (const h of headerRow1) {
     const startCol = col;
     const endCol = h.colspan ? col + h.colspan - 1 : col;
+    const endRow = h.rowspan === 2 ? h2 : h1;
     const start = `${colLetter(startCol)}${h1}`;
-    const end = `${colLetter(endCol)}${h.rowspan === 2 ? h1 : h2}`;
+    const end = `${colLetter(endCol)}${endRow}`;
     if (start !== end) ws.mergeCells(`${start}:${end}`);
     const cell = ws.getCell(start);
     cell.value = h.ar ? `${h.en}\n${h.ar}` : h.en;
@@ -134,24 +200,24 @@ export async function buildPayrollStyledWorkbook(
   }
 
   const subHeaders = [
-    'Salary KWD\nالراتب د.ك',
-    'Paid Leave KWD\nاجازات مدفوعة د.ك',
-    'Over Time KWD\nإضافي د.ك',
-    'housing allowance KWD\nبدل سكن د.ك',
-    'Other\nأخرى',
-    'Total\nالإجمالي',
-    'Penalties\nجزاءات',
-    'Deductions\nخصومات',
-    'Loan\nسلف',
-    'Other\nأخرى'
+    { en: 'Salary KWD', ar: 'الراتب د.ك' },
+    { en: 'Paid Leave KWD', ar: 'اجازات مدفوعة د.ك' },
+    { en: 'Over Time KWD', ar: 'إضافي د.ك' },
+    { en: 'housing allowance KWD', ar: 'بدل سكن د.ك' },
+    { en: 'Other', ar: 'أخرى' },
+    { en: 'Total', ar: 'الإجمالي' },
+    { en: 'Penalties', ar: 'جزاءات' },
+    { en: 'Deductions', ar: 'خصومات' },
+    { en: 'Loan', ar: 'سلف' },
+    { en: 'Other', ar: 'أخرى' }
   ];
   subHeaders.forEach((label, i) => {
     const c = ws.getCell(h2, 8 + i);
-    c.value = label;
+    c.value = `${label.en}\n${label.ar}`;
     styleCell(c, {
       bold: true,
       align: 'center',
-      fill: i < 6 ? FILL_GROUP : FILL_GROUP
+      fill: FILL_GROUP
     });
   });
 

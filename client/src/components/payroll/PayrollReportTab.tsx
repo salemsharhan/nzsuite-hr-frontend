@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Download, Loader2, RefreshCw, FileSpreadsheet, Save } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Download, Loader2, RefreshCw, FileSpreadsheet, Save, Upload } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,7 @@ import {
   type KdaPayrollReportRow
 } from '@/services/payrollReportService';
 import { downloadPayrollExcel } from '@/utils/payrollReportExcelExport';
+import { importPayrollExcel } from '@/utils/payrollReportExcelImport';
 import { PAYROLL_MONTH_DIVISOR } from '@/utils/payrollTemplate';
 import { employeeService } from '@/services/employeeService';
 import { getSavedPayrollReport, savePayrollReport } from '@/services/payrollReportStorageService';
@@ -42,7 +43,10 @@ export default function PayrollReportTab() {
   const [savedInfo, setSavedInfo] = useState<{ savedAt: string; savedByEmail: string | null } | null>(null);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
-  const [reportSource, setReportSource] = useState<'saved' | 'generated' | null>(null);
+  const [reportSource, setReportSource] = useState<'saved' | 'generated' | 'imported' | null>(null);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const suppressAutoLoad = useRef(false);
 
   const companyId = user?.company_id;
 
@@ -128,8 +132,8 @@ export default function PayrollReportTab() {
   /** Auto-load saved report (or build fresh) when month/year/department changes */
   useEffect(() => {
     if (!companyId) return;
-    if (skipAutoLoad.current) {
-      skipAutoLoad.current = false;
+    if (suppressAutoLoad.current) {
+      suppressAutoLoad.current = false;
       return;
     }
     setMeta(null);
@@ -262,6 +266,63 @@ export default function PayrollReportTab() {
     );
   };
 
+  const handleImportExcel = useCallback(
+    async (file: File) => {
+      if (!companyId) {
+        toast.error('Company not set.');
+        return;
+      }
+      if (dirty && !window.confirm('You have unsaved edits. Import from Excel and replace them?')) {
+        return;
+      }
+      setImporting(true);
+      try {
+        let employees = await employeeService.getAll(companyId);
+        if (department !== 'all') {
+          employees = employees.filter(
+            (e) =>
+              (e.department || '').toLowerCase() === department.toLowerCase() ||
+              ((e as { departments?: { name?: string } }).departments?.name || '').toLowerCase() ===
+                department.toLowerCase()
+          );
+        }
+
+        const result = await importPayrollExcel(file, employees, { department });
+
+        suppressAutoLoad.current = true;
+        setMeta(result.meta);
+        setRows(result.rows);
+        setSavedInfo(null);
+        setDirty(true);
+        setReportSource('imported');
+
+        const unmatched = result.unmatchedNames.length;
+        let msg = `Imported ${result.rows.length} row(s) from Excel`;
+        if (result.matched > 0) {
+          msg += ` (${result.matched} matched by name`;
+          if (unmatched > 0) msg += `, ${unmatched} added without match`;
+          msg += ')';
+        } else if (unmatched > 0) {
+          msg += ` (${unmatched} without employee match — still added)`;
+        }
+        msg += '. Save when ready.';
+        toast.success(msg);
+      } catch (e) {
+        console.error(e);
+        toast.error(e instanceof Error ? e.message : 'Failed to import Excel.');
+      } finally {
+        setImporting(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    },
+    [companyId, department, dirty, rows]
+  );
+
+  const onImportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) void handleImportExcel(file);
+  };
+
   const handleExport = async () => {
     if (!meta || rows.length === 0) {
       toast.error('Load report first.');
@@ -287,8 +348,15 @@ export default function PayrollReportTab() {
       <Card className="p-6 rounded-xl border-2 shadow-sm bg-gradient-to-br from-card to-muted/20">
         <h4 className="font-semibold mb-2 text-foreground">Payroll Report</h4>
         <p className="text-sm text-muted-foreground mb-4">
-          Pick a month and year — a saved payroll loads automatically if one exists, otherwise it builds from attendance and leave. Edit any values on screen, then click <strong>Save Payroll</strong>. Export Excel when ready.
+          Pick a month and year — a saved payroll loads automatically if one exists, otherwise it builds from attendance and leave. Edit values on screen, <strong>Import Excel</strong> (shows all rows from the file; matches names when possible), then <strong>Save Payroll</strong>.
         </p>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          className="hidden"
+          onChange={onImportFileChange}
+        />
         <div className="flex flex-wrap items-end gap-4">
           <div>
             <label className="text-sm font-medium mb-1 block">Month</label>
@@ -329,11 +397,19 @@ export default function PayrollReportTab() {
               </SelectContent>
             </Select>
           </div>
-          <Button onClick={() => loadReport()} disabled={loading} variant="outline">
+          <Button
+            variant="outline"
+            disabled={loading || importing}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {importing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
+            Import Excel
+          </Button>
+          <Button onClick={() => loadReport()} disabled={loading || importing} variant="outline">
             {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
             Reload
           </Button>
-          <Button onClick={handleRegenerate} disabled={loading} variant="outline">
+          <Button onClick={handleRegenerate} disabled={loading || importing} variant="outline">
             Rebuild from attendance
           </Button>
           {rows.length > 0 && (
@@ -351,6 +427,9 @@ export default function PayrollReportTab() {
         </div>
         {dirty && rows.length > 0 && (
           <p className="text-sm text-amber-600 mt-3 font-medium">Unsaved changes — click Save Payroll to keep your edits.</p>
+        )}
+        {reportSource === 'imported' && !dirty && (
+          <p className="text-sm text-muted-foreground mt-3">Loaded from imported Excel file.</p>
         )}
         {reportSource === 'saved' && savedInfo && !dirty && (
           <p className="text-sm text-muted-foreground mt-3">

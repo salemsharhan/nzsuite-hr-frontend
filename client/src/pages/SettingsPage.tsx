@@ -1091,6 +1091,54 @@ export default function SettingsPage() {
                       />
                     </div>
                   </div>
+
+                  <div className="mt-4 pt-4 border-t border-white/10 space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      WhatsApp approval via Task Hub: register the approver in Task Hub → WhatsApp directory, then set their details here.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Payroll approver name</label>
+                        <Input
+                          value={companySettings?.payroll_approver_name || ''}
+                          onChange={(e) =>
+                            setCompanySettings({ ...companySettings!, payroll_approver_name: e.target.value })
+                          }
+                          placeholder="e.g. General Manager"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Approver phone (E.164)</label>
+                        <Input
+                          value={companySettings?.payroll_approver_phone_e164 || ''}
+                          onChange={(e) =>
+                            setCompanySettings({ ...companySettings!, payroll_approver_phone_e164: e.target.value })
+                          }
+                          placeholder="+965xxxxxxxx"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Approver WhatsApp JID</label>
+                        <Input
+                          value={companySettings?.payroll_approver_wa_jid || ''}
+                          onChange={(e) =>
+                            setCompanySettings({ ...companySettings!, payroll_approver_wa_jid: e.target.value })
+                          }
+                          placeholder="965xxxxxxxx@c.us"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Task Hub workspace user ID</label>
+                        <Input
+                          value={companySettings?.taskhub_workspace_user_id || ''}
+                          onChange={(e) =>
+                            setCompanySettings({ ...companySettings!, taskhub_workspace_user_id: e.target.value })
+                          }
+                          placeholder="UUID from Task Hub"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Attendance Settings */}

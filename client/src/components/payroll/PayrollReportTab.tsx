@@ -1,9 +1,20 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Download, Loader2, RefreshCw, FileSpreadsheet, Save, Upload } from 'lucide-react';
+import { Download, FileDown, FileSpreadsheet, FileText, Loader2, RefreshCw, Save, Send, Upload } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   buildKdaPayrollReport,
@@ -12,11 +23,27 @@ import {
   getActualWorkingDaysFromAttendance,
   type KdaPayrollReportRow
 } from '@/services/payrollReportService';
-import { downloadPayrollExcel } from '@/utils/payrollReportExcelExport';
+import { buildPayrollExcelBuffer, downloadPayrollExcel } from '@/utils/payrollReportExcelExport';
+import { downloadPayrollCsv } from '@/utils/payrollReportCsvExport';
+import { downloadPayrollPdf } from '@/utils/payrollReportPdfExport';
+import {
+  buildPayrollApprovalAttachment,
+  PAYROLL_APPROVAL_FORMAT_OPTIONS,
+  type PayrollApprovalAttachmentFormat
+} from '@/utils/payrollReportApprovalAttachment';
 import { importPayrollExcel } from '@/utils/payrollReportExcelImport';
 import { PAYROLL_MONTH_DIVISOR } from '@/utils/payrollTemplate';
 import { employeeService } from '@/services/employeeService';
-import { getSavedPayrollReport, savePayrollReport } from '@/services/payrollReportStorageService';
+import {
+  getSavedPayrollReport,
+  savePayrollReport,
+  type PayrollApprovalStatus,
+  type SavedPayrollReport
+} from '@/services/payrollReportStorageService';
+import {
+  payrollApprovalStatusLabel,
+  submitPayrollForApproval
+} from '@/services/payrollApprovalService';
 import { toast } from 'sonner';
 
 const MONTHS = [
@@ -40,13 +67,30 @@ export default function PayrollReportTab() {
     departmentLabel: string;
   } | null>(null);
   const [rows, setRows] = useState<KdaPayrollReportRow[]>([]);
-  const [savedInfo, setSavedInfo] = useState<{ savedAt: string; savedByEmail: string | null } | null>(null);
+  const [savedInfo, setSavedInfo] = useState<{
+    savedAt: string;
+    savedByEmail: string | null;
+    reportId?: string;
+    approvalStatus?: PayrollApprovalStatus;
+    submittedAt?: string | null;
+    approvedAt?: string | null;
+    approvedByName?: string | null;
+    approvalNote?: string | null;
+  } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [submittingApproval, setSubmittingApproval] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [reportSource, setReportSource] = useState<'saved' | 'generated' | 'imported' | null>(null);
   const [importing, setImporting] = useState(false);
+  const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
+  const [approvalAttachmentFormat, setApprovalAttachmentFormat] =
+    useState<PayrollApprovalAttachmentFormat>('excel');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const suppressAutoLoad = useRef(false);
+  const reportSourceRef = useRef(reportSource);
+  const dirtyRef = useRef(dirty);
+  reportSourceRef.current = reportSource;
+  dirtyRef.current = dirty;
 
   const companyId = user?.company_id;
 
@@ -65,9 +109,34 @@ export default function PayrollReportTab() {
     });
   }, [companyId]);
 
+  const applySavedReport = (saved: SavedPayrollReport) => {
+    setMeta(saved.report_data.meta);
+    setRows(saved.report_data.rows);
+    setSavedInfo({
+      savedAt: saved.saved_at,
+      savedByEmail: saved.saved_by_email ?? null,
+      reportId: saved.id,
+      approvalStatus: saved.approval_status ?? 'draft',
+      submittedAt: saved.submitted_at ?? null,
+      approvedAt: saved.approved_at ?? null,
+      approvedByName: saved.approved_by_name ?? null,
+      approvalNote: saved.approval_note ?? null
+    });
+    setDirty(false);
+    setReportSource('saved');
+  };
+
   const loadReport = useCallback(async (options?: { forceRegenerate?: boolean }) => {
     if (!companyId) {
       toast.error('Company not set.');
+      return;
+    }
+    if (
+      reportSourceRef.current === 'imported' &&
+      dirtyRef.current &&
+      !options?.forceRegenerate &&
+      !window.confirm('You have unsaved imported payroll data. Reload will discard it and load from the system or saved report. Continue?')
+    ) {
       return;
     }
     setLoading(true);
@@ -79,14 +148,7 @@ export default function PayrollReportTab() {
       if (!forceRegenerate) {
         const saved = await getSavedPayrollReport(companyId, y, m, department);
         if (saved?.report_data?.meta && Array.isArray(saved?.report_data?.rows)) {
-          setMeta(saved.report_data.meta);
-          setRows(saved.report_data.rows);
-          setSavedInfo({
-            savedAt: saved.saved_at,
-            savedByEmail: saved.saved_by_email ?? null
-          });
-          setDirty(false);
-          setReportSource('saved');
+          applySavedReport(saved);
           toast.success(`Loaded saved payroll for ${MONTHS.find((mo) => mo.value === month)?.label} ${year} (${saved.report_data.rows.length} employees).`);
           return;
         }
@@ -129,17 +191,17 @@ export default function PayrollReportTab() {
     }
   }, [companyId, month, year, department]);
 
-  /** Auto-load saved report (or build fresh) when month/year/department changes */
+  /** Auto-load when month/year/department changes */
   useEffect(() => {
     if (!companyId) return;
     if (suppressAutoLoad.current) {
       suppressAutoLoad.current = false;
       return;
     }
-    setMeta(null);
-    setRows([]);
-    setReportSource(null);
-    loadReport();
+    if (reportSourceRef.current === 'imported' && dirtyRef.current) {
+      return;
+    }
+    void loadReport();
   }, [companyId, month, year, department, loadReport]);
 
   const handleRegenerate = useCallback(async () => {
@@ -168,7 +230,13 @@ export default function PayrollReportTab() {
       );
       setSavedInfo({
         savedAt: saved.saved_at,
-        savedByEmail: saved.saved_by_email ?? null
+        savedByEmail: saved.saved_by_email ?? null,
+        reportId: saved.id,
+        approvalStatus: saved.approval_status ?? 'draft',
+        submittedAt: saved.submitted_at ?? null,
+        approvedAt: saved.approved_at ?? null,
+        approvedByName: saved.approved_by_name ?? null,
+        approvalNote: saved.approval_note ?? null
       });
       setDirty(false);
       setReportSource('saved');
@@ -180,6 +248,70 @@ export default function PayrollReportTab() {
       setSaving(false);
     }
   }, [companyId, user, meta, rows, year, month, department]);
+
+  const approvalStatus = savedInfo?.approvalStatus ?? 'draft';
+  const isApprovalLocked = approvalStatus === 'pending_approval' || approvalStatus === 'approved';
+
+  const handleSubmitForApproval = useCallback(async (format: PayrollApprovalAttachmentFormat) => {
+    if (!companyId || !user || !meta || rows.length === 0) {
+      toast.error('Load a report first.');
+      return;
+    }
+    if (isApprovalLocked) {
+      toast.error(`Payroll is already ${payrollApprovalStatusLabel(approvalStatus).toLowerCase()}.`);
+      return;
+    }
+
+    setSubmittingApproval(true);
+    try {
+      const y = parseInt(year, 10);
+      const m = parseInt(month, 10);
+      const monthName = MONTHS.find((mo) => mo.value === month)?.label || month;
+
+      const saved = await savePayrollReport(
+        companyId,
+        y,
+        m,
+        department,
+        { meta, rows },
+        { userId: user.id, email: user.email }
+      );
+
+      const attachment = await buildPayrollApprovalAttachment(
+        meta,
+        rows,
+        format,
+        `Payroll_${monthName}_${year}`
+      );
+
+      const result = await submitPayrollForApproval({
+        companyId,
+        payrollReportId: saved.id,
+        year: y,
+        month: m,
+        department,
+        attachmentBase64: attachment.base64,
+        attachmentFilename: attachment.filename,
+        attachmentMime: attachment.mime
+      });
+
+      applySavedReport({
+        ...saved,
+        approval_status: 'pending_approval',
+        submitted_at: new Date().toISOString(),
+        submitted_by_email: user.email ?? null,
+        whats_task_id: result.whats_task_id
+      });
+
+      setApprovalDialogOpen(false);
+      toast.success('Payroll sent for approval. The approver will receive a WhatsApp poll.');
+    } catch (e) {
+      console.error(e);
+      toast.error(e instanceof Error ? e.message : 'Failed to send for approval.');
+    } finally {
+      setSubmittingApproval(false);
+    }
+  }, [companyId, user, meta, rows, year, month, department, isApprovalLocked, approvalStatus]);
 
   const round3 = (n: number) => Math.round(n * 1000) / 1000;
 
@@ -331,11 +463,46 @@ export default function PayrollReportTab() {
     try {
       const monthName = MONTHS.find((m) => m.value === month)?.label || month;
       const filename = `Payroll_${monthName}_${year}.xlsx`;
-      await downloadPayrollExcel({ ...meta, rows }, filename);
-      toast.success('Excel report exported.');
+      const exportRows = rows.map((row) => ({ ...row }));
+      await downloadPayrollExcel({ ...meta, rows: exportRows }, filename);
+      toast.success(`Excel exported with ${exportRows.length} employee row(s).`);
     } catch (e) {
       console.error(e);
-      toast.error('Failed to export Excel report.');
+      toast.error(e instanceof Error ? e.message : 'Failed to export Excel report.');
+    }
+  };
+
+  const handleExportCsv = async () => {
+    if (!meta || rows.length === 0) {
+      toast.error('Load report first.');
+      return;
+    }
+    try {
+      const monthName = MONTHS.find((m) => m.value === month)?.label || month;
+      const filename = `Payroll_${monthName}_${year}.xlsx`;
+      const exportRows = rows.map((row) => ({ ...row }));
+      await downloadPayrollCsv(meta, exportRows, filename);
+      toast.success(`Table exported with ${exportRows.length} employee row(s).`);
+    } catch (e) {
+      console.error(e);
+      toast.error(e instanceof Error ? e.message : 'Failed to export table.');
+    }
+  };
+
+  const handleExportPdf = async () => {
+    if (!meta || rows.length === 0) {
+      toast.error('Load report first.');
+      return;
+    }
+    try {
+      const monthName = MONTHS.find((m) => m.value === month)?.label || month;
+      const filename = `Payroll_${monthName}_${year}.pdf`;
+      const exportRows = rows.map((row) => ({ ...row }));
+      await downloadPayrollPdf(meta, exportRows, filename);
+      toast.success(`PDF exported with ${exportRows.length} employee row(s).`);
+    } catch (e) {
+      console.error(e);
+      toast.error(e instanceof Error ? e.message : 'Failed to export PDF report.');
     }
   };
 
@@ -346,9 +513,24 @@ export default function PayrollReportTab() {
   return (
     <div className="space-y-6">
       <Card className="p-6 rounded-xl border-2 shadow-sm bg-gradient-to-br from-card to-muted/20">
-        <h4 className="font-semibold mb-2 text-foreground">Payroll Report</h4>
+        <h4 className="font-semibold mb-2 text-foreground flex flex-wrap items-center gap-2">
+          Payroll Report
+          {savedInfo?.approvalStatus && savedInfo.approvalStatus !== 'draft' && (
+            <Badge
+              variant={
+                savedInfo.approvalStatus === 'approved'
+                  ? 'default'
+                  : savedInfo.approvalStatus === 'rejected'
+                    ? 'destructive'
+                    : 'secondary'
+              }
+            >
+              {payrollApprovalStatusLabel(savedInfo.approvalStatus)}
+            </Badge>
+          )}
+        </h4>
         <p className="text-sm text-muted-foreground mb-4">
-          Pick a month and year — a saved payroll loads automatically if one exists, otherwise it builds from attendance and leave. Edit values on screen, <strong>Import Excel</strong> (shows all rows from the file; matches names when possible), then <strong>Save Payroll</strong>.
+          Pick a month and year — a saved payroll loads automatically if one exists, otherwise it builds from attendance and leave. Edit values on screen, <strong>Import Excel</strong> (shows all rows from the file; matches names when possible), then <strong>Save Payroll</strong> or <strong>Save &amp; Send for Approval</strong>.
         </p>
         <input
           ref={fileInputRef}
@@ -414,13 +596,33 @@ export default function PayrollReportTab() {
           </Button>
           {rows.length > 0 && (
             <>
-              <Button variant="default" onClick={handleSaveReport} disabled={saving}>
+              <Button variant="default" onClick={handleSaveReport} disabled={saving || submittingApproval || isApprovalLocked}>
                 {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
                 Save Payroll
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => setApprovalDialogOpen(true)}
+                disabled={saving || submittingApproval || isApprovalLocked}
+              >
+                {submittingApproval ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4 mr-2" />
+                )}
+                Save &amp; Send for Approval
               </Button>
               <Button variant="outline" onClick={handleExport}>
                 <Download className="w-4 h-4 mr-2" />
                 Export Excel
+              </Button>
+              <Button variant="outline" onClick={() => void handleExportCsv()}>
+                <FileText className="w-4 h-4 mr-2" />
+                Export Table
+              </Button>
+              <Button variant="outline" onClick={() => void handleExportPdf()}>
+                <FileDown className="w-4 h-4 mr-2" />
+                Export PDF
               </Button>
             </>
           )}
@@ -429,12 +631,30 @@ export default function PayrollReportTab() {
           <p className="text-sm text-amber-600 mt-3 font-medium">Unsaved changes — click Save Payroll to keep your edits.</p>
         )}
         {reportSource === 'imported' && !dirty && (
-          <p className="text-sm text-muted-foreground mt-3">Loaded from imported Excel file.</p>
+          <p className="text-sm text-muted-foreground mt-3">
+            Loaded from imported Excel file ({rows.length} row{rows.length === 1 ? '' : 's'}). Save to keep this data.
+          </p>
+        )}
+        {reportSource === 'imported' && dirty && (
+          <p className="text-sm text-amber-600 mt-3 font-medium">
+            Imported Excel ({rows.length} row{rows.length === 1 ? '' : 's'}) — unsaved. Export uses exactly these rows; save before reload.
+          </p>
         )}
         {reportSource === 'saved' && savedInfo && !dirty && (
           <p className="text-sm text-muted-foreground mt-3">
             Showing saved payroll from {new Date(savedInfo.savedAt).toLocaleString()}
             {savedInfo.savedByEmail ? ` by ${savedInfo.savedByEmail}` : ''}.
+            {savedInfo.approvalStatus === 'pending_approval' && savedInfo.submittedAt && (
+              <> Submitted for approval {new Date(savedInfo.submittedAt).toLocaleString()}.</>
+            )}
+            {savedInfo.approvalStatus === 'approved' && savedInfo.approvedAt && (
+              <>
+                {' '}
+                Approved {new Date(savedInfo.approvedAt).toLocaleString()}
+                {savedInfo.approvedByName ? ` by ${savedInfo.approvedByName}` : ''}.
+              </>
+            )}
+            {savedInfo.approvalNote ? ` Note: ${savedInfo.approvalNote}` : ''}
           </p>
         )}
       </Card>
@@ -580,6 +800,48 @@ export default function PayrollReportTab() {
           <p>Select month and year above. A saved payroll loads automatically, or a new one is built from attendance.</p>
         </Card>
       )}
+
+      <Dialog open={approvalDialogOpen} onOpenChange={setApprovalDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send payroll for approval</DialogTitle>
+            <DialogDescription>
+              Payroll will be saved and sent to the configured approver via WhatsApp. Choose the attachment format.
+            </DialogDescription>
+          </DialogHeader>
+          <RadioGroup
+            value={approvalAttachmentFormat}
+            onValueChange={(v) => setApprovalAttachmentFormat(v as PayrollApprovalAttachmentFormat)}
+            className="gap-3 py-2"
+          >
+            {PAYROLL_APPROVAL_FORMAT_OPTIONS.map((opt) => (
+              <div key={opt.value} className="flex items-start gap-3 rounded-lg border p-3">
+                <RadioGroupItem value={opt.value} id={`approval-format-${opt.value}`} className="mt-0.5" />
+                <Label htmlFor={`approval-format-${opt.value}`} className="cursor-pointer font-normal leading-snug">
+                  <span className="font-medium text-foreground">{opt.label}</span>
+                  <span className="block text-sm text-muted-foreground">{opt.description}</span>
+                </Label>
+              </div>
+            ))}
+          </RadioGroup>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setApprovalDialogOpen(false)} disabled={submittingApproval}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void handleSubmitForApproval(approvalAttachmentFormat)}
+              disabled={submittingApproval}
+            >
+              {submittingApproval ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Send className="w-4 h-4 mr-2" />
+              )}
+              Save &amp; Send
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

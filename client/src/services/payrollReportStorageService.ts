@@ -8,6 +8,14 @@ export interface PayrollReportMeta {
   departmentLabel: string;
 }
 
+export type PayrollApprovalStatus =
+  | 'draft'
+  | 'pending_approval'
+  | 'approved'
+  | 'rejected'
+  | 'on_hold'
+  | 'need_update';
+
 export interface SavedPayrollReport {
   id: string;
   company_id: string;
@@ -21,6 +29,13 @@ export interface SavedPayrollReport {
   saved_at: string;
   saved_by_user_id: string | null;
   saved_by_email: string | null;
+  approval_status?: PayrollApprovalStatus;
+  submitted_at?: string | null;
+  submitted_by_email?: string | null;
+  approved_at?: string | null;
+  approved_by_name?: string | null;
+  approval_note?: string | null;
+  whats_task_id?: string | null;
 }
 
 const DEPT_KEY = (d: string) => (d === 'all' ? '' : d);

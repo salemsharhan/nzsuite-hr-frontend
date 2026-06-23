@@ -19,6 +19,10 @@ export interface CompanySettings {
   overtime_multiplier: number;
   timezone: string;
   currency: string;
+  payroll_approver_wa_jid?: string | null;
+  payroll_approver_phone_e164?: string | null;
+  payroll_approver_name?: string | null;
+  taskhub_workspace_user_id?: string | null;
   created_at: string;
   updated_at: string;
 }

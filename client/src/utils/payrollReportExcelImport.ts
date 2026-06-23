@@ -1,6 +1,7 @@
 import ExcelJS from 'exceljs';
 import type { Employee } from '@/services/employeeService';
 import type { KdaPayrollReportRow } from '@/services/payrollReportService';
+import { materializeWorksheetFormulas } from './payrollExcelFormulaUtils';
 import { PAYROLL_MONTH_DIVISOR } from './payrollTemplate';
 
 const DATA_START_ROW = 6;
@@ -179,13 +180,15 @@ function isFooterRow(name: string): boolean {
   );
 }
 
+function shouldStopImportAtRow(ws: ExcelJS.Worksheet, rowNum: number, nameCol: number): boolean {
+  const peek = cellText(ws.getRow(rowNum).getCell(nameCol)).trim().toLowerCase();
+  return peek === 'total' || peek.startsWith('prepared by');
+}
+
 function rowHasPayrollData(ws: ExcelJS.Worksheet, rowNum: number, offset: number): boolean {
   const c = (base: number) => ws.getRow(rowNum).getCell(base + offset);
+  if (cellText(c(JUNE_2026_COLS.name)).trim()) return true;
   if (cellText(c(JUNE_2026_COLS.empCode)).trim()) return true;
-  if (cellNumber(c(JUNE_2026_COLS.sn)) !== 0) return true;
-  if (cellNumber(c(JUNE_2026_COLS.basicSalary)) !== 0) return true;
-  if (cellNumber(c(JUNE_2026_COLS.netSalary)) !== 0) return true;
-  if (cellNumber(c(JUNE_2026_COLS.totalGross)) !== 0) return true;
   return false;
 }
 
@@ -197,6 +200,8 @@ function parseImportedRow(
   const c = (base: number) => ws.getRow(rowNum).getCell(base + offset);
   const nameRaw = cellText(c(JUNE_2026_COLS.name));
   if (isFooterRow(nameRaw)) return null;
+  const empCode = cellText(c(JUNE_2026_COLS.empCode)).trim();
+  if (!nameRaw.trim() && !empCode) return null;
   if (!nameRaw.trim() && !rowHasPayrollData(ws, rowNum, offset)) return null;
 
   const basic = cellNumber(c(JUNE_2026_COLS.basicSalary));
@@ -232,7 +237,7 @@ function parseImportedRow(
 
   return {
     sn: Math.round(cellNumber(c(JUNE_2026_COLS.sn))) || rowNum - DATA_START_ROW + 1,
-    empCode: cellText(c(JUNE_2026_COLS.empCode)).trim(),
+    empCode: empCode || cellText(c(JUNE_2026_COLS.empCode)).trim(),
     nameArabicEnglish: nameRaw.trim(),
     joinDate: cellText(c(JUNE_2026_COLS.joinDate)).trim(),
     basicSalaryKwd: round3(basic),
@@ -297,6 +302,8 @@ export async function importPayrollExcel(
   const ws = findPayrollSheet(workbook);
   if (!ws) throw new Error('No payroll sheet found in the workbook.');
 
+  materializeWorksheetFormulas(ws);
+
   const meta = parseHeaderMeta(ws);
   if (options?.department && options.department !== 'all') {
     meta.departmentLabel = `Department / ${options.department}`;
@@ -310,10 +317,10 @@ export async function importPayrollExcel(
   let matched = 0;
 
   for (let r = DATA_START_ROW; r <= ws.rowCount; r++) {
+    if (shouldStopImportAtRow(ws, r, nameCol)) break;
+
     const parsed = parseImportedRow(ws, r, offset);
     if (!parsed) {
-      const peek = cellText(ws.getRow(r).getCell(nameCol));
-      if (peek.trim().toLowerCase() === 'total') break;
       continue;
     }
 

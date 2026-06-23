@@ -11,6 +11,32 @@ const DATA_START_ROW = 6;
 const LAST_DATA_ROW = 32;
 const FOOTER_ROW = 33;
 const COLUMN_COUNT = 22;
+const TEMPLATE_DATA_SLOTS = LAST_DATA_ROW - DATA_START_ROW + 1;
+
+/** Column widths from docs payroll templates (Excel character units). */
+const PAYROLL_COLUMN_WIDTHS: Record<number, number> = {
+  2: 17.69,
+  3: 45.3,
+  4: 16.69,
+  5: 18.38,
+  6: 12,
+  7: 10.84,
+  8: 21.3,
+  9: 17.15,
+  10: 14.54,
+  11: 14,
+  12: 14.3,
+  13: 16.69,
+  14: 17.3,
+  15: 14.38,
+  16: 15.3,
+  17: 14.69,
+  18: 21.15,
+  19: 21.15,
+  20: 21.15,
+  21: 21.15,
+  22: 36.29
+};
 
 export interface PayrollExcelExportOptions {
   companyName: string;
@@ -21,68 +47,81 @@ export interface PayrollExcelExportOptions {
   templateKind?: PayrollTemplateKind;
 }
 
-function cloneStyle(style: Partial<ExcelJS.Style> | undefined): Partial<ExcelJS.Style> {
-  if (!style) return {};
-  return JSON.parse(JSON.stringify(style)) as Partial<ExcelJS.Style>;
-}
-
-function setCell(
-  row: ExcelJS.Row,
-  col: number,
-  value: ExcelJS.CellValue,
-  style?: Partial<ExcelJS.Style>
-) {
-  const cell = row.getCell(col);
-  cell.value = value;
-  if (style) cell.style = cloneStyle(style);
-}
-
 function numericOrZero(value: number): number {
   return Number.isFinite(value) ? value : 0;
 }
 
-function writeEmployeeRow(
-  ws: ExcelJS.Worksheet,
-  rowNum: number,
-  styleRow: ExcelJS.Row,
-  row: KdaPayrollReportRow
-) {
-  const excelRow = ws.getRow(rowNum);
-  for (let c = 1; c <= COLUMN_COUNT; c++) {
-    excelRow.getCell(c).style = cloneStyle(styleRow.getCell(c).style);
+function applyColumnWidths(ws: ExcelJS.Worksheet) {
+  for (const [col, width] of Object.entries(PAYROLL_COLUMN_WIDTHS)) {
+    ws.getColumn(Number(col)).width = width;
   }
-
-  setCell(excelRow, 1, row.sn);
-  setCell(excelRow, 2, row.empCode);
-  setCell(excelRow, 3, row.nameArabicEnglish);
-  setCell(excelRow, 4, row.joinDate);
-  setCell(excelRow, 5, numericOrZero(row.basicSalaryKwd));
-  setCell(excelRow, 6, numericOrZero(row.actualWorkingDays));
-  setCell(excelRow, 7, numericOrZero(row.paidLeaveDays));
-  setCell(excelRow, 8, numericOrZero(row.salaryKwd));
-  setCell(excelRow, 9, numericOrZero(row.paidLeaveKwd));
-  setCell(excelRow, 10, numericOrZero(row.overTimeKwd));
-  setCell(excelRow, 11, numericOrZero(row.housingAllowanceKwd));
-  setCell(excelRow, 12, numericOrZero(row.otherKwd));
-  setCell(excelRow, 13, numericOrZero(row.totalGrossKwd));
-  setCell(excelRow, 14, numericOrZero(row.penaltiesKwd));
-  setCell(excelRow, 15, numericOrZero(row.deductionsKwd));
-  setCell(excelRow, 16, numericOrZero(row.loanKwd));
-  setCell(excelRow, 17, numericOrZero(row.deductionsOtherKwd));
-  setCell(excelRow, 18, numericOrZero(row.netSalaryKwd));
-  setCell(excelRow, 19, numericOrZero(row.amountScheduledToPay));
-  setCell(excelRow, 20, row.methodOfPayment || '');
-  setCell(excelRow, 21, numericOrZero(row.salaryRefund));
-  setCell(excelRow, 22, row.notes || '');
-  excelRow.commit();
 }
 
-function clearRow(ws: ExcelJS.Worksheet, rowNum: number) {
-  const row = ws.getRow(rowNum);
-  for (let c = 1; c <= COLUMN_COUNT; c++) {
-    row.getCell(c).value = null;
+/** Copy row formatting from the template sample row (direct ref — safe for theme colours). */
+function applyRowStyleFromTemplate(
+  ws: ExcelJS.Worksheet,
+  targetRowNum: number,
+  templateRowNum: number
+) {
+  const templateRow = ws.getRow(templateRowNum);
+  const targetRow = ws.getRow(targetRowNum);
+  for (let col = 1; col <= COLUMN_COUNT; col++) {
+    targetRow.getCell(col).style = templateRow.getCell(col).style;
   }
-  row.commit();
+}
+
+/**
+ * Clear a data row with explicit values.
+ * Using null breaks shared formulas left in the template and corrupts the file.
+ */
+function clearDataRow(ws: ExcelJS.Worksheet, rowNum: number) {
+  const row = ws.getRow(rowNum);
+  for (let col = 1; col <= COLUMN_COUNT; col++) {
+    row.getCell(col).value = col >= 5 && col <= 21 ? 0 : '';
+  }
+}
+
+function writeEmployeeRow(ws: ExcelJS.Worksheet, rowNum: number, row: KdaPayrollReportRow) {
+  const excelRow = ws.getRow(rowNum);
+  excelRow.getCell(1).value = row.sn;
+  excelRow.getCell(2).value = row.empCode;
+  excelRow.getCell(3).value = row.nameArabicEnglish;
+  excelRow.getCell(4).value = row.joinDate;
+  excelRow.getCell(5).value = numericOrZero(row.basicSalaryKwd);
+  excelRow.getCell(6).value = numericOrZero(row.actualWorkingDays);
+  excelRow.getCell(7).value = numericOrZero(row.paidLeaveDays);
+  excelRow.getCell(8).value = numericOrZero(row.salaryKwd);
+  excelRow.getCell(9).value = numericOrZero(row.paidLeaveKwd);
+  excelRow.getCell(10).value = numericOrZero(row.overTimeKwd);
+  excelRow.getCell(11).value = numericOrZero(row.housingAllowanceKwd);
+  excelRow.getCell(12).value = numericOrZero(row.otherKwd);
+  excelRow.getCell(13).value = numericOrZero(row.totalGrossKwd);
+  excelRow.getCell(14).value = numericOrZero(row.penaltiesKwd);
+  excelRow.getCell(15).value = numericOrZero(row.deductionsKwd);
+  excelRow.getCell(16).value = numericOrZero(row.loanKwd);
+  excelRow.getCell(17).value = numericOrZero(row.deductionsOtherKwd);
+  excelRow.getCell(18).value = numericOrZero(row.netSalaryKwd);
+  excelRow.getCell(19).value = numericOrZero(row.amountScheduledToPay);
+  excelRow.getCell(20).value = row.methodOfPayment || '';
+  excelRow.getCell(21).value = numericOrZero(row.salaryRefund);
+  excelRow.getCell(22).value = row.notes || '';
+}
+
+function ensureFooterRow(ws: ExcelJS.Worksheet, rowCount: number): number {
+  let footerRow = FOOTER_ROW;
+  if (rowCount <= TEMPLATE_DATA_SLOTS) {
+    return footerRow;
+  }
+
+  const extraRows = rowCount - TEMPLATE_DATA_SLOTS;
+  ws.spliceRows(footerRow, 0, ...Array.from({ length: extraRows }, () => []));
+  footerRow += extraRows;
+
+  for (let i = 0; i < extraRows; i++) {
+    applyRowStyleFromTemplate(ws, LAST_DATA_ROW + 1 + i, DATA_START_ROW);
+  }
+
+  return footerRow;
 }
 
 /**
@@ -104,7 +143,6 @@ export async function buildPayrollExcelWorkbook(
 
   const buffer = await response.arrayBuffer();
   const header = new Uint8Array(buffer, 0, 2);
-  // XLSX is a ZIP archive — must start with "PK"
   if (header[0] !== 0x50 || header[1] !== 0x4b) {
     throw new Error('Payroll template file is invalid or missing. Please refresh and try again.');
   }
@@ -126,20 +164,23 @@ export async function buildPayrollExcelWorkbook(
   ws.getRow(2).getCell(1).value = options.periodLabel;
   ws.getRow(3).getCell(1).value = options.departmentLabel;
 
-  const styleRow = ws.getRow(DATA_START_ROW);
+  const footerRow = ensureFooterRow(ws, options.rows.length);
+
   options.rows.forEach((row, index) => {
-    writeEmployeeRow(ws, DATA_START_ROW + index, styleRow, row);
+    writeEmployeeRow(ws, DATA_START_ROW + index, row);
   });
 
-  for (let r = DATA_START_ROW + options.rows.length; r <= LAST_DATA_ROW; r++) {
-    clearRow(ws, r);
+  const firstUnusedRow = DATA_START_ROW + options.rows.length;
+  for (let rowNum = firstUnusedRow; rowNum < footerRow; rowNum++) {
+    clearDataRow(ws, rowNum);
   }
 
-  const footer = ws.getRow(FOOTER_ROW);
+  const footer = ws.getRow(footerRow);
   footer.getCell(3).value = 'Prepared by:';
   footer.getCell(8).value = 'Checked by:';
   footer.getCell(19).value = 'Approved by:';
-  footer.commit();
+
+  applyColumnWidths(ws);
 
   workbook.worksheets
     .filter((sheet) => sheet.name !== config.sheet)

@@ -4,8 +4,9 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
-import { buildKdaPayrollReport } from '@/services/payrollReportService';
-import { buildKdaPayrollCsv, downloadCsv } from '@/utils/payrollReportExport';
+import { buildKdaPayrollReport, getApprovedLeaveDaysForMonth, getWorkingDaysInMonthByEmployee, getActualWorkingDaysFromAttendance } from '@/services/payrollReportService';
+import { downloadPayrollExcel } from '@/utils/payrollReportExcelExport';
+import { detectPayrollTemplate } from '@/utils/payrollTemplate';
 import { employeeService } from '@/services/employeeService';
 import { toast } from 'sonner';
 
@@ -48,23 +49,36 @@ export default function ReportsTab() {
     }
     setKdaLoading(true);
     try {
+      const y = parseInt(kdaYear, 10);
+      const m = parseInt(kdaMonth, 10);
+      const [leaveDays, workingDaysMap, actualDaysMap] = await Promise.all([
+        getApprovedLeaveDaysForMonth(companyId, y, m),
+        getWorkingDaysInMonthByEmployee(companyId, y, m),
+        getActualWorkingDaysFromAttendance(companyId, y, m)
+      ]);
       const report = await buildKdaPayrollReport({
         companyId,
-        month: parseInt(kdaMonth, 10),
-        year: parseInt(kdaYear, 10),
-        department: kdaDepartment === 'all' ? undefined : kdaDepartment
-      });
-      const csv = buildKdaPayrollCsv({
-        companyName: report.companyName,
-        companyNameArabic: report.companyNameArabic,
-        periodLabel: report.periodLabel,
-        departmentLabel: report.departmentLabel,
-        rows: report.rows
+        month: m,
+        year: y,
+        department: kdaDepartment === 'all' ? undefined : kdaDepartment,
+        workingDaysByEmployeeId: workingDaysMap,
+        paidLeaveDaysByEmployeeId: leaveDays,
+        actualDaysByEmployeeId: actualDaysMap
       });
       const monthName = MONTHS.find((m) => m.value === kdaMonth)?.label || kdaMonth;
-      const filename = `Payroll_Report_${monthName}_${report.periodLabel.replace(/\s/g, '_')}.csv`;
-      downloadCsv(csv, filename);
-      toast.success(`Report generated: ${report.rows.length} employees. Opening download.`);
+      const filename = `Payroll_${monthName}_${kdaYear}.xlsx`;
+      await downloadPayrollExcel(
+        {
+          companyName: report.companyName,
+          companyNameArabic: report.companyNameArabic,
+          periodLabel: report.periodLabel,
+          departmentLabel: report.departmentLabel,
+          rows: report.rows,
+          templateKind: detectPayrollTemplate(report.companyName, report.companyNameArabic)
+        },
+        filename
+      );
+      toast.success(`Report generated: ${report.rows.length} employees. Excel download started.`);
     } catch (e) {
       console.error(e);
       toast.error('Failed to generate payroll report. Please try again.');
@@ -77,9 +91,9 @@ export default function ReportsTab() {
     <div className="space-y-6">
       {/* KDA Bilingual Payroll Report (Excel-like) */}
       <Card className="p-6 border-primary/20 bg-primary/5">
-        <h4 className="font-semibold mb-1">Bilingual Payroll Report (KDA Format)</h4>
+        <h4 className="font-semibold mb-1">Bilingual Payroll Report</h4>
         <p className="text-sm text-muted-foreground mb-4">
-          Generate a payroll report matching the Kuwait Dyslexia Association template: bilingual headers (Arabic / English), pro-rated salary, paid leave, allowances, deductions, net salary, and payment method. Export opens in Excel.
+          Generate a payroll report matching the June 2026 template from docs: bilingual headers, gross accrual, deductions, net salary, scheduled payment, and refund. Exports the same styled Excel (BEC or DYLX template).
         </p>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
           <div>
@@ -124,7 +138,7 @@ export default function ReportsTab() {
           <div className="flex items-end">
             <Button onClick={handleGenerateKdaReport} disabled={kdaLoading}>
               {kdaLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
-              Generate & Download CSV
+              Generate & Download Excel
             </Button>
           </div>
         </div>

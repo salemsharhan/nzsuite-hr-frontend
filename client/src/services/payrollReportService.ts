@@ -4,8 +4,10 @@ import { leaveService } from './leaveService';
 import { companySettingsService } from './companySettingsService';
 import { attendanceService } from './attendanceService';
 
-/** Default working days per month (e.g. 26) */
-const DEFAULT_WORKING_DAYS = 26;
+import { PAYROLL_MONTH_DIVISOR } from '@/utils/payrollTemplate';
+
+/** Default working days per month — matches Excel template divisor (e.g. =E6/26*F6) */
+const DEFAULT_WORKING_DAYS = PAYROLL_MONTH_DIVISOR;
 
 /**
  * Get number of days that a date range overlaps with a given month.
@@ -276,8 +278,14 @@ export async function buildKdaPayrollReport(input: KdaPayrollReportInput): Promi
         : Math.max(0, workingDaysInMonth - paidLeaveDays);
     const absentDays = Math.max(0, workingDaysInMonth - actualWorkingDays - paidLeaveDays);
 
-    const salaryKwd = workingDaysInMonth > 0 ? (baseSalary / workingDaysInMonth) * actualWorkingDays : 0;
-    const paidLeaveKwd = workingDaysInMonth > 0 ? (baseSalary / workingDaysInMonth) * paidLeaveDays : 0;
+    const salaryKwd =
+      DEFAULT_WORKING_DAYS > 0
+        ? (baseSalary / DEFAULT_WORKING_DAYS) * actualWorkingDays
+        : 0;
+    const paidLeaveKwd =
+      DEFAULT_WORKING_DAYS > 0
+        ? (baseSalary / DEFAULT_WORKING_DAYS) * paidLeaveDays
+        : 0;
     const overTimeKwd = 0;
     const housingAllowanceKwd = Number(emp.housing_allowance ?? 0) || 0;
     const otherKwd =

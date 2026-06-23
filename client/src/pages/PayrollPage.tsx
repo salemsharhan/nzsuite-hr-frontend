@@ -120,11 +120,11 @@ export default function PayrollManagementPage() {
                 Build payroll report
               </Button>
               <Button variant="outline" onClick={() => setActiveTab('reports')}>
-                Export KDA report (CSV)
+                Export payroll Excel
               </Button>
             </div>
             <p className="text-sm text-muted-foreground mt-4">
-              Use <strong>Payroll Report</strong> to load a month with working days from shifts and leave from approved requests, edit refund amounts, and export. Use <strong>Reports</strong> for the bilingual KDA CSV export.
+              Use <strong>Payroll Report</strong> to load a month with working days from attendance and leave from approved requests, edit amounts, and export the styled Excel. Use <strong>Reports</strong> for quick Excel export.
             </p>
           </Card>
         </TabsContent>

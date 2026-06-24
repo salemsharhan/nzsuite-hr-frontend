@@ -11,6 +11,8 @@ export interface PayrollReportMeta {
 export type PayrollApprovalStatus =
   | 'draft'
   | 'pending_approval'
+  | 'pending_gm'
+  | 'pending_ceo'
   | 'approved'
   | 'rejected'
   | 'on_hold'
@@ -36,6 +38,9 @@ export interface SavedPayrollReport {
   approved_by_name?: string | null;
   approval_note?: string | null;
   whats_task_id?: string | null;
+  gm_approved_at?: string | null;
+  gm_approved_by_name?: string | null;
+  gm_approval_note?: string | null;
 }
 
 const DEPT_KEY = (d: string) => (d === 'all' ? '' : d);
@@ -118,7 +123,15 @@ export async function revertPayrollApproval(reportId: string): Promise<SavedPayr
       approved_by_name: null,
       approval_note: null,
       whats_task_id: null,
-      whats_task_owner_id: null
+      whats_task_owner_id: null,
+      gm_approved_at: null,
+      gm_approved_by_name: null,
+      gm_approval_note: null,
+      gm_whats_task_id: null,
+      ceo_whats_task_id: null,
+      approval_attachment_path: null,
+      approval_attachment_filename: null,
+      approval_attachment_mime: null
     },
     { headers: { Prefer: 'return=representation' } }
   );

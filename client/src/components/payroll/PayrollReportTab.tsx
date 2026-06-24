@@ -15,8 +15,11 @@ import {
   Trash2,
   Upload,
   X,
-  ArrowRight
+  ArrowRight,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -44,6 +47,9 @@ import {
   getApprovedLeaveDaysForMonth,
   getWorkingDaysInMonthByEmployee,
   getActualWorkingDaysFromAttendance,
+  getCompanyHolidaysForMonth,
+  getEmployeeShiftsByEmployeeId,
+  getPayrollPeriodBounds,
   type KdaPayrollReportRow
 } from '@/services/payrollReportService';
 import { downloadPayrollExcel } from '@/utils/payrollReportExcelExport';
@@ -54,8 +60,9 @@ import {
   type PayrollApprovalAttachmentFormat
 } from '@/utils/payrollReportApprovalAttachment';
 import { parsePunchLog } from '@/utils/payrollPunchLogParser';
+import { holidayDatesInPeriod, PAYROLL_LATE_TOLERANCE_MINUTES } from '@/utils/payrollWorkingDays';
 import { extractAttendanceTextFromPdfs } from '@/utils/payrollAttendancePdfExtract';
-import { maxPaidLeaveDaysForRow, recalcPayrollRow } from '@/utils/payrollRowRecalc';
+import { recalcPayrollRow } from '@/utils/payrollRowRecalc';
 import { employeeService, type Employee } from '@/services/employeeService';
 import {
   getSavedPayrollReport,
@@ -108,12 +115,17 @@ export default function PayrollReportTab() {
     departmentLabel: string;
   } | null>(null);
   const [rows, setRows] = useState<KdaPayrollReportRow[]>([]);
+  /** Days to move from absent → permitted late (per employee, draft before clicking move) */
+  const [permittedLateMoveQty, setPermittedLateMoveQty] = useState<Record<string, string>>({});
   const [savedInfo, setSavedInfo] = useState<{
     savedAt: string;
     savedByEmail: string | null;
     reportId?: string;
     approvalStatus?: PayrollApprovalStatus;
     submittedAt?: string | null;
+    gmApprovedAt?: string | null;
+    gmApprovedByName?: string | null;
+    gmApprovalNote?: string | null;
     approvedAt?: string | null;
     approvedByName?: string | null;
     approvalNote?: string | null;
@@ -131,6 +143,7 @@ export default function PayrollReportTab() {
   const [punchPasteOpen, setPunchPasteOpen] = useState(false);
   const [generatingFromPunch, setGeneratingFromPunch] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [tableFullscreen, setTableFullscreen] = useState(false);
   const punchPdfInputRef = useRef<HTMLInputElement>(null);
   const suppressAutoLoad = useRef(false);
 
@@ -146,6 +159,20 @@ export default function PayrollReportTab() {
   );
 
   const col = useCallback((key: string) => t(`payroll.columns.${key}`), [t]);
+
+  useEffect(() => {
+    if (!tableFullscreen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setTableFullscreen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [tableFullscreen]);
 
   useEffect(() => {
     if (!companyId) return;
@@ -174,6 +201,9 @@ export default function PayrollReportTab() {
       reportId: saved.id,
       approvalStatus: saved.approval_status ?? 'draft',
       submittedAt: saved.submitted_at ?? null,
+      gmApprovedAt: saved.gm_approved_at ?? null,
+      gmApprovedByName: saved.gm_approved_by_name ?? null,
+      gmApprovalNote: saved.gm_approval_note ?? null,
       approvedAt: saved.approved_at ?? null,
       approvedByName: saved.approved_by_name ?? null,
       approvalNote: saved.approval_note ?? null
@@ -288,8 +318,18 @@ export default function PayrollReportTab() {
 
       const y = parseInt(year, 10);
       const m = parseInt(month, 10);
+      const period = getPayrollPeriodBounds(y, m);
       const employees = Object.values(employeesById);
-      const parseResult = parsePunchLog(combinedText, y, m, employees);
+      const [holidays, shiftsByEmployeeId] = await Promise.all([
+        getCompanyHolidaysForMonth(companyId, y, m),
+        getEmployeeShiftsByEmployeeId(companyId)
+      ]);
+      const holidayDates = holidayDatesInPeriod(holidays, period.periodStart, period.periodEnd);
+      const parseResult = parsePunchLog(combinedText, period, employees, {
+        holidayDates,
+        shiftsByEmployeeId,
+        lateToleranceMinutes: PAYROLL_LATE_TOLERANCE_MINUTES
+      });
 
       if (parseResult.totalLinesParsed === 0) {
         toast.error(t('payroll.toast.punchLogEmpty'));
@@ -315,7 +355,7 @@ export default function PayrollReportTab() {
         workingDaysByEmployeeId: workingDaysMap,
         paidLeaveDaysByEmployeeId: leaveDays,
         actualDaysByEmployeeId: parseResult.actualDaysByEmployeeId,
-        onlyEmployeeIds: attendanceEmployeeIds
+        missingAttendanceDefaultsToFullPresent: true
       });
 
       suppressAutoLoad.current = true;
@@ -350,7 +390,7 @@ export default function PayrollReportTab() {
       toast.success(
         t('payroll.toast.punchLogGenerated', {
           punches: parseResult.totalLinesParsed,
-          employees: parseResult.matchedEmployees,
+          employees: report.rows.length,
           details
         })
       );
@@ -411,15 +451,56 @@ export default function PayrollReportTab() {
     );
   };
 
+  const updateSalaryRefund = (employeeId: string, value: number) => {
+    setDirty(true);
+    setRows((prev) =>
+      prev.map((r) =>
+        r.employeeId === employeeId
+          ? recalcPayrollRow(r, { salaryRefund: Math.max(0, value) })
+          : r
+      )
+    );
+  };
+
   const moveAllAbsentToPaidLeave = (employeeId: string) => {
     setDirty(true);
     setRows((prev) =>
       prev.map((r) => {
         if (r.employeeId !== employeeId) return r;
-        const maxLeave = maxPaidLeaveDaysForRow(r);
-        return recalcPayrollRow(r, { paidLeaveDays: maxLeave });
+        return recalcPayrollRow(r, {
+          paidLeaveDays: (r.paidLeaveDays ?? 0) + (r.absentDays ?? 0)
+        });
       })
     );
+  };
+
+  const updatePermittedLateDays = (employeeId: string, value: number) => {
+    setDirty(true);
+    setRows((prev) =>
+      prev.map((r) =>
+        r.employeeId === employeeId
+          ? recalcPayrollRow(r, { permittedLateDays: Math.max(0, value) })
+          : r
+      )
+    );
+  };
+
+  const moveAbsentToPermittedLate = (employeeId: string) => {
+    const row = rows.find((r) => r.employeeId === employeeId);
+    if (!row || (row.absentDays ?? 0) <= 0) return;
+    const qty = parseFloat(permittedLateMoveQty[employeeId] ?? '1') || 0;
+    if (qty <= 0) return;
+    const move = Math.min(qty, row.absentDays ?? 0);
+    setDirty(true);
+    setRows((prev) =>
+      prev.map((r) => {
+        if (r.employeeId !== employeeId) return r;
+        return recalcPayrollRow(r, {
+          permittedLateDays: (r.permittedLateDays ?? 0) + move
+        });
+      })
+    );
+    setPermittedLateMoveQty((prev) => ({ ...prev, [employeeId]: '' }));
   };
 
   const removePayrollRow = (employeeId: string) => {
@@ -457,6 +538,9 @@ export default function PayrollReportTab() {
         reportId: saved.id,
         approvalStatus: saved.approval_status ?? 'draft',
         submittedAt: saved.submitted_at ?? null,
+        gmApprovedAt: saved.gm_approved_at ?? null,
+        gmApprovedByName: saved.gm_approved_by_name ?? null,
+        gmApprovalNote: saved.gm_approval_note ?? null,
         approvedAt: saved.approved_at ?? null,
         approvedByName: saved.approved_by_name ?? null,
         approvalNote: saved.approval_note ?? null
@@ -473,7 +557,11 @@ export default function PayrollReportTab() {
   }, [companyId, user, meta, rows, year, month, department, t]);
 
   const approvalStatus = savedInfo?.approvalStatus ?? 'draft';
-  const isApprovalLocked = approvalStatus === 'pending_approval' || approvalStatus === 'approved';
+  const isApprovalLocked =
+    approvalStatus === 'pending_approval' ||
+    approvalStatus === 'pending_gm' ||
+    approvalStatus === 'pending_ceo' ||
+    approvalStatus === 'approved';
 
   const handleSubmitForApproval = useCallback(async (format: PayrollApprovalAttachmentFormat) => {
     if (!companyId || !user || !meta || rows.length === 0) {
@@ -520,14 +608,14 @@ export default function PayrollReportTab() {
 
       applySavedReport({
         ...saved,
-        approval_status: 'pending_approval',
+        approval_status: 'pending_gm',
         submitted_at: new Date().toISOString(),
         submitted_by_email: user.email ?? null,
         whats_task_id: result.whats_task_id
       });
 
       setApprovalDialogOpen(false);
-      toast.success(t('payroll.toast.approvalSent'));
+      toast.success(t('payroll.toast.approvalSentGm'));
     } catch (e) {
       console.error(e);
       toast.error(e instanceof Error ? e.message : t('payroll.toast.approvalFailed'));
@@ -608,6 +696,7 @@ export default function PayrollReportTab() {
 
   const totalNet = rows.reduce((s, r) => s + r.netSalaryKwd, 0);
   const totalRefund = rows.reduce((s, r) => s + r.salaryRefund, 0);
+  const totalPayable = rows.reduce((s, r) => s + r.amountScheduledToPay, 0);
   const totalGross = rows.reduce((s, r) => s + r.totalGrossKwd, 0);
   const displayPeriod = meta ? formatPayrollPeriodLabel(month, year, t) : '';
   const displayDepartment = formatPayrollDepartmentLabel(department, t);
@@ -627,7 +716,9 @@ export default function PayrollReportTab() {
                   ? 'default'
                   : savedInfo.approvalStatus === 'rejected'
                     ? 'destructive'
-                    : 'secondary'
+                    : savedInfo.approvalStatus === 'pending_ceo'
+                      ? 'outline'
+                      : 'secondary'
               }
             >
               {payrollApprovalStatusLabel(savedInfo.approvalStatus)}
@@ -747,8 +838,22 @@ export default function PayrollReportTab() {
               date: new Date(savedInfo.savedAt).toLocaleString(),
               by: savedInfo.savedByEmail ? t('payroll.savedBy', { email: savedInfo.savedByEmail }) : ''
             })}
+            {savedInfo.approvalStatus === 'pending_gm' && savedInfo.submittedAt && (
+              <>{t('payroll.submittedForGmApproval', { date: new Date(savedInfo.submittedAt).toLocaleString() })}</>
+            )}
             {savedInfo.approvalStatus === 'pending_approval' && savedInfo.submittedAt && (
               <>{t('payroll.submittedForApproval', { date: new Date(savedInfo.submittedAt).toLocaleString() })}</>
+            )}
+            {savedInfo.approvalStatus === 'pending_ceo' && savedInfo.gmApprovedAt && (
+              <>
+                {t('payroll.gmApprovedOn', {
+                  date: new Date(savedInfo.gmApprovedAt).toLocaleString(),
+                  by: savedInfo.gmApprovedByName
+                    ? t('payroll.gmApprovedBy', { name: savedInfo.gmApprovedByName })
+                    : ''
+                })}
+                {t('payroll.awaitingCeoApproval')}
+              </>
             )}
             {savedInfo.approvalStatus === 'approved' && savedInfo.approvedAt && (
               <>
@@ -889,22 +994,58 @@ export default function PayrollReportTab() {
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('payroll.totalRefund')}</p>
               <p className="text-xl font-bold tabular-nums mt-1 text-amber-600">{totalRefund.toFixed(3)}</p>
             </Card>
+            <Card className="p-4 flex-1 min-w-[160px] rounded-xl border-2 bg-gradient-to-br from-emerald-500/10 to-transparent border-emerald-500/30 shadow-sm">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('payroll.totalPayable')}</p>
+              <p className="text-xl font-bold tabular-nums mt-1 text-emerald-700">{totalPayable.toFixed(3)}</p>
+              <p className="text-[10px] text-muted-foreground mt-1">{t('payroll.totalPayableHint')}</p>
+            </Card>
           </div>
 
-          <Card className="overflow-hidden w-screen max-w-[80vw] relative left-1/2 -translate-x-1/2 rounded-xl border-2 shadow-lg shadow-black/5">
-            <div className="p-4 border-b bg-gradient-to-r from-muted/50 to-muted/30">
-              <p className="font-semibold text-foreground">{companyTitle}</p>
-              <p className="text-sm text-muted-foreground mt-0.5">{displayPeriod} · {displayDepartment}</p>
-              {savedInfo && (
-                <p className="text-xs text-muted-foreground mt-2 pt-2 border-t border-border/50">
-                  {t('payroll.lastSaved', {
-                    date: new Date(savedInfo.savedAt).toLocaleString(),
-                    email: savedInfo.savedByEmail || '—'
-                  })}
-                </p>
-              )}
+          <Card
+            className={cn(
+              'overflow-hidden rounded-xl border-2 shadow-lg',
+              tableFullscreen
+                ? 'fixed inset-0 z-50 flex max-w-none w-full flex-col rounded-none border-0 shadow-2xl'
+                : 'relative left-1/2 w-screen max-w-[80vw] -translate-x-1/2 shadow-black/5'
+            )}
+          >
+            <div className="flex items-start justify-between gap-3 border-b bg-gradient-to-r from-muted/50 to-muted/30 p-4">
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-foreground">{companyTitle}</p>
+                <p className="mt-0.5 text-sm text-muted-foreground">{displayPeriod} · {displayDepartment}</p>
+                {savedInfo && (
+                  <p className="mt-2 border-t border-border/50 pt-2 text-xs text-muted-foreground">
+                    {t('payroll.lastSaved', {
+                      date: new Date(savedInfo.savedAt).toLocaleString(),
+                      email: savedInfo.savedByEmail || '—'
+                    })}
+                  </p>
+                )}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={() => setTableFullscreen((v) => !v)}
+                title={tableFullscreen ? t('payroll.exitFullscreen') : t('payroll.expandFullscreen')}
+              >
+                {tableFullscreen ? (
+                  <Minimize2 className="h-4 w-4" />
+                ) : (
+                  <Maximize2 className="h-4 w-4" />
+                )}
+                <span className="ml-2 hidden sm:inline">
+                  {tableFullscreen ? t('payroll.exitFullscreen') : t('payroll.expandFullscreen')}
+                </span>
+              </Button>
             </div>
-            <div className="overflow-x-auto overflow-y-auto max-h-[70vh] min-w-0 w-full bg-muted/10">
+            <div
+              className={cn(
+                'min-w-0 w-full flex-1 overflow-x-auto overflow-y-auto bg-muted/10',
+                tableFullscreen ? 'max-h-none' : 'max-h-[70vh]'
+              )}
+            >
               <table className="w-full text-sm border-collapse min-w-[2700px]">
                 <thead className="sticky top-0 z-10">
                   <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:font-semibold [&>th]:text-foreground border-b-2 border-primary/20 bg-[#D9E1F2]">
@@ -917,13 +1058,14 @@ export default function PayrollReportTab() {
                     <th rowSpan={2} className="text-center min-w-[64px] border-r border-border/60">{col('presentDays')}</th>
                     <th rowSpan={2} className="text-center min-w-[72px] border-r border-border/60">{col('absentDays')}</th>
                     <th rowSpan={2} className="text-center min-w-[88px] border-r border-primary/30">{col('paidLeaveDays')}</th>
+                    <th rowSpan={2} className="text-center min-w-[88px] border-r border-primary/30">{col('permittedLateDays')}</th>
                     <th rowSpan={2} className="text-right min-w-[80px] border-r border-border/60">{col('absentDeduction')}</th>
                     <th colSpan={6} className="text-center border-r border-primary/30 bg-[#FFF2CC]">{col('grossAccrualMonth')}</th>
                     <th colSpan={4} className="text-center border-r border-primary/30 bg-[#FFF2CC]">{col('deductions')}</th>
                     <th rowSpan={2} className="text-right min-w-[88px] border-r border-border/60">{col('netSalary')}</th>
-                    <th rowSpan={2} className="text-right min-w-[100px] border-r border-border/60">{col('amountScheduled')}</th>
+                    <th rowSpan={2} className="text-right min-w-[96px] bg-amber-500/15 border-r border-amber-500/30">{col('salaryRefund')}</th>
+                    <th rowSpan={2} className="text-right min-w-[100px] border-r border-border/60">{col('totalPayable')}</th>
                     <th rowSpan={2} className="text-left min-w-[120px] border-r border-border/60">{col('methodOfPayment')}</th>
-                    <th rowSpan={2} className="text-right min-w-[88px] bg-amber-500/15 border-r border-amber-500/30">{col('salaryRefund')}</th>
                     <th rowSpan={2} className="text-left min-w-[90px] border-r border-border/60">{col('notes')}</th>
                     <th rowSpan={2} className="sticky right-0 z-20 text-center min-w-[52px] bg-[#D9E1F2] border-l border-border/60 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.15)]">{col('actions')}</th>
                   </tr>
@@ -970,17 +1112,53 @@ export default function PayrollReportTab() {
                             {r.absentDays}
                           </Badge>
                           {r.absentDays > 0 && !isApprovalLocked && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 px-1.5 text-[10px] text-primary"
-                              onClick={() => moveAllAbsentToPaidLeave(r.employeeId)}
-                              title={t('payroll.moveAbsentToPaidLeave')}
-                            >
-                              <ArrowRight className="w-3 h-3 mr-0.5" />
-                              {t('payroll.moveToLeave')}
-                            </Button>
+                            <div className="flex flex-col items-center gap-0.5">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-1.5 text-[10px] text-primary"
+                                onClick={() => moveAllAbsentToPaidLeave(r.employeeId)}
+                                title={t('payroll.moveAbsentToPaidLeave')}
+                              >
+                                <ArrowRight className="w-3 h-3 mr-0.5" />
+                                {t('payroll.moveToLeave')}
+                              </Button>
+                              <div className="flex items-center gap-0.5">
+                                <Input
+                                  type="number"
+                                  min={1}
+                                  max={r.absentDays}
+                                  step={1}
+                                  placeholder="1"
+                                  className="num-input h-6 w-10 px-1 text-[10px] text-center tabular-nums"
+                                  value={permittedLateMoveQty[r.employeeId] ?? ''}
+                                  onChange={(e) =>
+                                    setPermittedLateMoveQty((prev) => ({
+                                      ...prev,
+                                      [r.employeeId]: e.target.value
+                                    }))
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      moveAbsentToPermittedLate(r.employeeId);
+                                    }
+                                  }}
+                                />
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 px-1 text-[10px] text-emerald-700 shrink-0"
+                                  onClick={() => moveAbsentToPermittedLate(r.employeeId)}
+                                  title={t('payroll.moveAbsentToPermittedLate')}
+                                >
+                                  <ArrowRight className="w-3 h-3 mr-0.5" />
+                                  {t('payroll.moveToPermittedLate')}
+                                </Button>
+                              </div>
+                            </div>
                           )}
                         </div>
                       </td>
@@ -988,12 +1166,25 @@ export default function PayrollReportTab() {
                         <Input
                           type="number"
                           min={0}
-                          max={maxPaidLeaveDaysForRow(r)}
+                          step={0.001}
                           className="num-input h-8 min-w-[3.5rem] w-full text-center tabular-nums"
                           value={r.paidLeaveDays}
                           disabled={isApprovalLocked}
                           onChange={(e) =>
-                            updatePaidLeaveDays(r.employeeId, parseInt(e.target.value, 10) || 0)
+                            updatePaidLeaveDays(r.employeeId, parseFloat(e.target.value) || 0)
+                          }
+                        />
+                      </td>
+                      <td className="px-2 py-2 align-middle border-r border-primary/20">
+                        <Input
+                          type="number"
+                          min={0}
+                          step={1}
+                          className="num-input h-8 min-w-[3.5rem] w-full text-center tabular-nums"
+                          value={r.permittedLateDays ?? 0}
+                          disabled={isApprovalLocked}
+                          onChange={(e) =>
+                            updatePermittedLateDays(r.employeeId, parseFloat(e.target.value) || 0)
                           }
                         />
                       </td>
@@ -1011,9 +1202,23 @@ export default function PayrollReportTab() {
                       <td className="px-2 py-2 text-right align-middle tabular-nums border-r border-border/40">{formatKwd(r.loanKwd)}</td>
                       <td className="px-2 py-2 text-right align-middle tabular-nums border-r border-primary/20">{formatKwd(r.deductionsOtherKwd)}</td>
                       <td className="px-2 py-2 text-right align-middle tabular-nums font-medium border-r border-border/40">{formatKwd(r.netSalaryKwd)}</td>
-                      <td className="px-2 py-2 text-right align-middle tabular-nums font-medium border-r border-border/40">{formatKwd(r.amountScheduledToPay)}</td>
+                      <td className="px-2 py-2 align-middle bg-amber-500/15 border-r border-amber-500/30">
+                        <Input
+                          type="number"
+                          min={0}
+                          step={0.001}
+                          className="num-input h-8 min-w-[5rem] w-full text-right tabular-nums bg-background"
+                          value={r.salaryRefund}
+                          disabled={isApprovalLocked}
+                          onChange={(e) =>
+                            updateSalaryRefund(r.employeeId, parseFloat(e.target.value) || 0)
+                          }
+                        />
+                      </td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums font-semibold border-r border-border/40">
+                        {formatKwd(r.amountScheduledToPay)}
+                      </td>
                       <td className="px-2 py-2 align-middle border-r border-border/40">{translatePaymentMethod(r.methodOfPayment, t)}</td>
-                      <td className="px-2 py-2 text-right align-middle tabular-nums bg-amber-500/15 border-r border-amber-500/30">{formatKwd(r.salaryRefund)}</td>
                       <td className="px-2 py-2 align-middle text-muted-foreground border-r border-border/40">{r.notes || '—'}</td>
                       <td
                         className={`sticky right-0 z-10 px-1 py-2 align-middle text-center border-l border-border/40 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.15)] ${idx % 2 === 1 ? 'bg-muted/20' : 'bg-background'}`}

@@ -22,6 +22,9 @@ export interface CompanySettings {
   payroll_approver_wa_jid?: string | null;
   payroll_approver_phone_e164?: string | null;
   payroll_approver_name?: string | null;
+  payroll_ceo_approver_wa_jid?: string | null;
+  payroll_ceo_approver_phone_e164?: string | null;
+  payroll_ceo_approver_name?: string | null;
   taskhub_workspace_user_id?: string | null;
   created_at: string;
   updated_at: string;
@@ -105,6 +108,15 @@ export interface RoleSalaryConfig {
   updated_at: string;
 }
 
+export interface CompanyHoliday {
+  id: string;
+  company_id: string;
+  holiday_date: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface RolePermissionsConfig {
   id: string;
   company_id: string;
@@ -154,6 +166,60 @@ class CompanySettingsService {
       return response.data[0];
     }
     return response.data;
+  }
+
+  async getCompanyHolidays(
+    companyId: string,
+    dateFrom?: string,
+    dateTo?: string
+  ): Promise<CompanyHoliday[]> {
+    try {
+      const response = await adminApi.get('/company_holidays', {
+        params: {
+          company_id: `eq.${companyId}`,
+          select: '*',
+          order: 'holiday_date.asc'
+        }
+      });
+      let list: CompanyHoliday[] = Array.isArray(response.data) ? response.data : [];
+      if (dateFrom) {
+        list = list.filter((h) => h.holiday_date.slice(0, 10) >= dateFrom);
+      }
+      if (dateTo) {
+        list = list.filter((h) => h.holiday_date.slice(0, 10) <= dateTo);
+      }
+      return list;
+    } catch (error) {
+      console.error('Error fetching company holidays:', error);
+      return [];
+    }
+  }
+
+  async createCompanyHoliday(
+    holiday: Omit<CompanyHoliday, 'id' | 'created_at' | 'updated_at'>
+  ): Promise<CompanyHoliday> {
+    try {
+      const response = await adminApi.post('/company_holidays', holiday);
+      if (Array.isArray(response.data)) {
+        return response.data[0];
+      }
+      return response.data;
+    } catch (error) {
+      console.error('Error creating company holiday:', error);
+      throw error;
+    }
+  }
+
+  async deleteCompanyHoliday(id: string): Promise<boolean> {
+    try {
+      await adminApi.delete('/company_holidays', {
+        params: { id: `eq.${id}` }
+      });
+      return true;
+    } catch (error) {
+      console.error('Error deleting company holiday:', error);
+      return false;
+    }
   }
 
   // Employee Working Hours

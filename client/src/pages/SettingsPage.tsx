@@ -9,7 +9,7 @@ import { departmentService, Department } from '../services/departmentService';
 import { roleService, Role } from '../services/roleService';
 import { jobService, Job } from '../services/jobService';
 import { companyService, Company, CreateCompanyData } from '../services/companyService';
-import { companySettingsService, CompanySettings, RoleSalaryConfig, RolePermissionsConfig } from '../services/companySettingsService';
+import { companySettingsService, CompanySettings, RoleSalaryConfig, RolePermissionsConfig, CompanyHoliday } from '../services/companySettingsService';
 import { useAuth } from '../contexts/AuthContext';
 import { Clock, DollarSign, Calendar, Settings as SettingsIcon, MapPin, MessageSquare } from 'lucide-react';
 import { attendanceLocationService, AttendanceLocationSettings } from '../services/attendanceLocationService';
@@ -61,6 +61,8 @@ export default function SettingsPage() {
 
   // Company Settings state
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
+  const [companyHolidays, setCompanyHolidays] = useState<CompanyHoliday[]>([]);
+  const [newHoliday, setNewHoliday] = useState({ holiday_date: '', name: '' });
   const [roleSalaryConfigs, setRoleSalaryConfigs] = useState<RoleSalaryConfig[]>([]);
   const [rolePermissionsConfigs, setRolePermissionsConfigs] = useState<RolePermissionsConfig[]>([]);
   const [isCompanySettingsModalOpen, setIsCompanySettingsModalOpen] = useState(false);
@@ -128,6 +130,7 @@ export default function SettingsPage() {
     if (activeTab === 'companies') loadCompanies();
     if (activeTab === 'company-settings' && user?.company_id) {
       loadCompanySettings();
+      loadCompanyHolidays();
       loadRoleSalaryConfigs();
       loadRolePermissionsConfigs();
       loadRoles(); // Load roles for salary config dropdown
@@ -406,6 +409,47 @@ export default function SettingsPage() {
       setCompanySettings(settings);
     } catch (error) {
       console.error('Failed to load company settings:', error);
+    }
+  };
+
+  const loadCompanyHolidays = async () => {
+    if (!user?.company_id) return;
+    try {
+      const holidays = await companySettingsService.getCompanyHolidays(user.company_id);
+      setCompanyHolidays(holidays);
+    } catch (error) {
+      console.error('Failed to load company holidays:', error);
+    }
+  };
+
+  const handleAddCompanyHoliday = async () => {
+    if (!user?.company_id || !newHoliday.holiday_date) return;
+    try {
+      await companySettingsService.createCompanyHoliday({
+        company_id: user.company_id,
+        holiday_date: newHoliday.holiday_date,
+        name: newHoliday.name.trim() || newHoliday.holiday_date
+      });
+      setNewHoliday({ holiday_date: '', name: '' });
+      await loadCompanyHolidays();
+    } catch (error: any) {
+      console.error('Failed to add company holiday:', error);
+      const msg =
+        error?.response?.data?.message ||
+        error?.response?.data?.hint ||
+        error?.message ||
+        t('settings.unknownError');
+      alert(`${t('settings.failedToSave')}: ${msg}`);
+    }
+  };
+
+  const handleDeleteCompanyHoliday = async (id: string) => {
+    if (!confirm(t('settings.confirmDeleteHoliday'))) return;
+    try {
+      await companySettingsService.deleteCompanyHoliday(id);
+      await loadCompanyHolidays();
+    } catch (error) {
+      console.error('Failed to delete company holiday:', error);
     }
   };
 
@@ -1094,11 +1138,14 @@ export default function SettingsPage() {
 
                   <div className="mt-4 pt-4 border-t border-white/10 space-y-4">
                     <p className="text-sm text-muted-foreground">
-                      WhatsApp approval via Task Hub: register the approver in Task Hub → WhatsApp directory, then set their details here.
+                      Two-stage WhatsApp approval: payroll is sent to the GM first, then to the CEO after GM approves.
+                      Register both approvers in Task Hub → WhatsApp directory.
                     </p>
+
+                    <h4 className="text-sm font-semibold">GM (first approval)</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <label className="text-sm font-medium">Payroll approver name</label>
+                        <label className="text-sm font-medium">GM name</label>
                         <Input
                           value={companySettings?.payroll_approver_name || ''}
                           onChange={(e) =>
@@ -1108,7 +1155,7 @@ export default function SettingsPage() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-sm font-medium">Approver phone (E.164)</label>
+                        <label className="text-sm font-medium">GM phone (E.164)</label>
                         <Input
                           value={companySettings?.payroll_approver_phone_e164 || ''}
                           onChange={(e) =>
@@ -1117,8 +1164,8 @@ export default function SettingsPage() {
                           placeholder="+965xxxxxxxx"
                         />
                       </div>
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">Approver WhatsApp JID</label>
+                      <div className="space-y-2 md:col-span-2">
+                        <label className="text-sm font-medium">GM WhatsApp JID</label>
                         <Input
                           value={companySettings?.payroll_approver_wa_jid || ''}
                           onChange={(e) =>
@@ -1127,7 +1174,48 @@ export default function SettingsPage() {
                           placeholder="965xxxxxxxx@c.us"
                         />
                       </div>
+                    </div>
+
+                    <h4 className="text-sm font-semibold pt-2">CEO (final approval)</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
+                        <label className="text-sm font-medium">CEO name</label>
+                        <Input
+                          value={companySettings?.payroll_ceo_approver_name || ''}
+                          onChange={(e) =>
+                            setCompanySettings({ ...companySettings!, payroll_ceo_approver_name: e.target.value })
+                          }
+                          placeholder="e.g. Chief Executive Officer"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">CEO phone (E.164)</label>
+                        <Input
+                          value={companySettings?.payroll_ceo_approver_phone_e164 || ''}
+                          onChange={(e) =>
+                            setCompanySettings({
+                              ...companySettings!,
+                              payroll_ceo_approver_phone_e164: e.target.value
+                            })
+                          }
+                          placeholder="+965xxxxxxxx"
+                        />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <label className="text-sm font-medium">CEO WhatsApp JID</label>
+                        <Input
+                          value={companySettings?.payroll_ceo_approver_wa_jid || ''}
+                          onChange={(e) =>
+                            setCompanySettings({ ...companySettings!, payroll_ceo_approver_wa_jid: e.target.value })
+                          }
+                          placeholder="965xxxxxxxx@c.us"
+                        />
+                      </div>
+                    </div>
+
+                    <h4 className="text-sm font-semibold pt-2">Task Hub</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2 md:col-span-2">
                         <label className="text-sm font-medium">Task Hub workspace user ID</label>
                         <Input
                           value={companySettings?.taskhub_workspace_user_id || ''}
@@ -1149,7 +1237,7 @@ export default function SettingsPage() {
                       <label className="text-sm font-medium">{t('settings.lateToleranceMinutes')}</label>
                       <Input
                         type="number"
-                        value={companySettings?.late_tolerance_minutes || 15}
+                        value={companySettings?.late_tolerance_minutes ?? 15}
                         onChange={(e) => setCompanySettings({ ...companySettings!, late_tolerance_minutes: parseInt(e.target.value) })}
                       />
                     </div>
@@ -1178,6 +1266,73 @@ export default function SettingsPage() {
                   <Button type="submit">{t('settings.saveSettings')}</Button>
                 </div>
               </form>
+
+              {/* Company Holidays — outside main settings form (nested forms break submit) */}
+              <div className="pt-4 border-t border-white/10">
+                <h3 className="text-lg font-semibold mb-2">{t('settings.companyHolidays')}</h3>
+                <p className="text-sm text-muted-foreground mb-4">{t('settings.companyHolidaysHint')}</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">{t('settings.holidayDate')}</label>
+                    <Input
+                      type="date"
+                      value={newHoliday.holiday_date}
+                      onChange={(e) => setNewHoliday({ ...newHoliday, holiday_date: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <label className="text-sm font-medium">{t('settings.holidayName')}</label>
+                    <div className="flex gap-2">
+                      <Input
+                        value={newHoliday.name}
+                        onChange={(e) => setNewHoliday({ ...newHoliday, name: e.target.value })}
+                        placeholder={t('settings.holidayNamePlaceholder')}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void handleAddCompanyHoliday();
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        className="shrink-0"
+                        disabled={!newHoliday.holiday_date}
+                        onClick={() => void handleAddCompanyHoliday()}
+                      >
+                        <Plus size={16} className="me-1" />
+                        {t('settings.addHoliday')}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+                {companyHolidays.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">{t('settings.noHolidays')}</p>
+                ) : (
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {companyHolidays.map((h) => (
+                      <div
+                        key={h.id}
+                        className="flex items-center justify-between gap-2 rounded-md border border-white/10 px-3 py-2 text-sm"
+                      >
+                        <span>
+                          <span className="font-medium tabular-nums">{h.holiday_date.slice(0, 10)}</span>
+                          {h.name ? <span className="text-muted-foreground ms-2">{h.name}</span> : null}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => void handleDeleteCompanyHoliday(h.id)}
+                        >
+                          <Trash2 size={14} />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Role/Job Salary Configuration */}

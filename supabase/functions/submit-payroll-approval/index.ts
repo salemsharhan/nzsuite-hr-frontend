@@ -6,11 +6,55 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+const ATTACHMENT_BUCKET = 'payroll-approval-attachments'
+
+const AR_PAYROLL_MONTHS = [
+  'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+  'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
+]
+
+function formatPayrollPeriodAr(month: number, year: number): string {
+  const m = Math.max(1, Math.min(12, month))
+  return `${AR_PAYROLL_MONTHS[m - 1]} ${year}`
+}
+
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
+}
+
+async function createWhatsTaskApproval(
+  whatsTaskUrl: string,
+  integrationSecret: string,
+  callbackUrl: string,
+  payload: Record<string, unknown>,
+): Promise<{ task_id?: string; reused?: boolean; error?: string }> {
+  const wtRes = await fetch(`${whatsTaskUrl}/functions/v1/hr-create-approval-task`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Integration-Secret': integrationSecret,
+    },
+    body: JSON.stringify(payload),
+  })
+
+  const wtRaw = await wtRes.text()
+  let wtJson: { task_id?: string; error?: string; reused?: boolean } = {}
+  try {
+    wtJson = JSON.parse(wtRaw)
+  } catch {
+    wtJson = {}
+  }
+
+  if (!wtRes.ok) {
+    return { error: wtJson.error ?? `Whats-Task error (${wtRes.status})` }
+  }
+
+  const taskId = String(wtJson.task_id ?? '').trim()
+  if (!taskId) return { error: 'Whats-Task did not return task_id' }
+  return { task_id: taskId, reused: Boolean(wtJson.reused) }
 }
 
 serve(async (req) => {
@@ -63,32 +107,39 @@ serve(async (req) => {
   const { data: settings, error: settingsErr } = await admin
     .from('company_settings')
     .select(
-      'payroll_approver_wa_jid, payroll_approver_phone_e164, payroll_approver_name, taskhub_workspace_user_id',
+      'payroll_approver_wa_jid, payroll_approver_name, payroll_ceo_approver_wa_jid, payroll_ceo_approver_name, taskhub_workspace_user_id',
     )
     .eq('company_id', companyId)
     .maybeSingle()
 
   if (settingsErr) return json({ error: settingsErr.message }, 500)
 
-  const approverJid = String((settings as { payroll_approver_wa_jid?: string })?.payroll_approver_wa_jid ?? '').trim()
+  const gmJid = String((settings as { payroll_approver_wa_jid?: string })?.payroll_approver_wa_jid ?? '').trim()
+  const ceoJid = String((settings as { payroll_ceo_approver_wa_jid?: string })?.payroll_ceo_approver_wa_jid ?? '').trim()
   const workspaceUserId = String((settings as { taskhub_workspace_user_id?: string })?.taskhub_workspace_user_id ?? '').trim()
 
-  if (!approverJid || !workspaceUserId) {
+  if (!gmJid || !ceoJid || !workspaceUserId) {
     return json(
       {
         error:
-          'Payroll approver not configured. Set approver WhatsApp JID and Task Hub workspace user ID in Company Settings.',
+          'Payroll approvers not configured. Set GM and CEO WhatsApp JIDs and Task Hub workspace user ID in Company Settings.',
       },
       400,
     )
   }
 
-  let report: { id: string; approval_status?: string; report_data?: { meta?: { periodLabel?: string } } } | null = null
+  let report: {
+    id: string
+    approval_status?: string
+    report_data?: { meta?: { periodLabel?: string } }
+    year?: number
+    month?: number
+  } | null = null
 
   if (reportId) {
     const { data, error } = await admin
       .from('payroll_reports')
-      .select('id, approval_status, report_data, company_id')
+      .select('id, approval_status, report_data, company_id, year, month')
       .eq('id', reportId)
       .eq('company_id', companyId)
       .maybeSingle()
@@ -97,7 +148,7 @@ serve(async (req) => {
   } else if (year && month) {
     const { data, error } = await admin
       .from('payroll_reports')
-      .select('id, approval_status, report_data, company_id')
+      .select('id, approval_status, report_data, company_id, year, month')
       .eq('company_id', companyId)
       .eq('year', year)
       .eq('month', month)
@@ -110,68 +161,87 @@ serve(async (req) => {
   if (!report) return json({ error: 'Payroll report not found. Save payroll first.' }, 404)
 
   const currentStatus = String(report.approval_status ?? 'draft')
-  if (currentStatus === 'pending_approval') {
-    return json({ error: 'Payroll is already pending approval' }, 409)
-  }
-  if (currentStatus === 'approved') {
-    return json({ error: 'Payroll is already approved' }, 409)
+  const blockedStatuses = ['pending_approval', 'pending_gm', 'pending_ceo', 'approved']
+  if (blockedStatuses.includes(currentStatus)) {
+    return json({ error: 'Payroll is already in approval workflow or approved' }, 409)
   }
 
-  const periodLabel = report.report_data?.meta?.periodLabel ?? `Payroll ${month}/${year}`
+  const reportMonth = Number(report.month ?? month)
+  const reportYear = Number(report.year ?? year)
+  const periodLabel = report.report_data?.meta?.periodLabel ?? `Payroll ${reportMonth}/${reportYear}`
+  const periodLabelAr = formatPayrollPeriodAr(reportMonth, reportYear)
   const taskTitle = title || `اعتماد رواتب — ${periodLabel}`
   const taskDescription =
     description ||
-    `طلب اعتماد كشف رواتب من NZSuite HR.\nالفترة: ${periodLabel}\nمقدم من: ${user.email ?? user.id}`
+    `طلب اعتماد كشف رواتب من NZSuite HR (المرحلة الأولى — المدير العام).\nالفترة: ${periodLabel}\nمقدم من: ${user.email ?? user.id}`
 
-  const integrationRef = `payroll_report:${report.id}`
+  const integrationRef = `payroll_report:${report.id}:gm`
 
-  const wtRes = await fetch(`${whatsTaskUrl}/functions/v1/hr-create-approval-task`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Integration-Secret': integrationSecret,
-    },
-    body: JSON.stringify({
-      workspace_user_id: workspaceUserId,
-      assignee_wa_jid: approverJid,
-      title: taskTitle,
-      description: taskDescription,
-      integration_ref: integrationRef,
-      integration_callback_url: callbackUrl,
-      attachment: excelBase64
-        ? {
-            filename: excelFilename,
-            mime: attachmentMime,
-            base64: excelBase64,
-          }
-        : undefined,
-    }),
+  let attachmentPath: string | null = null
+  if (excelBase64) {
+    try {
+      const binary = Uint8Array.from(atob(excelBase64), (c) => c.charCodeAt(0))
+      attachmentPath = `${companyId}/${report.id}/approval`
+      const { error: uploadErr } = await admin.storage
+        .from(ATTACHMENT_BUCKET)
+        .upload(attachmentPath, binary, {
+          contentType: attachmentMime,
+          upsert: true,
+        })
+      if (uploadErr) {
+        console.error('attachment upload failed', uploadErr)
+        attachmentPath = null
+      }
+    } catch (e) {
+      console.error('attachment encode failed', e)
+      attachmentPath = null
+    }
+  }
+
+  const wtResult = await createWhatsTaskApproval(whatsTaskUrl, integrationSecret, callbackUrl, {
+    workspace_user_id: workspaceUserId,
+    assignee_wa_jid: gmJid,
+    title: taskTitle,
+    description: taskDescription,
+    integration_ref: integrationRef,
+    integration_callback_url: callbackUrl,
+    sign_off: 'GM',
+    period_label_ar: periodLabelAr,
+    payroll_month: reportMonth,
+    payroll_year: reportYear,
+    attachment: excelBase64
+      ? {
+          filename: excelFilename,
+          mime: attachmentMime,
+          base64: excelBase64,
+        }
+      : undefined,
   })
 
-  const wtRaw = await wtRes.text()
-  let wtJson: { task_id?: string; error?: string; reused?: boolean } = {}
-  try {
-    wtJson = JSON.parse(wtRaw)
-  } catch {
-    wtJson = {}
-  }
+  if (wtResult.error) return json({ error: wtResult.error }, 502)
 
-  if (!wtRes.ok) {
-    return json({ error: wtJson.error ?? `Whats-Task error (${wtRes.status})` }, 502)
-  }
-
-  const taskId = String(wtJson.task_id ?? '').trim()
-  if (!taskId) return json({ error: 'Whats-Task did not return task_id' }, 502)
+  const taskId = wtResult.task_id!
 
   const { error: updErr } = await admin
     .from('payroll_reports')
     .update({
-      approval_status: 'pending_approval',
+      approval_status: 'pending_gm',
       submitted_at: new Date().toISOString(),
       submitted_by_user_id: user.id,
       submitted_by_email: user.email ?? null,
       whats_task_id: taskId,
       whats_task_owner_id: workspaceUserId,
+      gm_whats_task_id: taskId,
+      ceo_whats_task_id: null,
+      gm_approved_at: null,
+      gm_approved_by_name: null,
+      gm_approval_note: null,
+      approved_at: null,
+      approved_by_name: null,
+      approval_note: null,
+      approval_attachment_path: attachmentPath,
+      approval_attachment_filename: excelBase64 ? excelFilename : null,
+      approval_attachment_mime: excelBase64 ? attachmentMime : null,
     })
     .eq('id', report.id)
 
@@ -181,6 +251,7 @@ serve(async (req) => {
     ok: true,
     payroll_report_id: report.id,
     whats_task_id: taskId,
-    reused: Boolean(wtJson.reused),
+    approval_stage: 'gm',
+    reused: Boolean(wtResult.reused),
   })
 })

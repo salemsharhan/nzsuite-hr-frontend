@@ -29,22 +29,22 @@ export const PAYROLL_TABLE_COLUMNS: PayrollTableColumn[] = [
   },
   {
     key: 'workingDaysInMonth',
-    headerEn: 'Scheduled Days',
-    headerAr: 'أيام مجدولة',
+    headerEn: 'Scheduled',
+    headerAr: 'المجدول',
     align: 'center',
     format: (r) => r.workingDaysInMonth
   },
   {
     key: 'actualWorkingDays',
-    headerEn: 'Present Days',
-    headerAr: 'أيام الحضور',
+    headerEn: 'Present',
+    headerAr: 'الحضور',
     align: 'center',
     format: (r) => r.actualWorkingDays
   },
   {
     key: 'absentDays',
-    headerEn: 'Absent Days',
-    headerAr: 'أيام الغياب',
+    headerEn: 'Absent',
+    headerAr: 'الغياب',
     align: 'center',
     format: (r) => r.absentDays
   },
@@ -56,8 +56,15 @@ export const PAYROLL_TABLE_COLUMNS: PayrollTableColumn[] = [
     format: (r) => r.paidLeaveDays
   },
   {
+    key: 'permittedLateDays',
+    headerEn: 'Permitted late',
+    headerAr: 'تأخير مسموح',
+    align: 'center',
+    format: (r) => r.permittedLateDays ?? 0
+  },
+  {
     key: 'absentDeductionKwd',
-    headerEn: 'Unpaid Absent (KWD)',
+    headerEn: 'Unpaid absent (KWD)',
     headerAr: 'غياب غير مدفوع د.ك',
     align: 'right',
     format: (r) => fmt3(r.absentDeductionKwd ?? 0)
@@ -91,10 +98,11 @@ export const PAYROLL_TABLE_COLUMNS: PayrollTableColumn[] = [
     format: (r) => fmt3(r.deductionsOtherKwd)
   },
   { key: 'netSalaryKwd', headerEn: 'Net Salary KWD', headerAr: 'صافي الراتب', align: 'right', format: (r) => fmt3(r.netSalaryKwd) },
+  { key: 'salaryRefund', headerEn: 'Salary Refund', headerAr: 'استرداد الراتب', align: 'right', format: (r) => fmt3(r.salaryRefund) },
   {
     key: 'amountScheduledToPay',
-    headerEn: 'Amount Scheduled',
-    headerAr: 'المبلغ المجدول',
+    headerEn: 'Total Payable',
+    headerAr: 'إجمالي المستحق',
     align: 'right',
     format: (r) => fmt3(r.amountScheduledToPay)
   },
@@ -105,13 +113,32 @@ export const PAYROLL_TABLE_COLUMNS: PayrollTableColumn[] = [
     align: 'center',
     format: (r) => r.methodOfPayment || 'Bank transfer'
   },
-  { key: 'salaryRefund', headerEn: 'Salary Refund', headerAr: 'استرداد', align: 'right', format: (r) => fmt3(r.salaryRefund) },
   { key: 'notes', headerEn: 'Notes', headerAr: 'ملاحظات', align: 'left', format: (r) => r.notes || '' }
 ];
 
 function fmt3(n: number): string {
   if (!Number.isFinite(n)) return '0.000';
   return (Math.round(n * 1000) / 1000).toFixed(3);
+}
+
+export function bilingualColumnHeader(col: PayrollTableColumn, lineBreak: '\n' | '<br/>' = '<br/>'): string {
+  return `${col.headerEn}${lineBreak}${col.headerAr}`;
+}
+
+/** Column layout for two-row export headers (PDF, styled Excel). */
+export function getPayrollExportHeaderSections() {
+  const grossStartIdx = PAYROLL_TABLE_COLUMNS.findIndex((c) => c.key === 'salaryKwd');
+  const dedStartIdx = PAYROLL_TABLE_COLUMNS.findIndex((c) => c.key === 'penaltiesKwd');
+  const netStartIdx = PAYROLL_TABLE_COLUMNS.findIndex((c) => c.key === 'netSalaryKwd');
+  return {
+    beforeGross: PAYROLL_TABLE_COLUMNS.slice(0, grossStartIdx),
+    gross: PAYROLL_TABLE_COLUMNS.slice(grossStartIdx, dedStartIdx),
+    deductions: PAYROLL_TABLE_COLUMNS.slice(dedStartIdx, netStartIdx),
+    afterDeductions: PAYROLL_TABLE_COLUMNS.slice(netStartIdx),
+    grossStartIdx,
+    dedStartIdx,
+    netStartIdx
+  };
 }
 
 export function bilingualHeader(col: PayrollTableColumn): string {
@@ -122,6 +149,7 @@ const INTEGER_KEYS = new Set<keyof KdaPayrollReportRow | 'amountScheduledToPay'>
   'sn',
   'actualWorkingDays',
   'paidLeaveDays',
+  'permittedLateDays',
   'workingDaysInMonth',
   'absentDays'
 ]);

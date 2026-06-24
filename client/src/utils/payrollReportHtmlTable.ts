@@ -1,5 +1,11 @@
 import type { KdaPayrollReportRow } from '@/services/payrollReportService';
-import { computePayrollTotals, cellValue, PAYROLL_TABLE_COLUMNS } from './payrollReportTableColumns';
+import {
+  computePayrollTotals,
+  cellValue,
+  PAYROLL_TABLE_COLUMNS,
+  bilingualColumnHeader,
+  getPayrollExportHeaderSections
+} from './payrollReportTableColumns';
 import type { PayrollReportExportMeta } from './payrollReportTableColumns';
 
 const COL_COUNT = PAYROLL_TABLE_COLUMNS.length;
@@ -49,42 +55,39 @@ function formatDepartmentBannerHtml(departmentLabel: string): string {
   return `القسم / Department · ${esc(dept)}`;
 }
 
+function buildExportTableHeaderHtml(): string {
+  const { beforeGross, gross, deductions, afterDeductions } = getPayrollExportHeaderSections();
+
+  const row1Parts: string[] = [];
+  for (const col of beforeGross) {
+    row1Parts.push(`<th rowspan="2">${bilingualColumnHeader(col)}</th>`);
+  }
+  row1Parts.push(
+    `<th colspan="${gross.length}" class="grp-gross">Gross Accrual Month<br/>استحقاق الإجمالي للشهر</th>`
+  );
+  row1Parts.push(
+    `<th colspan="${deductions.length}" class="grp-ded">Deductions<br/>الخصومات</th>`
+  );
+  for (const col of afterDeductions) {
+    const cls = col.key === 'salaryRefund' ? ' refund-h' : '';
+    row1Parts.push(`<th rowspan="2" class="${cls.trim()}">${bilingualColumnHeader(col)}</th>`);
+  }
+
+  const row2Parts: string[] = [];
+  for (const col of gross) {
+    row2Parts.push(`<th class="grp-gross">${bilingualColumnHeader(col)}</th>`);
+  }
+  for (const col of deductions) {
+    row2Parts.push(`<th class="grp-ded">${bilingualColumnHeader(col)}</th>`);
+  }
+
+  return `<tr>${row1Parts.join('')}</tr><tr>${row2Parts.join('')}</tr>`;
+}
+
 export function getPayrollReportInnerHtml(meta: PayrollReportExportMeta, rows: KdaPayrollReportRow[]): string {
   const companyLine = [meta.companyNameArabic, meta.companyName].filter(Boolean).join('  —  ');
   const t = computePayrollTotals(rows);
-
-  const subHeaders = `
-    <tr>
-      <th class="num">Salary KWD<br/>الراتب د.ك</th>
-      <th class="num">Paid Leave KWD<br/>اجازات مدفوعة د.ك</th>
-      <th class="num">Over Time KWD<br/>إضافي د.ك</th>
-      <th class="num">housing allowance KWD<br/>بدل سكن د.ك</th>
-      <th class="num">Other<br/>أخرى</th>
-      <th class="num">Total<br/>الإجمالي</th>
-      <th class="num">Penalties<br/>جزاءات</th>
-      <th class="num">Deductions<br/>خصومات</th>
-      <th class="num">Loan<br/>سلف</th>
-      <th class="num">Other<br/>أخرى</th>
-    </tr>`;
-
-  const mainHeader = `
-    <tr>
-      <th rowspan="2">S/N<br/>م</th>
-      <th rowspan="2">Emp. Code<br/>كود</th>
-      <th rowspan="2">Name / Arabic<br/>الاسم / عربي</th>
-      <th rowspan="2">Join Date<br/>تاريخ التعيين</th>
-      <th rowspan="2">Basic Salary KWD<br/>الراتب الأساسي</th>
-      <th rowspan="2">Actual Working Days<br/>أيام العمل الفعلية</th>
-      <th rowspan="2">Paid leave Days<br/>اجازات مدفوعة</th>
-      <th colspan="6" class="grp-gross">Gross Accrual Month</th>
-      <th colspan="4" class="grp-ded">Deductions</th>
-      <th rowspan="2">Net Salary KWD<br/>صافي الراتب</th>
-      <th rowspan="2">The amount scheduled to pay</th>
-      <th rowspan="2">Method of payment</th>
-      <th rowspan="2" class="refund-h">SALARY REFUND</th>
-      <th rowspan="2">Notes<br/>ملاحظات</th>
-    </tr>
-    ${subHeaders}`;
+  const mainHeader = buildExportTableHeaderHtml();
 
   const bodyRows = rows
     .map((row) => {

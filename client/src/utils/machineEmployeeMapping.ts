@@ -29,9 +29,23 @@ export function namesMatchAttendanceImport(employeeName: string, importName: str
   return false;
 }
 
+function extractNumericEmployeeId(emp: Employee): number | null {
+  const externalId = (emp as { external_id?: string }).external_id;
+  if (externalId && !isNaN(Number(externalId))) {
+    return Number(externalId);
+  }
+  const employeeIdText = emp.employee_id || (emp as { employee_id?: string }).employee_id || '';
+  if (!isNaN(Number(employeeIdText))) {
+    return Number(employeeIdText);
+  }
+  const match = employeeIdText.match(/\d+/);
+  if (match) return parseInt(match[0], 10);
+  return null;
+}
+
 /**
  * Maps biometric machine integer IDs to HR employee UUIDs.
- * Strategy: external_id, numeric employee_id, then name from attendance import.
+ * Strategy: external_id, numeric employee_id, then name only when device AC-No matches emp code.
  */
 export function mapMachineIdsToEmployeeUuids(
   integerIds: number[],
@@ -49,18 +63,9 @@ export function mapMachineIdsToEmployeeUuids(
       externalIdMap.set(Number(externalId), emp.id);
     }
 
-    const employeeIdText = emp.employee_id || (emp as { employeeId?: string }).employeeId || '';
-    const match = employeeIdText.match(/\d+/);
-    if (match) {
-      const extractedNumber = parseInt(match[0], 10);
-      if (!employeeIdTextMap.has(extractedNumber)) {
-        employeeIdTextMap.set(extractedNumber, emp.id);
-      }
-    } else if (!isNaN(Number(employeeIdText))) {
-      const numId = Number(employeeIdText);
-      if (!employeeIdTextMap.has(numId)) {
-        employeeIdTextMap.set(numId, emp.id);
-      }
+    const numericId = extractNumericEmployeeId(emp);
+    if (numericId !== null && !employeeIdTextMap.has(numericId)) {
+      employeeIdTextMap.set(numericId, emp.id);
     }
   });
 
@@ -76,9 +81,12 @@ export function mapMachineIdsToEmployeeUuids(
 
     const importName = nameByMachineId?.get(integerId);
     if (importName) {
-      const byName = employees.find((emp) =>
-        namesMatchAttendanceImport(employeeDisplayName(emp), importName)
-      );
+      const byName = employees.find((emp) => {
+        if (!namesMatchAttendanceImport(employeeDisplayName(emp), importName)) return false;
+        const empCode = extractNumericEmployeeId(emp);
+        // Avoid mapping device AC-No 831 → HR employee 1031 via name alone
+        return empCode === null || empCode === integerId;
+      });
       mapping.set(integerId, byName?.id ?? null);
     } else {
       mapping.set(integerId, null);

@@ -4,6 +4,8 @@ import {
   PAYROLL_TABLE_COLUMNS,
   cellValue,
   computePayrollTotals,
+  bilingualColumnHeader,
+  getPayrollExportHeaderSections,
   type PayrollReportExportMeta
 } from './payrollReportTableColumns';
 
@@ -14,7 +16,9 @@ const MONEY_COL_INDEXES = new Set(
   PAYROLL_TABLE_COLUMNS.map((c, i) => i).filter((i) => PAYROLL_TABLE_COLUMNS[i].align === 'right' && PAYROLL_TABLE_COLUMNS[i].key !== 'sn')
 );
 
-const COLUMN_WIDTHS = [6.5, 14, 42, 14, 16, 12, 12, 14, 14, 12, 12, 10, 12, 12, 12, 10, 10, 16, 18, 20, 14, 28];
+const COLUMN_WIDTHS = [
+  6.5, 14, 42, 14, 16, 11, 11, 11, 11, 14, 12, 12, 10, 12, 12, 12, 10, 10, 10, 16, 18, 20, 14, 12, 28
+];
 
 const FILL_HEADER = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFD9E1F2' } };
 const FILL_TITLE_BAR = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FF294172' } };
@@ -164,62 +168,62 @@ export async function buildPayrollStyledWorkbook(
   ws.getRow(h1).height = 36;
   ws.getRow(h2).height = 36;
 
-  const headerRow1 = [
-    { en: 'S/N', ar: 'م', rowspan: 2 },
-    { en: 'Emp. Code', ar: 'كود', rowspan: 2 },
-    { en: 'Name / Arabic', ar: 'الاسم / عربي', rowspan: 2 },
-    { en: 'Join Date', ar: 'تاريخ التعيين', rowspan: 2 },
-    { en: 'Basic Salary KWD', ar: 'الراتب الأساسي', rowspan: 2, align: 'right' as const },
-    { en: 'Actual Working Days', ar: 'أيام العمل الفعلية', rowspan: 2, align: 'center' as const },
-    { en: 'Paid leave Days', ar: 'اجازات مدفوعة', rowspan: 2, align: 'center' as const },
-    { en: 'Gross Accrual Month', ar: 'استحقاق الإجمالي للشهر', colspan: 6, group: true },
-    { en: 'Deductions', ar: 'الخصومات', colspan: 4, group: true },
-    { en: 'Net Salary KWD', ar: 'صافي الراتب', rowspan: 2, align: 'right' as const },
-    { en: 'The amount scheduled to pay', ar: '', rowspan: 2, align: 'right' as const },
-    { en: 'Method of payment', ar: '', rowspan: 2 },
-    { en: 'SALARY REFUND', ar: '', rowspan: 2, align: 'right' as const, refund: true },
-    { en: 'Notes', ar: 'ملاحظات', rowspan: 2 }
-  ];
+  const { beforeGross, gross, deductions, afterDeductions } = getPayrollExportHeaderSections();
 
   let col = 1;
-  for (const h of headerRow1) {
-    const startCol = col;
-    const endCol = h.colspan ? col + h.colspan - 1 : col;
-    const endRow = h.rowspan === 2 ? h2 : h1;
-    const start = `${colLetter(startCol)}${h1}`;
-    const end = `${colLetter(endCol)}${endRow}`;
-    if (start !== end) ws.mergeCells(`${start}:${end}`);
+  for (const h of beforeGross) {
+    const start = `${colLetter(col)}${h1}`;
+    const end = `${colLetter(col)}${h2}`;
+    ws.mergeCells(`${start}:${end}`);
     const cell = ws.getCell(start);
-    cell.value = h.ar ? `${h.en}\n${h.ar}` : h.en;
+    cell.value = bilingualColumnHeader(h, '\n');
     styleCell(cell, {
       bold: true,
       align: h.align ?? 'center',
-      fill: h.refund ? FILL_REFUND : h.group ? FILL_GROUP : FILL_HEADER
+      fill: FILL_HEADER
     });
-    col = endCol + 1;
+    col++;
   }
 
-  const subHeaders = [
-    { en: 'Salary KWD', ar: 'الراتب د.ك' },
-    { en: 'Paid Leave KWD', ar: 'اجازات مدفوعة د.ك' },
-    { en: 'Over Time KWD', ar: 'إضافي د.ك' },
-    { en: 'housing allowance KWD', ar: 'بدل سكن د.ك' },
-    { en: 'Other', ar: 'أخرى' },
-    { en: 'Total', ar: 'الإجمالي' },
-    { en: 'Penalties', ar: 'جزاءات' },
-    { en: 'Deductions', ar: 'خصومات' },
-    { en: 'Loan', ar: 'سلف' },
-    { en: 'Other', ar: 'أخرى' }
-  ];
-  subHeaders.forEach((label, i) => {
-    const c = ws.getCell(h2, 8 + i);
-    c.value = `${label.en}\n${label.ar}`;
-    styleCell(c, {
-      bold: true,
-      align: 'center',
-      fill: FILL_GROUP
-    });
+  const grossStartCol = col;
+  const grossEndCol = col + gross.length - 1;
+  ws.mergeCells(`${colLetter(grossStartCol)}${h1}:${colLetter(grossEndCol)}${h1}`);
+  const grossGroupCell = ws.getCell(`${colLetter(grossStartCol)}${h1}`);
+  grossGroupCell.value = 'Gross Accrual Month\nاستحقاق الإجمالي للشهر';
+  styleCell(grossGroupCell, { bold: true, align: 'center', fill: FILL_GROUP });
+  gross.forEach((h, i) => {
+    const cell = ws.getCell(h2, grossStartCol + i);
+    cell.value = bilingualColumnHeader(h, '\n');
+    styleCell(cell, { bold: true, align: 'center', fill: FILL_GROUP });
   });
+  col = grossEndCol + 1;
+
+  const dedStartCol = col;
+  const dedEndCol = col + deductions.length - 1;
+  ws.mergeCells(`${colLetter(dedStartCol)}${h1}:${colLetter(dedEndCol)}${h1}`);
+  const dedGroupCell = ws.getCell(`${colLetter(dedStartCol)}${h1}`);
+  dedGroupCell.value = 'Deductions\nالخصومات';
+  styleCell(dedGroupCell, { bold: true, align: 'center', fill: FILL_GROUP });
+  deductions.forEach((h, i) => {
+    const cell = ws.getCell(h2, dedStartCol + i);
+    cell.value = bilingualColumnHeader(h, '\n');
+    styleCell(cell, { bold: true, align: 'center', fill: FILL_GROUP });
+  });
+  col = dedEndCol + 1;
+
+  for (const h of afterDeductions) {
+    const start = `${colLetter(col)}${h1}`;
+    const end = `${colLetter(col)}${h2}`;
+    ws.mergeCells(`${start}:${end}`);
+    const cell = ws.getCell(start);
+    cell.value = bilingualColumnHeader(h, '\n');
+    styleCell(cell, {
+      bold: true,
+      align: h.align ?? 'center',
+      fill: h.key === 'salaryRefund' ? FILL_REFUND : FILL_HEADER
+    });
+    col++;
+  }
 
   let dataRow = 7;
   rows.forEach((row, rowIdx) => {

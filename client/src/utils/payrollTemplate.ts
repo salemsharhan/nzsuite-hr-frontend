@@ -23,6 +23,73 @@ export const PAYROLL_TEMPLATE_CONFIG: Record<
 /** Divisor used in template formulas (e.g. =E6/26*F6) */
 export const PAYROLL_MONTH_DIVISOR = 26;
 
+function round3(n: number): number {
+  return Math.round(n * 1000) / 1000;
+}
+
+/**
+ * Company holidays add to salary only when the employee has no unpaid absent days
+ * (i.e. they attended every non-holiday scheduled day, or gaps are covered by paid leave).
+ */
+export function effectiveHolidayPayDays(
+  present: number,
+  companyHolidayDays: number,
+  permittedLateDays: number,
+  paidLeaveDays: number,
+  scheduled: number
+): number {
+  const unpaidAbsent =
+    scheduled -
+    present -
+    paidLeaveDays -
+    permittedLateDays -
+    companyHolidayDays;
+  return unpaidAbsent <= 0 ? Math.max(0, companyHolidayDays) : 0;
+}
+
+/** Paid salary days from attendance + eligible holidays + permitted late, capped at 26. */
+export function payableSalaryDays(
+  present: number,
+  companyHolidayDays: number,
+  permittedLateDays = 0,
+  paidLeaveDays = 0,
+  scheduled = PAYROLL_MONTH_DIVISOR
+): number {
+  const holidayPay = effectiveHolidayPayDays(
+    present,
+    companyHolidayDays,
+    permittedLateDays,
+    paidLeaveDays,
+    scheduled
+  );
+  return Math.min(
+    PAYROLL_MONTH_DIVISOR,
+    Math.max(0, present) + Math.max(0, permittedLateDays) + holidayPay
+  );
+}
+
+export function calcSalaryKwdFromDays(
+  basicSalaryKwd: number,
+  present: number,
+  companyHolidayDays: number,
+  permittedLateDays = 0,
+  paidLeaveDays = 0,
+  scheduled = PAYROLL_MONTH_DIVISOR
+): number {
+  const daily =
+    PAYROLL_MONTH_DIVISOR > 0 ? basicSalaryKwd / PAYROLL_MONTH_DIVISOR : 0;
+  return round3(
+    daily *
+      payableSalaryDays(
+        present,
+        companyHolidayDays,
+        permittedLateDays,
+        paidLeaveDays,
+        scheduled
+      )
+  );
+}
+
 export function detectPayrollTemplate(
   companyName: string,
   companyNameArabic: string

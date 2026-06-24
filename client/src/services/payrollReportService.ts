@@ -1,36 +1,48 @@
 import { employeeService, Employee } from './employeeService';
 import { companyService } from './companyService';
 import { leaveService } from './leaveService';
-import { companySettingsService } from './companySettingsService';
+import { companySettingsService, type EmployeeShift } from './companySettingsService';
 import { attendanceService } from './attendanceService';
 
-import { PAYROLL_MONTH_DIVISOR } from '@/utils/payrollTemplate';
+import { PAYROLL_MONTH_DIVISOR, calcSalaryKwdFromDays } from '@/utils/payrollTemplate';
+import {
+  countScheduledDaysInPeriod,
+  countCompanyHolidayDaysInPeriod,
+  holidayDatesInPeriod
+} from '@/utils/payrollWorkingDays';
+import {
+  getPayrollPeriodBounds,
+  formatPayrollPeriodRange,
+  isDateInPayrollPeriod,
+  type PayrollPeriodBounds
+} from '@/utils/payrollPeriod';
+
+export { getPayrollPeriodBounds, formatPayrollPeriodRange, type PayrollPeriodBounds };
 
 /** Default working days per month — matches Excel template divisor (e.g. =E6/26*F6) */
 const DEFAULT_WORKING_DAYS = PAYROLL_MONTH_DIVISOR;
 
 /**
- * Get number of days that a date range overlaps with a given month.
+ * Get number of days that a leave range overlaps with a payroll period.
  */
-function daysOverlappingMonth(
+function daysOverlappingPeriod(
   startDate: string,
   endDate: string,
-  year: number,
-  month: number
+  period: PayrollPeriodBounds
 ): number {
-  const monthStart = new Date(year, month - 1, 1);
-  const monthEnd = new Date(year, month, 0);
+  const periodStart = new Date(period.periodStart);
+  const periodEnd = new Date(period.periodEnd);
   const start = new Date(startDate);
   const end = new Date(endDate);
-  const from = start < monthStart ? monthStart : start;
-  const to = end > monthEnd ? monthEnd : end;
+  const from = start < periodStart ? periodStart : start;
+  const to = end > periodEnd ? periodEnd : end;
   if (from > to) return 0;
   const diff = Math.ceil((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)) + 1;
   return Math.max(0, diff);
 }
 
 /**
- * Fetch approved leave days per employee for a given month.
+ * Fetch approved leave days per employee for a payroll period.
  * Returns Record<employeeId, days>.
  */
 export async function getApprovedLeaveDaysForMonth(
@@ -38,23 +50,33 @@ export async function getApprovedLeaveDaysForMonth(
   year: number,
   month: number
 ): Promise<Record<string, number>> {
-  const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
-  const lastDay = new Date(year, month, 0).getDate();
-  const monthEnd = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  const period = getPayrollPeriodBounds(year, month);
   const requests = await leaveService.getAll({
     companyId,
     status: 'Approved',
-    date_from: monthStart,
-    date_to: monthEnd,
+    date_from: period.periodStart,
+    date_to: period.periodEnd,
     limit: 2000
   });
   const byEmployee: Record<string, number> = {};
   for (const req of requests) {
-    const days = daysOverlappingMonth(req.start_date, req.end_date, year, month);
+    const days = daysOverlappingPeriod(req.start_date, req.end_date, period);
     const id = req.employee_id;
     byEmployee[id] = (byEmployee[id] || 0) + days;
   }
   return byEmployee;
+}
+
+/**
+ * Get company holidays overlapping a payroll period.
+ */
+export async function getCompanyHolidaysForMonth(
+  companyId: string,
+  year: number,
+  month: number
+): Promise<{ holiday_date: string; name: string }[]> {
+  const period = getPayrollPeriodBounds(year, month);
+  return companySettingsService.getCompanyHolidays(companyId, period.periodStart, period.periodEnd);
 }
 
 /**
@@ -64,23 +86,32 @@ export async function getApprovedLeaveDaysForMonth(
 export async function getActualWorkingDaysFromAttendance(
   companyId: string,
   year: number,
-  month: number
+  month: number,
+  holidayDates?: Set<string>
 ): Promise<Record<string, number>> {
-  const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
-  const lastDay = new Date(year, month, 0).getDate();
-  const monthEnd = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  const period = getPayrollPeriodBounds(year, month);
+  const holidays =
+    holidayDates ??
+    holidayDatesInPeriod(
+      await getCompanyHolidaysForMonth(companyId, year, month),
+      period.periodStart,
+      period.periodEnd
+    );
+
   const response = await attendanceService.getAll({
     companyId,
-    dateFrom: monthStart,
-    dateTo: monthEnd
-    // no limit/page so we get full aggregated list
+    dateFrom: period.periodStart,
+    dateTo: period.periodEnd
   });
   const byEmployee: Record<string, number> = {};
-  const seen = new Map<string, Set<string>>(); // employeeId -> Set<date>
+  const seen = new Map<string, Set<string>>();
   for (const log of response.data) {
     const empId = log.employee_id;
-    const date = log.date;
+    const date = log.date?.slice(0, 10);
     if (!empId || !date) continue;
+    if (!isDateInPayrollPeriod(date, period)) continue;
+    if (holidays.has(date)) continue;
+    if (log.status === 'Late' || log.status === 'Absent') continue;
     if (!seen.has(empId)) seen.set(empId, new Set());
     seen.get(empId)!.add(date);
   }
@@ -99,27 +130,71 @@ export async function getWorkingDaysInMonthByEmployee(
   year: number,
   month: number
 ): Promise<Record<string, number>> {
+  const period = getPayrollPeriodBounds(year, month);
   const employees = await employeeService.getAll(companyId);
   const result: Record<string, number> = {};
-  const monthStart = new Date(year, month - 1, 1);
-  const monthEnd = new Date(year, month, 0);
-  const totalDays = monthEnd.getDate();
+  /** Mon–Sat when no employee shift is configured (typical 26-day month). */
+  const defaultWeekdays = new Set([1, 2, 3, 4, 5, 6]);
 
   for (const emp of employees) {
     const shifts = await companySettingsService.getEmployeeShifts(emp.id);
     const workingWeekdays = new Set<number>();
     shifts.forEach((s) => workingWeekdays.add(s.day_of_week));
     if (workingWeekdays.size === 0) {
-      result[emp.id] = DEFAULT_WORKING_DAYS;
+      result[emp.id] = Math.min(
+        PAYROLL_MONTH_DIVISOR,
+        countScheduledDaysInPeriod(period, defaultWeekdays)
+      );
       continue;
     }
-    let count = 0;
-    for (let d = 1; d <= totalDays; d++) {
-      const date = new Date(year, month - 1, d);
-      if (workingWeekdays.has(date.getDay())) count++;
-    }
-    result[emp.id] = count;
+    result[emp.id] = Math.min(
+      PAYROLL_MONTH_DIVISOR,
+      countScheduledDaysInPeriod(period, workingWeekdays)
+    );
   }
+  return result;
+}
+
+/** Paid company holidays per employee (on their working weekdays) in the payroll period. */
+export async function getCompanyHolidayDaysByEmployee(
+  companyId: string,
+  year: number,
+  month: number
+): Promise<Record<string, number>> {
+  const period = getPayrollPeriodBounds(year, month);
+  const employees = await employeeService.getAll(companyId);
+  const holidayDates = holidayDatesInPeriod(
+    await getCompanyHolidaysForMonth(companyId, year, month),
+    period.periodStart,
+    period.periodEnd
+  );
+  const result: Record<string, number> = {};
+  const defaultWeekdays = new Set([1, 2, 3, 4, 5, 6]);
+
+  for (const emp of employees) {
+    const shifts = await companySettingsService.getEmployeeShifts(emp.id);
+    const workingWeekdays = new Set<number>();
+    shifts.forEach((s) => workingWeekdays.add(s.day_of_week));
+    if (workingWeekdays.size === 0) {
+      result[emp.id] = countCompanyHolidayDaysInPeriod(period, defaultWeekdays, holidayDates);
+      continue;
+    }
+    result[emp.id] = countCompanyHolidayDaysInPeriod(period, workingWeekdays, holidayDates);
+  }
+  return result;
+}
+
+/** Employee shifts keyed by UUID — used for late-grace checks on punch import. */
+export async function getEmployeeShiftsByEmployeeId(
+  companyId: string
+): Promise<Record<string, EmployeeShift[]>> {
+  const employees = await employeeService.getAll(companyId);
+  const result: Record<string, EmployeeShift[]> = {};
+  await Promise.all(
+    employees.map(async (emp) => {
+      result[emp.id] = await companySettingsService.getEmployeeShifts(emp.id);
+    })
+  );
   return result;
 }
 
@@ -133,8 +208,12 @@ export interface KdaPayrollReportRow {
   basicSalaryKwd: number;
   workingDaysInMonth: number; // scheduled days from shift
   actualWorkingDays: number;  // present days from attendance
+  /** Company holidays on working days — paid, not counted as absent */
+  companyHolidayDays: number;
   paidLeaveDays: number;
-  absentDays: number;         // scheduled - present - leave (≥0)
+  /** Late days approved — paid like present, moved from absent manually */
+  permittedLateDays: number;
+  absentDays: number;         // scheduled - present - leave - holidays - permitted late (≥0)
   /** Salary not paid for unpaid absent days (informational; already reflected in salaryKwd) */
   absentDeductionKwd: number;
   /** Gross: Salary KWD (pro-rated) */
@@ -185,6 +264,11 @@ export interface KdaPayrollReportInput {
   actualDaysByEmployeeId?: Record<string, number>;
   /** When set, only these employee UUIDs appear in the report (e.g. attendance import) */
   onlyEmployeeIds?: string[];
+  /**
+   * When actualDaysByEmployeeId is set (attendance import), employees missing from that map
+   * are treated as fully present (scheduled days minus approved paid leave).
+   */
+  missingAttendanceDefaultsToFullPresent?: boolean;
   /** Override payment method per employee (optional) */
   paymentMethodByEmployeeId?: Record<string, string>;
   /** Return/refund amount per employee (optional; used for amount scheduled and salary refund) */
@@ -241,6 +325,11 @@ export async function buildKdaPayrollReport(input: KdaPayrollReportInput): Promi
   const paymentMethodByEmp = input.paymentMethodByEmployeeId ?? {};
   const returnAmountByEmp = input.returnAmountByEmployeeId ?? {};
   const workingDaysByEmp = input.workingDaysByEmployeeId ?? {};
+  const companyHolidayByEmp = await getCompanyHolidayDaysByEmployee(
+    input.companyId,
+    input.year,
+    input.month
+  );
 
   let companyName = '';
   let companyNameArabic = '';
@@ -273,26 +362,45 @@ export async function buildKdaPayrollReport(input: KdaPayrollReportInput): Promi
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
-  const periodLabel = `${monthNames[input.month - 1]} ${input.year} Payroll Report`;
+  const period = getPayrollPeriodBounds(input.year, input.month);
+  const periodLabel = `${monthNames[input.month - 1]} ${input.year} Payroll Report (${formatPayrollPeriodRange(period)})`;
   const departmentLabel = input.department ? `Department / ${input.department}` : 'Department / HR';
 
   const rows: KdaPayrollReportRow[] = list.map((emp, index) => {
     const baseSalary = Number(emp.base_salary ?? emp.salary ?? 0) || 0;
     const workingDaysInMonth = workingDaysByEmp[emp.id] ?? input.workingDays ?? DEFAULT_WORKING_DAYS;
+    const companyHolidayDays = companyHolidayByEmp[emp.id] ?? 0;
     const paidLeaveDays = paidLeaveByEmp[emp.id] ?? 0;
     const attendanceProvided = input.actualDaysByEmployeeId !== undefined;
     const actualWorkingDays =
       actualDaysByEmp[emp.id] !== undefined
         ? actualDaysByEmp[emp.id]
-        : attendanceProvided || input.onlyEmployeeIds?.length
-          ? 0
-          : Math.max(0, workingDaysInMonth - paidLeaveDays);
-    const absentDays = Math.max(0, workingDaysInMonth - actualWorkingDays - paidLeaveDays);
+        : input.missingAttendanceDefaultsToFullPresent
+          ? Math.max(0, workingDaysInMonth - paidLeaveDays - companyHolidayDays)
+          : attendanceProvided || input.onlyEmployeeIds?.length
+            ? 0
+            : Math.max(0, workingDaysInMonth - paidLeaveDays - companyHolidayDays);
+    const permittedLateDays = 0;
+    const absentDays = Math.max(
+      0,
+      workingDaysInMonth -
+        actualWorkingDays -
+        paidLeaveDays -
+        companyHolidayDays -
+        permittedLateDays
+    );
     const dailyRate =
       DEFAULT_WORKING_DAYS > 0 ? baseSalary / DEFAULT_WORKING_DAYS : 0;
     const absentDeductionKwd = round3(dailyRate * absentDays);
 
-    const salaryKwd = round3(dailyRate * actualWorkingDays);
+    const salaryKwd = calcSalaryKwdFromDays(
+      baseSalary,
+      actualWorkingDays,
+      companyHolidayDays,
+      permittedLateDays,
+      paidLeaveDays,
+      workingDaysInMonth
+    );
     const paidLeaveKwd = round3(dailyRate * paidLeaveDays);
     const overTimeKwd = 0;
     const housingAllowanceKwd = Number(emp.housing_allowance ?? 0) || 0;
@@ -326,7 +434,9 @@ export async function buildKdaPayrollReport(input: KdaPayrollReportInput): Promi
       basicSalaryKwd: baseSalary,
       workingDaysInMonth,
       actualWorkingDays,
+      companyHolidayDays,
       paidLeaveDays,
+      permittedLateDays,
       absentDays,
       absentDeductionKwd,
       salaryKwd: round3(salaryKwd),

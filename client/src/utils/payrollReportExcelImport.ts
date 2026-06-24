@@ -243,7 +243,9 @@ function parseImportedRow(
     basicSalaryKwd: round3(basic),
     workingDaysInMonth,
     actualWorkingDays: actualDays,
+    companyHolidayDays: 0,
     paidLeaveDays,
+    permittedLateDays: 0,
     absentDays,
     absentDeductionKwd: round3(
       (PAYROLL_MONTH_DIVISOR > 0 ? basic / PAYROLL_MONTH_DIVISOR : 0) * absentDays

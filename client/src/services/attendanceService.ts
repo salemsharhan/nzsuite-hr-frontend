@@ -1,6 +1,9 @@
 import { api, adminApi } from './api';
 import { employeeService, Employee } from './employeeService';
 import { companySettingsService, EmployeeWorkingHours, EmployeeShift } from './companySettingsService';
+import { PAYROLL_LATE_TOLERANCE_MINUTES } from '@/utils/payrollWorkingDays';
+
+const LATE_TOLERANCE_MINUTES = PAYROLL_LATE_TOLERANCE_MINUTES;
 
 // Raw attendance record from the attendances table
 interface RawAttendance {
@@ -401,7 +404,7 @@ function transformRawAttendanceWithCache(
       
       if (checkInTime > expectedTime) {
         lateMinutes = Math.floor((checkInTime.getTime() - expectedTime.getTime()) / (1000 * 60));
-        if (status === 'Present') status = 'Late';
+        if (lateMinutes > LATE_TOLERANCE_MINUTES && status === 'Present') status = 'Late';
       }
     }
     
@@ -419,7 +422,7 @@ function transformRawAttendanceWithCache(
     // Fallback to old logic
     if (checkIn) {
       const checkInTime = new Date(checkIn);
-      if (checkInTime.getHours() > 9 || (checkInTime.getHours() === 9 && checkInTime.getMinutes() > 0)) {
+      if (checkInTime.getHours() > 9 || (checkInTime.getHours() === 9 && checkInTime.getMinutes() > LATE_TOLERANCE_MINUTES)) {
         lateMinutes = (checkInTime.getHours() - 9) * 60 + checkInTime.getMinutes();
         if (status === 'Present') status = 'Late';
       }
@@ -528,7 +531,7 @@ async function transformRawAttendance(raw: RawAttendance, employeeUuid: string |
       
       if (checkInTime > expectedTime) {
         lateMinutes = Math.floor((checkInTime.getTime() - expectedTime.getTime()) / (1000 * 60));
-        if (status === 'Present') status = 'Late';
+        if (lateMinutes > LATE_TOLERANCE_MINUTES && status === 'Present') status = 'Late';
       }
     }
     
@@ -546,7 +549,7 @@ async function transformRawAttendance(raw: RawAttendance, employeeUuid: string |
     // Fallback to old logic if no working hours available
     if (checkIn) {
       const checkInTime = new Date(checkIn);
-      if (checkInTime.getHours() > 9 || (checkInTime.getHours() === 9 && checkInTime.getMinutes() > 0)) {
+      if (checkInTime.getHours() > 9 || (checkInTime.getHours() === 9 && checkInTime.getMinutes() > LATE_TOLERANCE_MINUTES)) {
         lateMinutes = (checkInTime.getHours() - 9) * 60 + checkInTime.getMinutes();
         if (status === 'Present') status = 'Late';
       }

@@ -1,12 +1,34 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Download, FileDown, FileSpreadsheet, FileText, Loader2, RefreshCw, RotateCcw, Save, Send, Upload } from 'lucide-react';
+import {
+  ChevronDown,
+  ClipboardPaste,
+  Download,
+  FileDown,
+  FileSpreadsheet,
+  FileText,
+  Loader2,
+  RefreshCw,
+  RotateCcw,
+  Save,
+  Send,
+  Trash2,
+  Upload,
+  X,
+  ArrowRight
+} from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger
+} from '@/components/ui/collapsible';
 import {
   Dialog,
   DialogContent,
@@ -24,15 +46,16 @@ import {
   getActualWorkingDaysFromAttendance,
   type KdaPayrollReportRow
 } from '@/services/payrollReportService';
-import { buildPayrollExcelBuffer, downloadPayrollExcel } from '@/utils/payrollReportExcelExport';
+import { downloadPayrollExcel } from '@/utils/payrollReportExcelExport';
 import { downloadPayrollCsv } from '@/utils/payrollReportCsvExport';
 import { downloadPayrollPdf } from '@/utils/payrollReportPdfExport';
 import {
   buildPayrollApprovalAttachment,
   type PayrollApprovalAttachmentFormat
 } from '@/utils/payrollReportApprovalAttachment';
-import { importPayrollExcel } from '@/utils/payrollReportExcelImport';
-import { PAYROLL_MONTH_DIVISOR } from '@/utils/payrollTemplate';
+import { parsePunchLog } from '@/utils/payrollPunchLogParser';
+import { extractAttendanceTextFromPdfs } from '@/utils/payrollAttendancePdfExtract';
+import { maxPaidLeaveDaysForRow, recalcPayrollRow } from '@/utils/payrollRowRecalc';
 import { employeeService, type Employee } from '@/services/employeeService';
 import {
   getSavedPayrollReport,
@@ -65,6 +88,10 @@ const APPROVAL_FORMAT_I18N: Record<
   pdf: { label: 'approvalFormatPdf', description: 'approvalFormatPdfDesc' }
 };
 
+function formatKwd(n: number): string {
+  return n.toFixed(3);
+}
+
 export default function PayrollReportTab() {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
@@ -94,18 +121,18 @@ export default function PayrollReportTab() {
   const [saving, setSaving] = useState(false);
   const [submittingApproval, setSubmittingApproval] = useState(false);
   const [revertingApproval, setRevertingApproval] = useState(false);
-  const [dirty, setDirty] = useState(false);
-  const [reportSource, setReportSource] = useState<'saved' | 'generated' | 'imported' | null>(null);
-  const [importing, setImporting] = useState(false);
+  const [reportSource, setReportSource] = useState<'saved' | 'generated' | 'punch' | null>(null);
   const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
   const [approvalAttachmentFormat, setApprovalAttachmentFormat] =
     useState<PayrollApprovalAttachmentFormat>('excel');
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [punchLogText, setPunchLogText] = useState('');
+  const [punchPdfFiles, setPunchPdfFiles] = useState<File[]>([]);
+  const [extractingPdf, setExtractingPdf] = useState(false);
+  const [punchPasteOpen, setPunchPasteOpen] = useState(false);
+  const [generatingFromPunch, setGeneratingFromPunch] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const punchPdfInputRef = useRef<HTMLInputElement>(null);
   const suppressAutoLoad = useRef(false);
-  const reportSourceRef = useRef(reportSource);
-  const dirtyRef = useRef(dirty);
-  reportSourceRef.current = reportSource;
-  dirtyRef.current = dirty;
 
   const companyId = user?.company_id;
 
@@ -127,7 +154,7 @@ export default function PayrollReportTab() {
       const depts = new Set<string>();
       employees.forEach((e) => {
         byId[e.id] = e;
-        const d = e.department || (e as any).departments?.name;
+        const d = e.department || (e as { departments?: { name?: string } }).departments?.name;
         if (d) depts.add(d);
       });
       setEmployeesById(byId);
@@ -140,7 +167,7 @@ export default function PayrollReportTab() {
 
   const applySavedReport = (saved: SavedPayrollReport) => {
     setMeta(saved.report_data.meta);
-    setRows(saved.report_data.rows);
+    setRows(saved.report_data.rows.map((r) => recalcPayrollRow(r as KdaPayrollReportRow)));
     setSavedInfo({
       savedAt: saved.saved_at,
       savedByEmail: saved.saved_by_email ?? null,
@@ -151,21 +178,13 @@ export default function PayrollReportTab() {
       approvedByName: saved.approved_by_name ?? null,
       approvalNote: saved.approval_note ?? null
     });
-    setDirty(false);
     setReportSource('saved');
+    setDirty(false);
   };
 
   const loadReport = useCallback(async (options?: { forceRegenerate?: boolean }) => {
     if (!companyId) {
       toast.error(t('payroll.companyNotSet'));
-      return;
-    }
-    if (
-      reportSourceRef.current === 'imported' &&
-      dirtyRef.current &&
-      !options?.forceRegenerate &&
-      !window.confirm(t('payroll.confirmReloadImport'))
-    ) {
       return;
     }
     setLoading(true);
@@ -232,18 +251,188 @@ export default function PayrollReportTab() {
       suppressAutoLoad.current = false;
       return;
     }
-    if (reportSourceRef.current === 'imported' && dirtyRef.current) {
-      return;
-    }
     void loadReport();
   }, [companyId, month, year, department, loadReport]);
 
   const handleRegenerate = useCallback(async () => {
-    if (dirty && !window.confirm(t('payroll.confirmRebuild'))) {
+    await loadReport({ forceRegenerate: true });
+  }, [loadReport]);
+
+  const handleGenerateFromPunchLog = useCallback(async () => {
+    if (!companyId) {
+      toast.error(t('payroll.companyNotSet'));
       return;
     }
-    await loadReport({ forceRegenerate: true });
-  }, [dirty, loadReport]);
+    if (!punchLogText.trim() && punchPdfFiles.length === 0) {
+      toast.error(t('payroll.toast.punchLogEmpty'));
+      return;
+    }
+
+    setGeneratingFromPunch(true);
+    try {
+      let combinedText = punchLogText.trim();
+      if (punchPdfFiles.length > 0) {
+        setExtractingPdf(true);
+        try {
+          const pdfText = await extractAttendanceTextFromPdfs(punchPdfFiles);
+          combinedText = [combinedText, pdfText].filter(Boolean).join('\n');
+        } finally {
+          setExtractingPdf(false);
+        }
+      }
+
+      if (!combinedText.trim()) {
+        toast.error(t('payroll.toast.punchPdfNoText'));
+        return;
+      }
+
+      const y = parseInt(year, 10);
+      const m = parseInt(month, 10);
+      const employees = Object.values(employeesById);
+      const parseResult = parsePunchLog(combinedText, y, m, employees);
+
+      if (parseResult.totalLinesParsed === 0) {
+        toast.error(t('payroll.toast.punchLogEmpty'));
+        return;
+      }
+
+      const attendanceEmployeeIds = Object.keys(parseResult.actualDaysByEmployeeId);
+      if (attendanceEmployeeIds.length === 0) {
+        toast.error(t('payroll.toast.punchLogNoMatchedEmployees'));
+        return;
+      }
+
+      const [leaveDays, workingDaysMap] = await Promise.all([
+        getApprovedLeaveDaysForMonth(companyId, y, m),
+        getWorkingDaysInMonthByEmployee(companyId, y, m)
+      ]);
+
+      const report = await buildKdaPayrollReport({
+        companyId,
+        month: m,
+        year: y,
+        department: department === 'all' ? undefined : department,
+        workingDaysByEmployeeId: workingDaysMap,
+        paidLeaveDaysByEmployeeId: leaveDays,
+        actualDaysByEmployeeId: parseResult.actualDaysByEmployeeId,
+        onlyEmployeeIds: attendanceEmployeeIds
+      });
+
+      suppressAutoLoad.current = true;
+      setSavedInfo(null);
+      setMeta({
+        companyName: report.companyName,
+        companyNameArabic: report.companyNameArabic,
+        periodLabel: report.periodLabel,
+        departmentLabel: report.departmentLabel
+      });
+      setRows(report.rows.map((row) => recalcPayrollRow(row)));
+      setDirty(false);
+      setReportSource('punch');
+
+      let details = '';
+      if (punchPdfFiles.length > 0) {
+        details += t('payroll.toast.punchPdfFilesUsed', { count: punchPdfFiles.length });
+      }
+      if (parseResult.skippedInvalid > 0) {
+        details += t('payroll.toast.punchLogSkippedInvalid', { count: parseResult.skippedInvalid });
+      }
+      if (parseResult.unmappedMachineIds.length > 0) {
+        const ids = parseResult.unmappedMachineIds
+          .map((u) => `${u.id} (${u.name})`)
+          .join(', ');
+        details += t('payroll.toast.punchLogUnmapped', {
+          count: parseResult.unmappedMachineIds.length,
+          ids
+        });
+      }
+
+      toast.success(
+        t('payroll.toast.punchLogGenerated', {
+          punches: parseResult.totalLinesParsed,
+          employees: parseResult.matchedEmployees,
+          details
+        })
+      );
+    } catch (e) {
+      console.error(e);
+      toast.error(e instanceof Error ? e.message : t('payroll.toast.punchLogFailed'));
+    } finally {
+      setGeneratingFromPunch(false);
+      setExtractingPdf(false);
+    }
+  }, [companyId, punchLogText, punchPdfFiles, year, month, department, employeesById, t]);
+
+  const handlePunchPdfFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files?.length) return;
+    setPunchPdfFiles((prev) => {
+      const existing = new Set(prev.map((f) => `${f.name}-${f.size}`));
+      const added = Array.from(files).filter((f) => !existing.has(`${f.name}-${f.size}`));
+      return [...prev, ...added];
+    });
+    e.target.value = '';
+  };
+
+  const removePunchPdfFile = (index: number) => {
+    setPunchPdfFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handlePreviewPdfExtraction = useCallback(async () => {
+    if (punchPdfFiles.length === 0) return;
+    setExtractingPdf(true);
+    try {
+      const pdfText = await extractAttendanceTextFromPdfs(punchPdfFiles);
+      if (!pdfText.trim()) {
+        toast.error(t('payroll.toast.punchPdfNoText'));
+        return;
+      }
+      setPunchLogText((prev) => {
+        const base = prev.trim();
+        return base ? `${base}\n${pdfText}` : pdfText;
+      });
+      toast.success(t('payroll.toast.punchPdfExtracted', { count: punchPdfFiles.length }));
+    } catch (e) {
+      console.error(e);
+      toast.error(t('payroll.toast.punchPdfExtractFailed'));
+    } finally {
+      setExtractingPdf(false);
+    }
+  }, [punchPdfFiles, t]);
+
+  const updatePaidLeaveDays = (employeeId: string, value: number) => {
+    setDirty(true);
+    setRows((prev) =>
+      prev.map((r) =>
+        r.employeeId === employeeId
+          ? recalcPayrollRow(r, { paidLeaveDays: Math.max(0, value) })
+          : r
+      )
+    );
+  };
+
+  const moveAllAbsentToPaidLeave = (employeeId: string) => {
+    setDirty(true);
+    setRows((prev) =>
+      prev.map((r) => {
+        if (r.employeeId !== employeeId) return r;
+        const maxLeave = maxPaidLeaveDaysForRow(r);
+        return recalcPayrollRow(r, { paidLeaveDays: maxLeave });
+      })
+    );
+  };
+
+  const removePayrollRow = (employeeId: string) => {
+    setDirty(true);
+    setRows((prev) => {
+      const next = prev
+        .filter((r) => r.employeeId !== employeeId)
+        .map((r, i) => ({ ...r, sn: i + 1 }));
+      if (next.length === prev.length) return prev;
+      return next;
+    });
+    toast.success(t('payroll.toast.rowRemoved'));
+  };
 
   const handleSaveReport = useCallback(async () => {
     if (!companyId || !user || !meta || rows.length === 0) {
@@ -272,8 +461,8 @@ export default function PayrollReportTab() {
         approvedByName: saved.approved_by_name ?? null,
         approvalNote: saved.approval_note ?? null
       });
-      setDirty(false);
       setReportSource('saved');
+      setDirty(false);
       toast.success(t('payroll.toast.saveSuccess'));
     } catch (e) {
       console.error(e);
@@ -366,145 +555,6 @@ export default function PayrollReportTab() {
     }
   }, [savedInfo?.reportId, t]);
 
-  const round3 = (n: number) => Math.round(n * 1000) / 1000;
-
-  const markDirty = () => setDirty(true);
-
-  const updateRow = (employeeId: string, updates: Partial<KdaPayrollReportRow>) => {
-    markDirty();
-    setRows((prev) =>
-      prev.map((r) =>
-        r.employeeId === employeeId ? { ...r, ...updates } : r
-      )
-    );
-  };
-
-  const recalcRow = (row: KdaPayrollReportRow, updates: Partial<KdaPayrollReportRow> = {}): KdaPayrollReportRow => {
-    const next = { ...row, ...updates };
-    const present = next.actualWorkingDays ?? 0;
-    const leave = next.paidLeaveDays ?? 0;
-    const work = next.workingDaysInMonth ?? PAYROLL_MONTH_DIVISOR;
-    const absent = Math.max(0, work - present - leave);
-
-    const salary =
-      updates.basicSalaryKwd !== undefined ||
-      updates.actualWorkingDays !== undefined ||
-      updates.paidLeaveDays !== undefined
-        ? round3((next.basicSalaryKwd / PAYROLL_MONTH_DIVISOR) * present)
-        : next.salaryKwd;
-    const paidLeave =
-      updates.basicSalaryKwd !== undefined ||
-      updates.actualWorkingDays !== undefined ||
-      updates.paidLeaveDays !== undefined
-        ? round3((next.basicSalaryKwd / PAYROLL_MONTH_DIVISOR) * leave)
-        : next.paidLeaveKwd;
-
-    const totalGross = round3(
-      salary +
-        paidLeave +
-        (next.overTimeKwd ?? 0) +
-        (next.housingAllowanceKwd ?? 0) +
-        (next.otherKwd ?? 0)
-    );
-    const totalDeductions = round3(
-      (next.penaltiesKwd ?? 0) +
-        (next.deductionsKwd ?? 0) +
-        (next.loanKwd ?? 0) +
-        (next.deductionsOtherKwd ?? 0)
-    );
-    const net =
-      updates.netSalaryKwd !== undefined
-        ? round3(next.netSalaryKwd)
-        : round3(Math.max(0, totalGross - totalDeductions));
-
-    return {
-      ...next,
-      absentDays: absent,
-      salaryKwd: salary,
-      paidLeaveKwd: paidLeave,
-      totalGrossKwd: totalGross,
-      netSalaryKwd: net,
-      amountScheduledToPay: round3(net + (next.salaryRefund ?? 0))
-    };
-  };
-
-  const updateNumericAndRecalc = (employeeId: string, updates: Partial<KdaPayrollReportRow>) => {
-    markDirty();
-    setRows((prev) =>
-      prev.map((r) => (r.employeeId === employeeId ? recalcRow(r, updates) : r))
-    );
-  };
-
-  const updateRefund = (employeeId: string, value: number) => {
-    markDirty();
-    setRows((prev) =>
-      prev.map((r) => {
-        if (r.employeeId !== employeeId) return r;
-        const refund = round3(value);
-        return {
-          ...r,
-          salaryRefund: refund,
-          amountScheduledToPay: round3(r.netSalaryKwd + refund),
-          notes: refund > 0 ? (r.notes || '*') : ''
-        };
-      })
-    );
-  };
-
-  const handleImportExcel = useCallback(
-    async (file: File) => {
-      if (!companyId) {
-        toast.error(t('payroll.companyNotSet'));
-        return;
-      }
-      if (dirty && !window.confirm(t('payroll.confirmImportReplace'))) {
-        return;
-      }
-      setImporting(true);
-      try {
-        let employees = await employeeService.getAll(companyId);
-        if (department !== 'all') {
-          employees = employees.filter(
-            (e) =>
-              (e.department || '').toLowerCase() === department.toLowerCase() ||
-              ((e as { departments?: { name?: string } }).departments?.name || '').toLowerCase() ===
-                department.toLowerCase()
-          );
-        }
-
-        const result = await importPayrollExcel(file, employees, { department });
-
-        suppressAutoLoad.current = true;
-        setMeta(result.meta);
-        setRows(result.rows);
-        setSavedInfo(null);
-        setDirty(true);
-        setReportSource('imported');
-
-        const unmatched = result.unmatchedNames.length;
-        toast.success(
-          t('payroll.toast.importSuccess', {
-            count: result.rows.length,
-            unmatched:
-              unmatched > 0 ? t('payroll.toast.importUnmatched', { count: unmatched }) : ''
-          })
-        );
-      } catch (e) {
-        console.error(e);
-        toast.error(e instanceof Error ? e.message : t('payroll.toast.importFailed'));
-      } finally {
-        setImporting(false);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-      }
-    },
-    [companyId, department, dirty, rows, t]
-  );
-
-  const onImportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) void handleImportExcel(file);
-  };
-
   const handleExport = async () => {
     if (!meta || rows.length === 0) {
       toast.error(t('payroll.toast.loadFirst'));
@@ -562,6 +612,8 @@ export default function PayrollReportTab() {
   const displayPeriod = meta ? formatPayrollPeriodLabel(month, year, t) : '';
   const displayDepartment = formatPayrollDepartmentLabel(department, t);
   const companyTitle = meta ? formatPayrollCompanyTitle(meta.companyName, meta.companyNameArabic) : '';
+  const busy = loading || generatingFromPunch || extractingPdf;
+  const canGenerateFromPunch = punchLogText.trim().length > 0 || punchPdfFiles.length > 0;
 
   return (
     <div className="space-y-6">
@@ -603,13 +655,6 @@ export default function PayrollReportTab() {
           className="text-sm text-muted-foreground mb-4"
           dangerouslySetInnerHTML={{ __html: t('payroll.reportIntro') }}
         />
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-          className="hidden"
-          onChange={onImportFileChange}
-        />
         <div className="flex flex-wrap items-end gap-4">
           <div>
             <label className="text-sm font-medium mb-1 block">{t('payroll.month')}</label>
@@ -650,19 +695,11 @@ export default function PayrollReportTab() {
               </SelectContent>
             </Select>
           </div>
-          <Button
-            variant="outline"
-            disabled={loading || importing}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            {importing ? <Loader2 className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0 animate-spin" /> : <Upload className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />}
-            {t('payroll.importExcel')}
-          </Button>
-          <Button onClick={() => loadReport()} disabled={loading || importing} variant="outline">
+          <Button onClick={() => loadReport()} disabled={busy} variant="outline">
             {loading ? <Loader2 className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />}
             {t('payroll.reload')}
           </Button>
-          <Button onClick={handleRegenerate} disabled={loading || importing} variant="outline">
+          <Button onClick={handleRegenerate} disabled={busy} variant="outline">
             {t('payroll.rebuildFromAttendance')}
           </Button>
           {rows.length > 0 && (
@@ -698,20 +735,13 @@ export default function PayrollReportTab() {
             </>
           )}
         </div>
+        {reportSource === 'punch' && rows.length > 0 && (
+          <p className="text-sm text-muted-foreground mt-3">{t('payroll.generatedFromPunchLog')}</p>
+        )}
         {dirty && rows.length > 0 && (
           <p className="text-sm text-amber-600 mt-3 font-medium">{t('payroll.unsavedChanges')}</p>
         )}
-        {reportSource === 'imported' && !dirty && (
-          <p className="text-sm text-muted-foreground mt-3">
-            {t('payroll.importedLoaded', { count: rows.length })}
-          </p>
-        )}
-        {reportSource === 'imported' && dirty && (
-          <p className="text-sm text-amber-600 mt-3 font-medium">
-            {t('payroll.importedDirty', { count: rows.length })}
-          </p>
-        )}
-        {reportSource === 'saved' && savedInfo && !dirty && (
+        {reportSource === 'saved' && savedInfo && (
           <p className="text-sm text-muted-foreground mt-3">
             {t('payroll.savedShowing', {
               date: new Date(savedInfo.savedAt).toLocaleString(),
@@ -732,6 +762,117 @@ export default function PayrollReportTab() {
           </p>
         )}
       </Card>
+
+      <Collapsible open={punchPasteOpen} onOpenChange={setPunchPasteOpen}>
+        <Card className="rounded-xl border-2 shadow-sm overflow-hidden">
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="flex w-full items-center justify-between gap-2 p-4 text-left hover:bg-muted/40 transition-colors"
+            >
+              <span className="flex items-center gap-2 font-medium text-foreground">
+                <ClipboardPaste className="w-4 h-4 text-primary" />
+                {t('payroll.pastePunchLog')}
+              </span>
+              <ChevronDown
+                className={`w-4 h-4 text-muted-foreground transition-transform ${punchPasteOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="px-4 pb-4 space-y-4 border-t border-border/60 pt-4">
+              <p className="text-sm text-muted-foreground">{t('payroll.pastePunchLogDesc')}</p>
+
+              <div className="space-y-2">
+                <Label>{t('payroll.uploadAttendancePdf')}</Label>
+                <input
+                  ref={punchPdfInputRef}
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  multiple
+                  className="hidden"
+                  onChange={handlePunchPdfFilesChange}
+                  disabled={busy || isApprovalLocked}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => punchPdfInputRef.current?.click()}
+                    disabled={busy || isApprovalLocked}
+                  >
+                    <Upload className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                    {t('payroll.uploadAttendancePdfBtn')}
+                  </Button>
+                  {punchPdfFiles.length > 0 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handlePreviewPdfExtraction()}
+                      disabled={busy || isApprovalLocked}
+                    >
+                      {extractingPdf ? (
+                        <Loader2 className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0 animate-spin" />
+                      ) : (
+                        <FileText className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                      )}
+                      {t('payroll.previewPdfExtraction')}
+                    </Button>
+                  )}
+                </div>
+                {punchPdfFiles.length > 0 && (
+                  <ul className="space-y-1.5 rounded-lg border border-border/60 bg-muted/20 p-3">
+                    {punchPdfFiles.map((file, index) => (
+                      <li
+                        key={`${file.name}-${file.size}-${index}`}
+                        className="flex items-center justify-between gap-2 text-sm"
+                      >
+                        <span className="truncate font-mono text-xs">{file.name}</span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 shrink-0"
+                          onClick={() => removePunchPdfFile(index)}
+                          disabled={busy || isApprovalLocked}
+                          aria-label={t('common.delete')}
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="punch-log-textarea">{t('payroll.pastePunchLogOptional')}</Label>
+                <Textarea
+                  id="punch-log-textarea"
+                  value={punchLogText}
+                  onChange={(e) => setPunchLogText(e.target.value)}
+                  placeholder={t('payroll.pastePunchLogPlaceholder')}
+                  className="min-h-[120px] font-mono text-xs"
+                  disabled={busy || isApprovalLocked}
+                />
+              </div>
+              <Button
+                onClick={() => void handleGenerateFromPunchLog()}
+                disabled={busy || isApprovalLocked || !canGenerateFromPunch}
+              >
+                {generatingFromPunch ? (
+                  <Loader2 className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0 animate-spin" />
+                ) : (
+                  <ClipboardPaste className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                )}
+                {extractingPdf ? t('payroll.extractingPdf') : t('payroll.generateFromPunchLog')}
+              </Button>
+            </div>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
       {meta && rows.length > 0 && (
         <>
@@ -764,7 +905,7 @@ export default function PayrollReportTab() {
               )}
             </div>
             <div className="overflow-x-auto overflow-y-auto max-h-[70vh] min-w-0 w-full bg-muted/10">
-              <table className="w-full text-sm border-collapse min-w-[2400px]">
+              <table className="w-full text-sm border-collapse min-w-[2700px]">
                 <thead className="sticky top-0 z-10">
                   <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:font-semibold [&>th]:text-foreground border-b-2 border-primary/20 bg-[#D9E1F2]">
                     <th rowSpan={2} className="text-center border-r border-border/60">{col('sn')}</th>
@@ -772,15 +913,19 @@ export default function PayrollReportTab() {
                     <th rowSpan={2} className="text-left min-w-[160px] border-r border-border/60">{col('nameArabic')}</th>
                     <th rowSpan={2} className="text-center min-w-[90px] border-r border-border/60">{col('joinDate')}</th>
                     <th rowSpan={2} className="text-right min-w-[88px] border-r border-border/60">{col('basicSalary')}</th>
-                    <th rowSpan={2} className="text-center min-w-[72px] border-r border-border/60">{col('actualWorkingDays')}</th>
-                    <th rowSpan={2} className="text-center min-w-[72px] border-r border-primary/30">{col('paidLeaveDays')}</th>
+                    <th rowSpan={2} className="text-center min-w-[64px] border-r border-border/60">{col('scheduledDays')}</th>
+                    <th rowSpan={2} className="text-center min-w-[64px] border-r border-border/60">{col('presentDays')}</th>
+                    <th rowSpan={2} className="text-center min-w-[72px] border-r border-border/60">{col('absentDays')}</th>
+                    <th rowSpan={2} className="text-center min-w-[88px] border-r border-primary/30">{col('paidLeaveDays')}</th>
+                    <th rowSpan={2} className="text-right min-w-[80px] border-r border-border/60">{col('absentDeduction')}</th>
                     <th colSpan={6} className="text-center border-r border-primary/30 bg-[#FFF2CC]">{col('grossAccrualMonth')}</th>
                     <th colSpan={4} className="text-center border-r border-primary/30 bg-[#FFF2CC]">{col('deductions')}</th>
                     <th rowSpan={2} className="text-right min-w-[88px] border-r border-border/60">{col('netSalary')}</th>
                     <th rowSpan={2} className="text-right min-w-[100px] border-r border-border/60">{col('amountScheduled')}</th>
                     <th rowSpan={2} className="text-left min-w-[120px] border-r border-border/60">{col('methodOfPayment')}</th>
                     <th rowSpan={2} className="text-right min-w-[88px] bg-amber-500/15 border-r border-amber-500/30">{col('salaryRefund')}</th>
-                    <th rowSpan={2} className="text-left min-w-[90px]">{col('notes')}</th>
+                    <th rowSpan={2} className="text-left min-w-[90px] border-r border-border/60">{col('notes')}</th>
+                    <th rowSpan={2} className="sticky right-0 z-20 text-center min-w-[52px] bg-[#D9E1F2] border-l border-border/60 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.15)]">{col('actions')}</th>
                   </tr>
                   <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:font-semibold [&>th]:text-foreground border-b-2 border-primary/20 bg-[#D9E1F2]">
                     <th className="text-right min-w-[80px] border-r border-border/50">{col('salaryKwd')}</th>
@@ -805,64 +950,87 @@ export default function PayrollReportTab() {
                       <td className="px-2 py-2 font-mono text-xs align-middle text-center border-r border-border/40">{r.empCode}</td>
                       <td className="px-2 py-2 max-w-[200px] truncate align-middle border-r border-border/40" title={getPayrollEmployeeDisplayName(r, employeesById)}>{getPayrollEmployeeDisplayName(r, employeesById)}</td>
                       <td className="px-2 py-2 text-center align-middle tabular-nums border-r border-border/40">{r.joinDate}</td>
-                      <td className="px-2 py-2 align-middle border-r border-border/40">
-                        <Input type="number" step="0.001" min="0" className="num-input h-8 min-w-[6rem] w-full text-right tabular-nums" value={r.basicSalaryKwd === 0 ? '' : r.basicSalaryKwd} onChange={(e) => updateNumericAndRecalc(r.employeeId, { basicSalaryKwd: parseFloat(e.target.value) || 0 })} />
+                      <td className="px-2 py-2 text-right align-middle tabular-nums border-r border-border/40">{formatKwd(r.basicSalaryKwd)}</td>
+                      <td className="px-2 py-2 text-center align-middle tabular-nums border-r border-border/40">{r.workingDaysInMonth}</td>
+                      <td className="px-2 py-2 text-center align-middle border-r border-border/40">
+                        <Badge variant="outline" className="tabular-nums bg-emerald-500/10 text-emerald-700 border-emerald-500/30">
+                          {r.actualWorkingDays}
+                        </Badge>
                       </td>
-                      <td className="px-2 py-2 align-middle border-r border-border/40">
-                        <Input type="number" min="0" className="num-input h-8 min-w-[3.5rem] w-full text-center tabular-nums" value={r.actualWorkingDays} onChange={(e) => updateNumericAndRecalc(r.employeeId, { actualWorkingDays: parseInt(e.target.value, 10) || 0 })} />
+                      <td className="px-2 py-2 text-center align-middle border-r border-border/40">
+                        <div className="flex flex-col items-center gap-1">
+                          <Badge
+                            variant="outline"
+                            className={`tabular-nums ${
+                              r.absentDays > 0
+                                ? 'bg-red-500/10 text-red-700 border-red-500/30'
+                                : 'bg-muted/30 text-muted-foreground'
+                            }`}
+                          >
+                            {r.absentDays}
+                          </Badge>
+                          {r.absentDays > 0 && !isApprovalLocked && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-1.5 text-[10px] text-primary"
+                              onClick={() => moveAllAbsentToPaidLeave(r.employeeId)}
+                              title={t('payroll.moveAbsentToPaidLeave')}
+                            >
+                              <ArrowRight className="w-3 h-3 mr-0.5" />
+                              {t('payroll.moveToLeave')}
+                            </Button>
+                          )}
+                        </div>
                       </td>
                       <td className="px-2 py-2 align-middle border-r border-primary/20">
-                        <Input type="number" min="0" className="num-input h-8 min-w-[3.5rem] w-full text-center tabular-nums" value={r.paidLeaveDays} onChange={(e) => updateNumericAndRecalc(r.employeeId, { paidLeaveDays: parseInt(e.target.value, 10) || 0 })} />
+                        <Input
+                          type="number"
+                          min={0}
+                          max={maxPaidLeaveDaysForRow(r)}
+                          className="num-input h-8 min-w-[3.5rem] w-full text-center tabular-nums"
+                          value={r.paidLeaveDays}
+                          disabled={isApprovalLocked}
+                          onChange={(e) =>
+                            updatePaidLeaveDays(r.employeeId, parseInt(e.target.value, 10) || 0)
+                          }
+                        />
                       </td>
-                      <td className="px-2 py-2 align-middle bg-muted/20 border-r border-border/40">
-                        <Input type="number" step="0.001" min="0" className="num-input h-8 min-w-[6rem] w-full text-right tabular-nums" value={r.salaryKwd === 0 ? '' : r.salaryKwd} onChange={(e) => updateNumericAndRecalc(r.employeeId, { salaryKwd: parseFloat(e.target.value) || 0 })} />
+                      <td className="px-2 py-2 text-right align-middle tabular-nums border-r border-border/40 text-red-600">
+                        {r.absentDeductionKwd > 0 ? `−${formatKwd(r.absentDeductionKwd)}` : '—'}
                       </td>
-                      <td className="px-2 py-2 align-middle bg-muted/20 border-r border-border/40">
-                        <Input type="number" step="0.001" min="0" className="num-input h-8 min-w-[6rem] w-full text-right tabular-nums" value={r.paidLeaveKwd === 0 ? '' : r.paidLeaveKwd} onChange={(e) => updateNumericAndRecalc(r.employeeId, { paidLeaveKwd: parseFloat(e.target.value) || 0 })} />
-                      </td>
-                      <td className="px-2 py-2 align-middle bg-muted/20 border-r border-border/40">
-                        <Input type="number" step="0.001" min="0" className="num-input h-8 min-w-[6rem] w-full text-right tabular-nums" value={r.overTimeKwd === 0 ? '' : r.overTimeKwd} onChange={(e) => updateNumericAndRecalc(r.employeeId, { overTimeKwd: parseFloat(e.target.value) || 0 })} />
-                      </td>
-                      <td className="px-2 py-2 align-middle bg-muted/20 border-r border-border/40">
-                        <Input type="number" step="0.001" min="0" className="num-input h-8 min-w-[6rem] w-full text-right tabular-nums" value={r.housingAllowanceKwd === 0 ? '' : r.housingAllowanceKwd} onChange={(e) => updateNumericAndRecalc(r.employeeId, { housingAllowanceKwd: parseFloat(e.target.value) || 0 })} />
-                      </td>
-                      <td className="px-2 py-2 align-middle bg-muted/20 border-r border-border/40">
-                        <Input type="number" step="0.001" min="0" className="num-input h-8 min-w-[6rem] w-full text-right tabular-nums" value={r.otherKwd === 0 ? '' : r.otherKwd} onChange={(e) => updateNumericAndRecalc(r.employeeId, { otherKwd: parseFloat(e.target.value) || 0 })} />
-                      </td>
-                      <td className="px-2 py-2 text-right font-medium align-middle tabular-nums border-r border-primary/20">{r.totalGrossKwd.toFixed(3)}</td>
-                      <td className="px-2 py-2 align-middle border-r border-border/40">
-                        <Input type="number" step="0.001" min="0" className="num-input h-8 min-w-[6rem] w-full text-right tabular-nums" value={r.penaltiesKwd === 0 ? '' : r.penaltiesKwd} onChange={(e) => updateNumericAndRecalc(r.employeeId, { penaltiesKwd: parseFloat(e.target.value) || 0 })} />
-                      </td>
-                      <td className="px-2 py-2 align-middle border-r border-border/40">
-                        <Input type="number" step="0.001" min="0" className="num-input h-8 min-w-[6rem] w-full text-right tabular-nums" value={r.deductionsKwd === 0 ? '' : r.deductionsKwd} onChange={(e) => updateNumericAndRecalc(r.employeeId, { deductionsKwd: parseFloat(e.target.value) || 0 })} />
-                      </td>
-                      <td className="px-2 py-2 align-middle border-r border-border/40">
-                        <Input type="number" step="0.001" min="0" className="num-input h-8 min-w-[6rem] w-full text-right tabular-nums" value={r.loanKwd === 0 ? '' : r.loanKwd} onChange={(e) => updateNumericAndRecalc(r.employeeId, { loanKwd: parseFloat(e.target.value) || 0 })} />
-                      </td>
-                      <td className="px-2 py-2 align-middle border-r border-primary/20">
-                        <Input type="number" step="0.001" min="0" className="num-input h-8 min-w-[6rem] w-full text-right tabular-nums" value={r.deductionsOtherKwd === 0 ? '' : r.deductionsOtherKwd} onChange={(e) => updateNumericAndRecalc(r.employeeId, { deductionsOtherKwd: parseFloat(e.target.value) || 0 })} />
-                      </td>
-                      <td className="px-2 py-2 align-middle border-r border-border/40">
-                        <Input type="number" step="0.001" min="0" className="num-input h-8 min-w-[6rem] w-full text-right font-medium tabular-nums" value={r.netSalaryKwd === 0 ? '' : r.netSalaryKwd} onChange={(e) => updateNumericAndRecalc(r.employeeId, { netSalaryKwd: parseFloat(e.target.value) || 0 })} />
-                      </td>
-                      <td className="px-2 py-2 text-right align-middle tabular-nums font-medium border-r border-border/40">{r.amountScheduledToPay.toFixed(3)}</td>
-                      <td className="px-2 py-2 align-middle border-r border-border/40">
-                        <Select value={r.methodOfPayment} onValueChange={(v) => updateRow(r.employeeId, { methodOfPayment: v })}>
-                          <SelectTrigger className="h-8 min-w-[110px]">
-                            <SelectValue>{translatePaymentMethod(r.methodOfPayment, t)}</SelectValue>
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Bank transfer">{t('payroll.payment.bankTransfer')}</SelectItem>
-                            <SelectItem value="Check">{t('payroll.payment.check')}</SelectItem>
-                            <SelectItem value="Cash">{t('payroll.payment.cash')}</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </td>
-                      <td className="px-2 py-2 align-middle bg-amber-500/15 border-r border-amber-500/30">
-                        <Input type="number" step="0.001" min="0" className="num-input h-8 min-w-[6rem] w-full text-right tabular-nums border-amber-500/40 bg-amber-50 dark:bg-amber-950/30" value={r.salaryRefund || ''} onChange={(e) => updateRefund(r.employeeId, parseFloat(e.target.value) || 0)} />
-                      </td>
-                      <td className="px-2 py-2 align-middle">
-                        <Input className="h-8 min-w-[4rem] px-2" value={r.notes} onChange={(e) => updateRow(r.employeeId, { notes: e.target.value })} placeholder="—" />
+                      <td className="px-2 py-2 text-right align-middle tabular-nums bg-muted/20 border-r border-border/40">{formatKwd(r.salaryKwd)}</td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums bg-muted/20 border-r border-border/40">{formatKwd(r.paidLeaveKwd)}</td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums bg-muted/20 border-r border-border/40">{formatKwd(r.overTimeKwd)}</td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums bg-muted/20 border-r border-border/40">{formatKwd(r.housingAllowanceKwd)}</td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums bg-muted/20 border-r border-border/40">{formatKwd(r.otherKwd)}</td>
+                      <td className="px-2 py-2 text-right font-medium align-middle tabular-nums border-r border-primary/20">{formatKwd(r.totalGrossKwd)}</td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums border-r border-border/40">{formatKwd(r.penaltiesKwd)}</td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums border-r border-border/40">{formatKwd(r.deductionsKwd)}</td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums border-r border-border/40">{formatKwd(r.loanKwd)}</td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums border-r border-primary/20">{formatKwd(r.deductionsOtherKwd)}</td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums font-medium border-r border-border/40">{formatKwd(r.netSalaryKwd)}</td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums font-medium border-r border-border/40">{formatKwd(r.amountScheduledToPay)}</td>
+                      <td className="px-2 py-2 align-middle border-r border-border/40">{translatePaymentMethod(r.methodOfPayment, t)}</td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums bg-amber-500/15 border-r border-amber-500/30">{formatKwd(r.salaryRefund)}</td>
+                      <td className="px-2 py-2 align-middle text-muted-foreground border-r border-border/40">{r.notes || '—'}</td>
+                      <td
+                        className={`sticky right-0 z-10 px-1 py-2 align-middle text-center border-l border-border/40 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.15)] ${idx % 2 === 1 ? 'bg-muted/20' : 'bg-background'}`}
+                      >
+                        {!isApprovalLocked && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => removePayrollRow(r.employeeId)}
+                            title={t('payroll.removeRow')}
+                            aria-label={t('payroll.removeRow')}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
                       </td>
                     </tr>
                   ))}

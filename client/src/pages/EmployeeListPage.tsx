@@ -18,7 +18,10 @@ import {
   Timer,
   Edit,
   Trash2,
-  X
+  X,
+  ArrowRightLeft,
+  Building2,
+  Loader2
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, Button, Input, Badge, Tabs, TabsList, TabsTrigger, TabsContent } from '../components/common/UIComponents';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
@@ -34,11 +37,14 @@ import { useAuth } from '../contexts/AuthContext';
 import { Textarea } from '../components/ui/textarea';
 import { Label } from '../components/ui/label';
 import { GraduationCap, CreditCard } from 'lucide-react';
+import { Checkbox } from '../components/ui/checkbox';
+import { companyService, type Company } from '../services/companyService';
 import { toast } from 'sonner';
 
 export default function EmployeeListPage() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'super_admin';
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -46,6 +52,11 @@ export default function EmployeeListPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('basic');
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<Set<string>>(new Set());
+  const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [targetCompanyId, setTargetCompanyId] = useState('');
+  const [transferring, setTransferring] = useState(false);
   
   // Shifts state - array of shifts for each day (0=Sunday, 1=Monday, ..., 6=Saturday)
   const [shifts, setShifts] = useState<Record<number, Array<{
@@ -203,7 +214,12 @@ export default function EmployeeListPage() {
   useEffect(() => {
     loadEmployees();
     loadMasters();
-  }, []);
+    if (isSuperAdmin) {
+      companyService.getAll().then(setCompanies).catch((err) => {
+        console.error('Failed to load companies:', err);
+      });
+    }
+  }, [isSuperAdmin]);
 
   useEffect(() => {
     if (selectedRoleId) {
@@ -761,6 +777,74 @@ export default function EmployeeListPage() {
     const matchesDept = filterDept === 'All' || emp.department === filterDept;
     return matchesSearch && matchesDept;
   });
+
+  const companiesById = useMemo(() => {
+    const map: Record<string, Company> = {};
+    companies.forEach((c) => {
+      map[c.id] = c;
+    });
+    return map;
+  }, [companies]);
+
+  const selectedCount = selectedEmployeeIds.size;
+
+  const toggleEmployeeSelection = (employeeId: string, checked: boolean) => {
+    setSelectedEmployeeIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(employeeId);
+      else next.delete(employeeId);
+      return next;
+    });
+  };
+
+  const selectAllFiltered = () => {
+    setSelectedEmployeeIds(new Set(filteredEmployees.map((e) => e.id)));
+  };
+
+  const clearSelection = () => {
+    setSelectedEmployeeIds(new Set());
+  };
+
+  const openTransferModal = () => {
+    if (selectedCount === 0) {
+      toast.error(t('employees.selectEmployeesFirst'));
+      return;
+    }
+    setTargetCompanyId('');
+    setTransferModalOpen(true);
+  };
+
+  const handleTransferEmployees = async () => {
+    if (!targetCompanyId) {
+      toast.error(t('employees.selectTargetCompany'));
+      return;
+    }
+
+    const ids = Array.from(selectedEmployeeIds);
+    setTransferring(true);
+    try {
+      const result = await employeeService.transferEmployeesToCompany(ids, targetCompanyId);
+      if (result.failed === 0) {
+        toast.success(t('employees.transferEmployeesSuccess', { count: result.success }));
+      } else if (result.success > 0) {
+        toast.warning(
+          t('employees.transferEmployeesPartial', { success: result.success, failed: result.failed })
+        );
+      } else {
+        toast.error(t('employees.transferEmployeesFailed'));
+      }
+
+      setTransferModalOpen(false);
+      setSelectedEmployeeIds(new Set());
+      setTargetCompanyId('');
+      await loadEmployees();
+    } catch (error) {
+      console.error('Transfer failed:', error);
+      toast.error(t('employees.transferEmployeesFailed'));
+    } finally {
+      setTransferring(false);
+    }
+  };
 
   const departmentNames = ['All', ...Array.from(new Set(employees.map(e => e.department || 'Unassigned')))];
 
@@ -1968,6 +2052,28 @@ export default function EmployeeListPage() {
               <Filter size={18} />
             </Button>
           </div>
+          {isSuperAdmin && filteredEmployees.length > 0 && (
+            <div className="flex flex-wrap items-center gap-3 mt-4 pt-4 border-t border-border/60">
+              <span className="text-sm text-muted-foreground">
+                {t('employees.selectedCount', { count: selectedCount })}
+              </span>
+              <Button variant="outline" size="sm" onClick={selectAllFiltered}>
+                {t('employees.selectAll')}
+              </Button>
+              <Button variant="outline" size="sm" onClick={clearSelection} disabled={selectedCount === 0}>
+                {t('employees.clearSelection')}
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={openTransferModal}
+                disabled={selectedCount === 0}
+              >
+                <ArrowRightLeft size={14} className="mr-1.5 rtl:ml-1.5 rtl:mr-0" />
+                {t('employees.transferToCompany')}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -1980,11 +2086,23 @@ export default function EmployeeListPage() {
         ) : filteredEmployees.map((employee) => (
           <Card 
             key={employee.id} 
-            className="group hover:border-primary/50 transition-colors"
+            className={`group hover:border-primary/50 transition-colors ${
+              selectedEmployeeIds.has(employee.id) ? 'border-primary ring-1 ring-primary/30' : ''
+            }`}
           >
             <CardContent className="p-6">
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-4">
+                  {isSuperAdmin && (
+                    <Checkbox
+                      checked={selectedEmployeeIds.has(employee.id)}
+                      onCheckedChange={(checked) =>
+                        toggleEmployeeSelection(employee.id, checked === true)
+                      }
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label={t('employees.selectAll')}
+                    />
+                  )}
                   <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg border border-white/10 overflow-hidden">
                     {employee.avatar_url ? (
                       <img src={employee.avatar_url} alt="" className="w-full h-full object-cover" />
@@ -1998,6 +2116,12 @@ export default function EmployeeListPage() {
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-1">
+                  {isSuperAdmin && employee.company_id && (
+                    <Badge variant="outline" className="text-[10px] max-w-[120px] truncate">
+                      <Building2 size={10} className="mr-1 inline shrink-0" />
+                      {companiesById[employee.company_id]?.name || t('common.other')}
+                    </Badge>
+                  )}
                   <Badge variant={employee.status === 'Active' ? 'success' : 'warning'}>
                     {employee.status}
                   </Badge>
@@ -2055,6 +2179,55 @@ export default function EmployeeListPage() {
           </Card>
         ))}
       </div>
+
+      {isSuperAdmin && (
+        <Modal
+          isOpen={transferModalOpen}
+          onClose={() => {
+            if (!transferring) setTransferModalOpen(false);
+          }}
+          title={t('employees.transferEmployeesTitle')}
+          size="md"
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              {t('employees.transferEmployeesDesc', { count: selectedCount })}
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="transfer-company">{t('employees.company')}</Label>
+              <Select value={targetCompanyId} onValueChange={setTargetCompanyId}>
+                <SelectTrigger id="transfer-company">
+                  <SelectValue placeholder={t('employees.selectCompany')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {companies.map((company) => (
+                    <SelectItem key={company.id} value={company.id}>
+                      {company.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setTransferModalOpen(false)}
+                disabled={transferring}
+              >
+                {t('common.cancel')}
+              </Button>
+              <Button variant="primary" onClick={() => void handleTransferEmployees()} disabled={transferring}>
+                {transferring ? (
+                  <Loader2 size={16} className="mr-2 animate-spin" />
+                ) : (
+                  <ArrowRightLeft size={16} className="mr-2" />
+                )}
+                {t('employees.transferEmployeesConfirm')}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

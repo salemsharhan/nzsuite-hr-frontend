@@ -795,5 +795,54 @@ export const employeeService = {
       console.error('Error fetching full reporting hierarchy:', error);
       return [];
     }
+  },
+
+  /**
+   * Transfer one or more employees to another company (superadmin).
+   * Updates employee record, shifts, and linked user_roles.
+   */
+  async transferEmployeesToCompany(
+    employeeIds: string[],
+    targetCompanyId: string
+  ): Promise<{ success: number; failed: number }> {
+    let success = 0;
+    let failed = 0;
+
+    for (const employeeId of employeeIds) {
+      try {
+        await adminApi.patch(
+          '/employees',
+          { company_id: targetCompanyId },
+          { params: { id: `eq.${employeeId}` } }
+        );
+
+        try {
+          await adminApi.patch(
+            '/employee_shifts',
+            { company_id: targetCompanyId },
+            { params: { employee_id: `eq.${employeeId}` } }
+          );
+        } catch (err) {
+          console.warn('Error updating employee shifts company_id:', err);
+        }
+
+        try {
+          await adminApi.patch(
+            '/user_roles',
+            { company_id: targetCompanyId },
+            { params: { employee_id: `eq.${employeeId}` } }
+          );
+        } catch (err) {
+          console.warn('Error updating user_roles company_id:', err);
+        }
+
+        success++;
+      } catch (error) {
+        console.error(`Error transferring employee ${employeeId}:`, error);
+        failed++;
+      }
+    }
+
+    return { success, failed };
   }
 };

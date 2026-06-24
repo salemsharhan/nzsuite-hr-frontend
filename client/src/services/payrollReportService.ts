@@ -135,6 +135,8 @@ export interface KdaPayrollReportRow {
   actualWorkingDays: number;  // present days from attendance
   paidLeaveDays: number;
   absentDays: number;         // scheduled - present - leave (≥0)
+  /** Salary not paid for unpaid absent days (informational; already reflected in salaryKwd) */
+  absentDeductionKwd: number;
   /** Gross: Salary KWD (pro-rated) */
   salaryKwd: number;
   /** Gross: Paid Leave KWD */
@@ -181,6 +183,8 @@ export interface KdaPayrollReportInput {
   paidLeaveDaysByEmployeeId?: Record<string, number>;
   /** Actual days present from attendance API (optional); when set, used for actualWorkingDays */
   actualDaysByEmployeeId?: Record<string, number>;
+  /** When set, only these employee UUIDs appear in the report (e.g. attendance import) */
+  onlyEmployeeIds?: string[];
   /** Override payment method per employee (optional) */
   paymentMethodByEmployeeId?: Record<string, string>;
   /** Return/refund amount per employee (optional; used for amount scheduled and salary refund) */
@@ -260,6 +264,10 @@ export async function buildKdaPayrollReport(input: KdaPayrollReportInput): Promi
         ((e as any).departments?.name || '').toLowerCase() === input.department!.toLowerCase()
     );
   }
+  if (input.onlyEmployeeIds?.length) {
+    const allowed = new Set(input.onlyEmployeeIds);
+    list = list.filter((e) => allowed.has(e.id));
+  }
 
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -272,20 +280,20 @@ export async function buildKdaPayrollReport(input: KdaPayrollReportInput): Promi
     const baseSalary = Number(emp.base_salary ?? emp.salary ?? 0) || 0;
     const workingDaysInMonth = workingDaysByEmp[emp.id] ?? input.workingDays ?? DEFAULT_WORKING_DAYS;
     const paidLeaveDays = paidLeaveByEmp[emp.id] ?? 0;
+    const attendanceProvided = input.actualDaysByEmployeeId !== undefined;
     const actualWorkingDays =
       actualDaysByEmp[emp.id] !== undefined
         ? actualDaysByEmp[emp.id]
-        : Math.max(0, workingDaysInMonth - paidLeaveDays);
+        : attendanceProvided || input.onlyEmployeeIds?.length
+          ? 0
+          : Math.max(0, workingDaysInMonth - paidLeaveDays);
     const absentDays = Math.max(0, workingDaysInMonth - actualWorkingDays - paidLeaveDays);
+    const dailyRate =
+      DEFAULT_WORKING_DAYS > 0 ? baseSalary / DEFAULT_WORKING_DAYS : 0;
+    const absentDeductionKwd = round3(dailyRate * absentDays);
 
-    const salaryKwd =
-      DEFAULT_WORKING_DAYS > 0
-        ? (baseSalary / DEFAULT_WORKING_DAYS) * actualWorkingDays
-        : 0;
-    const paidLeaveKwd =
-      DEFAULT_WORKING_DAYS > 0
-        ? (baseSalary / DEFAULT_WORKING_DAYS) * paidLeaveDays
-        : 0;
+    const salaryKwd = round3(dailyRate * actualWorkingDays);
+    const paidLeaveKwd = round3(dailyRate * paidLeaveDays);
     const overTimeKwd = 0;
     const housingAllowanceKwd = Number(emp.housing_allowance ?? 0) || 0;
     const otherKwd =
@@ -320,6 +328,7 @@ export async function buildKdaPayrollReport(input: KdaPayrollReportInput): Promi
       actualWorkingDays,
       paidLeaveDays,
       absentDays,
+      absentDeductionKwd,
       salaryKwd: round3(salaryKwd),
       paidLeaveKwd: round3(paidLeaveKwd),
       overTimeKwd: round3(overTimeKwd),

@@ -28,11 +28,25 @@ export const PAYROLL_TABLE_COLUMNS: PayrollTableColumn[] = [
     format: (r) => fmt3(r.basicSalaryKwd)
   },
   {
+    key: 'workingDaysInMonth',
+    headerEn: 'Scheduled Days',
+    headerAr: 'أيام مجدولة',
+    align: 'center',
+    format: (r) => r.workingDaysInMonth
+  },
+  {
     key: 'actualWorkingDays',
-    headerEn: 'Actual Working Days',
-    headerAr: 'أيام العمل الفعلية',
+    headerEn: 'Present Days',
+    headerAr: 'أيام الحضور',
     align: 'center',
     format: (r) => r.actualWorkingDays
+  },
+  {
+    key: 'absentDays',
+    headerEn: 'Absent Days',
+    headerAr: 'أيام الغياب',
+    align: 'center',
+    format: (r) => r.absentDays
   },
   {
     key: 'paidLeaveDays',
@@ -40,6 +54,13 @@ export const PAYROLL_TABLE_COLUMNS: PayrollTableColumn[] = [
     headerAr: 'اجازات مدفوعة',
     align: 'center',
     format: (r) => r.paidLeaveDays
+  },
+  {
+    key: 'absentDeductionKwd',
+    headerEn: 'Unpaid Absent (KWD)',
+    headerAr: 'غياب غير مدفوع د.ك',
+    align: 'right',
+    format: (r) => fmt3(r.absentDeductionKwd ?? 0)
   },
   { key: 'salaryKwd', headerEn: 'Salary KWD', headerAr: 'الراتب د.ك', align: 'right', format: (r) => fmt3(r.salaryKwd) },
   {

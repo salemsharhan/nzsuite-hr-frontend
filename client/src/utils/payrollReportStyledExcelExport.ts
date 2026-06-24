@@ -232,6 +232,8 @@ export async function buildPayrollStyledWorkbook(
         MONEY_COL_INDEXES.has(ci) &&
         colDef.key !== 'actualWorkingDays' &&
         colDef.key !== 'paidLeaveDays' &&
+        colDef.key !== 'workingDaysInMonth' &&
+        colDef.key !== 'absentDays' &&
         colDef.key !== 'sn';
       if (isMoney && typeof raw === 'string' && raw !== '') {
         cell.value = parseFloat(raw);
@@ -241,7 +243,13 @@ export async function buildPayrollStyledWorkbook(
           numFmt: KWD_NUM_FMT,
           border: true
         });
-      } else if (colDef.key === 'actualWorkingDays' || colDef.key === 'paidLeaveDays' || colDef.key === 'sn') {
+      } else if (
+        colDef.key === 'actualWorkingDays' ||
+        colDef.key === 'paidLeaveDays' ||
+        colDef.key === 'workingDaysInMonth' ||
+        colDef.key === 'absentDays' ||
+        colDef.key === 'sn'
+      ) {
         cell.value = typeof raw === 'number' ? raw : parseInt(String(raw), 10) || 0;
         styleCell(cell, {
           align: 'center',

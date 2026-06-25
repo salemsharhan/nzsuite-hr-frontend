@@ -61,6 +61,8 @@ export default function SettingsPage() {
 
   // Company Settings state
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
+  const [geminiApiKeyDraft, setGeminiApiKeyDraft] = useState('');
+  const [geminiApiKeyConfigured, setGeminiApiKeyConfigured] = useState(false);
   const [companyHolidays, setCompanyHolidays] = useState<CompanyHoliday[]>([]);
   const [newHoliday, setNewHoliday] = useState({ holiday_date: '', name: '' });
   const [roleSalaryConfigs, setRoleSalaryConfigs] = useState<RoleSalaryConfig[]>([]);
@@ -406,8 +408,13 @@ export default function SettingsPage() {
     try {
       const settings = await companySettingsService.getCompanySettings(user.company_id);
       if (settings) {
-        setCompanySettings(settings);
+        setGeminiApiKeyConfigured(Boolean(settings.gemini_api_key?.trim()));
+        setGeminiApiKeyDraft('');
+        const { gemini_api_key: _key, ...rest } = settings;
+        setCompanySettings(rest as CompanySettings);
       } else {
+        setGeminiApiKeyConfigured(false);
+        setGeminiApiKeyDraft('');
         setCompanySettings(buildDefaultCompanySettings(user.company_id));
       }
     } catch (error) {
@@ -597,8 +604,15 @@ export default function SettingsPage() {
     e.preventDefault();
     if (!user?.company_id || !companySettings) return;
     try {
-      const saved = await companySettingsService.updateCompanySettings(user.company_id, companySettings);
-      setCompanySettings(saved);
+      const payload: Partial<CompanySettings> = { ...companySettings };
+      if (geminiApiKeyDraft.trim()) {
+        payload.gemini_api_key = geminiApiKeyDraft.trim();
+      }
+      const saved = await companySettingsService.updateCompanySettings(user.company_id, payload);
+      setGeminiApiKeyConfigured(Boolean(saved.gemini_api_key?.trim()));
+      setGeminiApiKeyDraft('');
+      const { gemini_api_key: _key, ...rest } = saved;
+      setCompanySettings(rest as CompanySettings);
       alert(t('settings.settingsSavedSuccess'));
     } catch (error: any) {
       console.error('Failed to save company settings:', error);
@@ -1282,6 +1296,31 @@ export default function SettingsPage() {
                           placeholder="UUID from Task Hub"
                         />
                       </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* AI Payroll (Gemini) */}
+                <div className="pt-4 border-t border-white/10">
+                  <h3 className="text-lg font-semibold mb-2">{t('settings.aiPayrollSettings')}</h3>
+                  <p className="text-sm text-muted-foreground mb-4">{t('settings.aiPayrollSettingsHint')}</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2 md:col-span-2">
+                      <label className="text-sm font-medium">{t('settings.geminiApiKey')}</label>
+                      <Input
+                        type="password"
+                        value={geminiApiKeyDraft}
+                        onChange={(e) => setGeminiApiKeyDraft(e.target.value)}
+                        placeholder={
+                          geminiApiKeyConfigured
+                            ? t('settings.geminiApiKeyConfiguredPlaceholder')
+                            : t('settings.geminiApiKeyPlaceholder')
+                        }
+                        autoComplete="off"
+                      />
+                      {geminiApiKeyConfigured && !geminiApiKeyDraft && (
+                        <p className="text-xs text-muted-foreground">{t('settings.geminiApiKeySavedHint')}</p>
+                      )}
                     </div>
                   </div>
                 </div>

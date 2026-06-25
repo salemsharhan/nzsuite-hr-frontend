@@ -4,7 +4,7 @@ import { leaveService } from './leaveService';
 import { companySettingsService, type EmployeeShift } from './companySettingsService';
 import { attendanceService } from './attendanceService';
 
-import { PAYROLL_MONTH_DIVISOR, calcBecSalaryKwd, calcSalaryRefundKwd, resolveOnPaperSalaryKwd } from '@/utils/payrollTemplate';
+import { PAYROLL_MONTH_DIVISOR, calcBecSalaryParts, calcSalaryRefundKwd, resolveOnPaperSalaryKwd } from '@/utils/payrollTemplate';
 import {
   countScheduledDaysInPeriod,
   countCompanyHolidayDaysInPeriod,
@@ -16,6 +16,7 @@ import {
   isDateInPayrollPeriod,
   type PayrollPeriodBounds
 } from '@/utils/payrollPeriod';
+import { applyMonthAdjustmentsToPayrollRow, type MonthAdjustmentSummary } from '@/utils/payrollMonthAdjustments';
 
 export { getPayrollPeriodBounds, formatPayrollPeriodRange, type PayrollPeriodBounds };
 
@@ -288,6 +289,8 @@ export interface KdaPayrollReportInput {
   paymentMethodByEmployeeId?: Record<string, string>;
   /** Return/refund amount per employee (optional; used for amount scheduled and salary refund) */
   returnAmountByEmployeeId?: Record<string, number>;
+  /** HR monthly leave/late settings from employee profile */
+  monthAdjustmentsByEmployeeId?: Record<string, MonthAdjustmentSummary>;
 }
 
 /**
@@ -340,6 +343,7 @@ export async function buildKdaPayrollReport(input: KdaPayrollReportInput): Promi
   const paymentMethodByEmp = input.paymentMethodByEmployeeId ?? {};
   const returnAmountByEmp = input.returnAmountByEmployeeId ?? {};
   const workingDaysByEmp = input.workingDaysByEmployeeId ?? {};
+  const monthAdjByEmp = input.monthAdjustmentsByEmployeeId ?? {};
   const companyHolidayByEmp = await getCompanyHolidayDaysByEmployee(
     input.companyId,
     input.year,
@@ -403,6 +407,7 @@ export async function buildKdaPayrollReport(input: KdaPayrollReportInput): Promi
       workingDaysInMonth -
         actualWorkingDays -
         companyHolidayDays -
+        paidLeaveDays -
         permittedLateDays -
         permittedLeaveDays -
         unpermittedLateDays
@@ -410,8 +415,13 @@ export async function buildKdaPayrollReport(input: KdaPayrollReportInput): Promi
     const dailyRate =
       DEFAULT_WORKING_DAYS > 0 ? baseSalary / DEFAULT_WORKING_DAYS : 0;
     const absentDeductionKwd = round3(dailyRate * absentDays);
-    const salaryKwd = calcBecSalaryKwd(baseSalary, paidLeaveDays, absentDays, unpermittedLateDays);
-    const paidLeaveKwd = 0;
+    const { salaryKwd, paidLeaveKwd } = calcBecSalaryParts(
+      baseSalary,
+      actualWorkingDays,
+      paidLeaveDays,
+      unpermittedLateDays,
+      companyHolidayDays
+    );
     const overTimeKwd = 0;
     const housingAllowanceKwd = Number(emp.housing_allowance ?? 0) || 0;
     const otherKwd =
@@ -469,7 +479,7 @@ export async function buildKdaPayrollReport(input: KdaPayrollReportInput): Promi
       salaryRefund: round3(salaryRefund),
       notes
     };
-  });
+  }).map((row) => applyMonthAdjustmentsToPayrollRow(row, monthAdjByEmp[row.employeeId]));
 
   return {
     companyName,

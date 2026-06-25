@@ -32,6 +32,8 @@ export interface CompanySettings {
   payroll_accountant_phone_e164?: string | null;
   payroll_accountant_name?: string | null;
   taskhub_workspace_user_id?: string | null;
+  /** Google Gemini API key for AI payroll generation */
+  gemini_api_key?: string | null;
   created_at: string;
   updated_at: string;
 }

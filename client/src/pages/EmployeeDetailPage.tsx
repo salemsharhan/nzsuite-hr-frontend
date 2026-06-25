@@ -26,6 +26,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
 import { toast } from 'sonner';
+import { EmployeePayrollMonthSettings } from '../components/employees/EmployeePayrollMonthSettings';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { Calendar as CalendarIcon, FileText as FileTextIcon, Clock as ClockIcon } from 'lucide-react';
 
@@ -2474,6 +2475,13 @@ export default function EmployeeDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          {employee?.id && user?.company_id && (
+            <EmployeePayrollMonthSettings
+              employeeId={employee.id}
+              companyId={user.company_id}
+            />
+          )}
         </TabsContent>
 
         {/* Leave Balance Tab */}

@@ -12,6 +12,7 @@ import {
   RotateCcw,
   Save,
   Send,
+  Sparkles,
   Trash2,
   Upload,
   X,
@@ -65,6 +66,7 @@ import { parsePunchLog } from '@/utils/payrollPunchLogParser';
 import { holidayDatesInPeriod, PAYROLL_LATE_TOLERANCE_MINUTES } from '@/utils/payrollWorkingDays';
 import { extractAttendanceTextFromPdfs } from '@/utils/payrollAttendancePdfExtract';
 import { recalcPayrollRow, patchPayrollRow, applyManualPayrollRow } from '@/utils/payrollRowRecalc';
+import { employeePayrollMonthService } from '@/services/employeePayrollMonthService';
 import { employeeService, type Employee } from '@/services/employeeService';
 import {
   getSavedPayrollReport,
@@ -78,6 +80,10 @@ import {
   submitPayrollForApproval,
   syncPayrollApprovalStatus
 } from '@/services/payrollApprovalService';
+import {
+  generatePayrollWithAi,
+  isGeminiPayrollConfigured
+} from '@/services/payrollAiService';
 import {
   checkPayrollCeoUnlock,
   clearCeoUnlockSession,
@@ -220,7 +226,7 @@ export default function PayrollReportTab() {
   const [saving, setSaving] = useState(false);
   const [submittingApproval, setSubmittingApproval] = useState(false);
   const [revertingApproval, setRevertingApproval] = useState(false);
-  const [reportSource, setReportSource] = useState<'saved' | 'generated' | 'punch' | null>(null);
+  const [reportSource, setReportSource] = useState<'saved' | 'generated' | 'punch' | 'ai' | null>(null);
   const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
   const [approvalAttachmentFormat, setApprovalAttachmentFormat] =
     useState<PayrollApprovalAttachmentFormat>('excel');
@@ -229,6 +235,8 @@ export default function PayrollReportTab() {
   const [extractingPdf, setExtractingPdf] = useState(false);
   const [punchPasteOpen, setPunchPasteOpen] = useState(false);
   const [generatingFromPunch, setGeneratingFromPunch] = useState(false);
+  const [generatingWithAi, setGeneratingWithAi] = useState(false);
+  const [aiBatchProgress, setAiBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [dirty, setDirty] = useState(false);
   const [tableFullscreen, setTableFullscreen] = useState(false);
   const [ceoOtpDialogOpen, setCeoOtpDialogOpen] = useState(false);
@@ -418,10 +426,11 @@ export default function PayrollReportTab() {
       }
 
       setSavedInfo(null);
-      const [leaveDays, workingDaysMap, actualDaysMap] = await Promise.all([
+      const [leaveDays, workingDaysMap, actualDaysMap, monthAdjustments] = await Promise.all([
         getApprovedLeaveDaysForMonth(companyId, y, m),
         getWorkingDaysInMonthByEmployee(companyId, y, m),
-        getActualWorkingDaysFromAttendance(companyId, y, m)
+        getActualWorkingDaysFromAttendance(companyId, y, m),
+        employeePayrollMonthService.getSummariesByCompanyMonth(companyId, y, m),
       ]);
       if (seq !== loadSeqRef.current) return;
       const report = await buildKdaPayrollReport({
@@ -431,7 +440,8 @@ export default function PayrollReportTab() {
         department: department === 'all' ? undefined : department,
         workingDaysByEmployeeId: workingDaysMap,
         paidLeaveDaysByEmployeeId: leaveDays,
-        actualDaysByEmployeeId: actualDaysMap
+        actualDaysByEmployeeId: actualDaysMap,
+        monthAdjustmentsByEmployeeId: monthAdjustments,
       });
       if (seq !== loadSeqRef.current) return;
       setMeta({
@@ -525,9 +535,10 @@ export default function PayrollReportTab() {
         return;
       }
 
-      const [leaveDays, workingDaysMap] = await Promise.all([
+      const [leaveDays, workingDaysMap, monthAdjustments] = await Promise.all([
         getApprovedLeaveDaysForMonth(companyId, y, m),
-        getWorkingDaysInMonthByEmployee(companyId, y, m)
+        getWorkingDaysInMonthByEmployee(companyId, y, m),
+        employeePayrollMonthService.getSummariesByCompanyMonth(companyId, y, m),
       ]);
 
       const report = await buildKdaPayrollReport({
@@ -538,7 +549,8 @@ export default function PayrollReportTab() {
         workingDaysByEmployeeId: workingDaysMap,
         paidLeaveDaysByEmployeeId: leaveDays,
         actualDaysByEmployeeId: parseResult.actualDaysByEmployeeId,
-        missingAttendanceDefaultsToFullPresent: true
+        missingAttendanceDefaultsToFullPresent: true,
+        monthAdjustmentsByEmployeeId: monthAdjustments,
       });
 
       suppressAutoLoad.current = true;
@@ -585,6 +597,81 @@ export default function PayrollReportTab() {
       setExtractingPdf(false);
     }
   }, [companyId, punchLogText, punchPdfFiles, year, month, department, employeesById, t, refreshEmployees, recalcRow]);
+
+  const handleGenerateWithAi = useCallback(async () => {
+    if (!companyId) {
+      toast.error(t('payroll.companyNotSet'));
+      return;
+    }
+
+    setGeneratingWithAi(true);
+    setAiBatchProgress(null);
+    try {
+      const configured = await isGeminiPayrollConfigured(companyId);
+      if (!configured) {
+        toast.error(t('payroll.toast.geminiNotConfigured'));
+        return;
+      }
+
+      await refreshEmployees();
+
+      let combinedPunchText = punchLogText.trim();
+      if (punchPdfFiles.length > 0) {
+        setExtractingPdf(true);
+        try {
+          const pdfText = await extractAttendanceTextFromPdfs(punchPdfFiles);
+          combinedPunchText = [combinedPunchText, pdfText].filter(Boolean).join('\n');
+        } finally {
+          setExtractingPdf(false);
+        }
+      }
+
+      const y = parseInt(year, 10);
+      const m = parseInt(month, 10);
+      const report = await generatePayrollWithAi({
+        companyId,
+        year: y,
+        month: m,
+        department: department === 'all' ? undefined : department,
+        punchLogText: combinedPunchText || undefined,
+        onBatchProgress: (current, total) => setAiBatchProgress({ current, total }),
+      });
+
+      suppressAutoLoad.current = true;
+      setSavedInfo(null);
+      setMeta({
+        companyName: report.companyName,
+        companyNameArabic: report.companyNameArabic,
+        periodLabel: report.periodLabel,
+        departmentLabel: report.departmentLabel,
+      });
+      setRows(report.rows);
+      setDirty(false);
+      setReportSource('ai');
+
+      toast.success(
+        t('payroll.toast.aiGenerated', {
+          count: report.rows.length,
+          model: report.model ?? 'Gemini',
+        }),
+      );
+    } catch (e) {
+      console.error(e);
+      toast.error(e instanceof Error ? e.message : t('payroll.toast.aiGenerateFailed'));
+    } finally {
+      setGeneratingWithAi(false);
+      setAiBatchProgress(null);
+    }
+  }, [
+    companyId,
+    punchLogText,
+    punchPdfFiles,
+    year,
+    month,
+    department,
+    t,
+    refreshEmployees,
+  ]);
 
   const handlePunchPdfFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -1046,7 +1133,7 @@ export default function PayrollReportTab() {
   const displayPeriod = meta ? formatPayrollPeriodLabel(month, year, t) : '';
   const displayDepartment = formatPayrollDepartmentLabel(department, t);
   const companyTitle = meta ? formatPayrollCompanyTitle(meta.companyName, meta.companyNameArabic) : '';
-  const busy = loading || generatingFromPunch || extractingPdf;
+  const busy = loading || generatingFromPunch || generatingWithAi || extractingPdf;
   const canGenerateFromPunch = punchLogText.trim().length > 0 || punchPdfFiles.length > 0;
 
   return (
@@ -1139,6 +1226,26 @@ export default function PayrollReportTab() {
           <Button onClick={handleRegenerate} disabled={busy || isEditLocked} variant="outline">
             {t('payroll.rebuildFromAttendance')}
           </Button>
+          <Button
+            onClick={() => void handleGenerateWithAi()}
+            disabled={busy || isEditLocked}
+            variant="secondary"
+          >
+            {generatingWithAi ? (
+              <Loader2 className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0 animate-spin" />
+            ) : (
+              <Sparkles className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />
+            )}
+            {generatingWithAi ? t('payroll.generatingWithAi') : t('payroll.generateWithAi')}
+          </Button>
+          {aiBatchProgress && (
+            <span className="text-sm text-muted-foreground self-center">
+              {t('payroll.aiBatchProgress', {
+                current: aiBatchProgress.current,
+                total: aiBatchProgress.total,
+              })}
+            </span>
+          )}
           {rows.length > 0 && (
             <>
               {isEditLocked && (
@@ -1186,6 +1293,9 @@ export default function PayrollReportTab() {
         </div>
         {reportSource === 'punch' && rows.length > 0 && (
           <p className="text-sm text-muted-foreground mt-3">{t('payroll.generatedFromPunchLog')}</p>
+        )}
+        {reportSource === 'ai' && rows.length > 0 && (
+          <p className="text-sm text-muted-foreground mt-3">{t('payroll.generatedFromAi')}</p>
         )}
         {dirty && rows.length > 0 && (
           <p className="text-sm text-amber-600 mt-3 font-medium">{t('payroll.unsavedChanges')}</p>

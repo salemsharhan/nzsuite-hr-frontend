@@ -46,28 +46,45 @@ export function calcUnpermittedLateDeductionKwd(
 }
 
 /**
- * BEC payroll salary:
- * - Paid leave days > 0: (basic ÷ 26) × paid leave days (e.g. Eid with 27 days).
- * - Paid leave days = 0: basic − full-day absent − ¼-day unpermitted late deductions.
- * Paid leave KWD is always 0.
+ * BEC/DYLX Excel salary columns (verified June 2026 templates):
+ * - Salary KWD (col 8)  = (basic ÷ 26) × (actual working days + company holiday days) − ¼-day unpermitted-late cuts
+ * - Paid Leave KWD (col 9) = (basic ÷ 26) × paid leave days
+ * - Company holidays are paid (no absent cut) and included in col 8 salary amount; present col stays punch-only count
  */
+export function calcBecSalaryParts(
+  basicSalaryKwd: number,
+  actualWorkingDays: number,
+  paidLeaveDays: number,
+  unpermittedLateDays = 0,
+  companyHolidayDays = 0
+): { salaryKwd: number; paidLeaveKwd: number } {
+  const daily = dailySalaryKwd(basicSalaryKwd);
+  const unpermittedDeduction =
+    daily * PAYROLL_UNPERMITTED_LATE_DAY_FRACTION * Math.max(0, unpermittedLateDays);
+  const paidWorkDays = Math.max(0, actualWorkingDays) + Math.max(0, companyHolidayDays);
+  const salaryKwd = round3(Math.max(0, daily * paidWorkDays - unpermittedDeduction));
+  const paidLeaveKwd = round3(daily * Math.max(0, paidLeaveDays));
+  return { salaryKwd, paidLeaveKwd };
+}
+
+/** @deprecated use calcBecSalaryParts — returns salary column only */
 export function calcBecSalaryKwd(
   basicSalaryKwd: number,
   paidLeaveDays: number,
   absentDays = 0,
-  unpermittedLateDays = 0
+  unpermittedLateDays = 0,
+  actualWorkingDays?: number
 ): number {
-  const daily = dailySalaryKwd(basicSalaryKwd);
-  if (paidLeaveDays > 0) {
-    return round3(daily * paidLeaveDays);
-  }
-  const deduction =
-    daily * Math.max(0, absentDays) +
-    daily * PAYROLL_UNPERMITTED_LATE_DAY_FRACTION * Math.max(0, unpermittedLateDays);
-  if (deduction > 0) {
-    return round3(Math.max(0, basicSalaryKwd - deduction));
-  }
-  return round3(basicSalaryKwd);
+  const present =
+    actualWorkingDays ??
+    Math.max(0, PAYROLL_MONTH_DIVISOR - absentDays - paidLeaveDays);
+  return calcBecSalaryParts(
+    basicSalaryKwd,
+    present,
+    paidLeaveDays,
+    unpermittedLateDays,
+    0
+  ).salaryKwd;
 }
 
 /** On-paper salary when set; otherwise 0 (no fallback to basic). */

@@ -2,7 +2,7 @@ import type { KdaPayrollReportRow } from '@/services/payrollReportService';
 import {
   PAYROLL_MONTH_DIVISOR,
   PAYROLL_UNPERMITTED_LATE_DAY_FRACTION,
-  calcBecSalaryKwd,
+  calcBecSalaryParts,
   calcSalaryRefundKwd,
   dailySalaryKwd,
   resolveOnPaperSalaryKwd
@@ -30,7 +30,7 @@ export function recalcPayrollRow(
   let permittedLate = Math.max(0, next.permittedLateDays ?? 0);
   let permittedLeave = Math.max(0, next.permittedLeaveDays ?? 0);
   let unpermittedLate = Math.max(0, next.unpermittedLateDays ?? 0);
-  const pool = Math.max(0, scheduled - present - companyHolidayDays);
+  const pool = Math.max(0, scheduled - present - companyHolidayDays - paidLeave);
   permittedLeave = Math.min(permittedLeave, pool);
   let remaining = Math.max(0, pool - permittedLeave);
   permittedLate = Math.min(permittedLate, remaining);
@@ -42,13 +42,13 @@ export function recalcPayrollRow(
   const absentDeductionKwd = round3(
     daily * absent + daily * PAYROLL_UNPERMITTED_LATE_DAY_FRACTION * unpermittedLate
   );
-  const salaryKwd = calcBecSalaryKwd(
+  const { salaryKwd, paidLeaveKwd } = calcBecSalaryParts(
     basicSalaryKwd,
+    present,
     paidLeave,
-    absent,
-    unpermittedLate
+    unpermittedLate,
+    companyHolidayDays
   );
-  const paidLeaveKwd = 0;
 
   const totalGrossKwd = round3(
     salaryKwd +

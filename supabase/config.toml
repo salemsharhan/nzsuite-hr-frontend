@@ -388,5 +388,8 @@ verify_jwt = false
 [functions.payroll-approval-callback]
 verify_jwt = false
 
+[functions.payroll-sync-approval-status]
+verify_jwt = false
+
 [functions.payroll-ceo-otp]
 verify_jwt = false

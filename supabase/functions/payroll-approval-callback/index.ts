@@ -324,10 +324,6 @@ serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
 
   try {
-  const secret = (Deno.env.get('PAYROLL_INTEGRATION_SECRET') ?? Deno.env.get('WHATS_TASK_INTEGRATION_SECRET') ?? '').trim()
-  const got = (req.headers.get('X-Integration-Secret') ?? '').trim()
-  if (!secret || got !== secret) return json({ error: 'Unauthorized' }, 401)
-
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   const whatsTaskUrl = (Deno.env.get('WHATS_TASK_URL') ?? '').trim().replace(/\/+$/, '')
@@ -356,7 +352,7 @@ serve(async (req) => {
   const { data: report, error: fetchErr } = await admin
     .from('payroll_reports')
     .select(
-      'id, company_id, year, month, approval_status, report_data, approval_attachment_path, approval_attachment_filename, approval_attachment_mime',
+      'id, company_id, year, month, approval_status, report_data, approval_attachment_path, approval_attachment_filename, approval_attachment_mime, ceo_whats_task_id, accountant_whats_task_id, gm_approved_at',
     )
     .eq('id', reportId)
     .maybeSingle()
@@ -376,6 +372,11 @@ serve(async (req) => {
   // GM stage: approval advances to CEO; rejection/hold ends workflow
   if (stage === 'gm') {
     if (hrStatus === 'approved') {
+      const ceoTaskId = String((report as { ceo_whats_task_id?: string }).ceo_whats_task_id ?? '').trim()
+      if (current === 'pending_ceo' && ceoTaskId) {
+        return json({ ok: true, skipped: 'ceo_already_sent', report_id: reportId, approval_status: current }, 200)
+      }
+
       const ceoResult = await sendStageApprovalTask(admin, report as Record<string, unknown>, 'ceo')
       if (ceoResult.error) return json({ error: ceoResult.error }, 502)
 
@@ -422,6 +423,11 @@ serve(async (req) => {
   // CEO stage: approval sends final draft to accountant
   if (stage === 'ceo') {
     if (hrStatus === 'approved') {
+      const accountantTaskId = String((report as { accountant_whats_task_id?: string }).accountant_whats_task_id ?? '').trim()
+      if (current === 'pending_accountant' && accountantTaskId) {
+        return json({ ok: true, skipped: 'accountant_already_sent', report_id: reportId, approval_status: current }, 200)
+      }
+
       const accountantResult = await sendStageApprovalTask(admin, report as Record<string, unknown>, 'accountant')
       if (accountantResult.error) return json({ error: accountantResult.error }, 502)
 

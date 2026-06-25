@@ -75,7 +75,8 @@ import {
 } from '@/services/payrollReportStorageService';
 import {
   payrollApprovalStatusLabel,
-  submitPayrollForApproval
+  submitPayrollForApproval,
+  syncPayrollApprovalStatus
 } from '@/services/payrollApprovalService';
 import {
   checkPayrollCeoUnlock,
@@ -173,11 +174,19 @@ function readEmployeeBaseSalary(emp: Employee | undefined, row: KdaPayrollReport
   return Math.max(0, row.basicSalaryKwd ?? 0);
 }
 
+function currentPayrollMonthValue(): string {
+  return String(new Date().getMonth() + 1);
+}
+
+function currentPayrollYearValue(): string {
+  return String(new Date().getFullYear());
+}
+
 export default function PayrollReportTab() {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
-  const [month, setMonth] = useState('12');
-  const [year, setYear] = useState('2025');
+  const [month, setMonth] = useState(currentPayrollMonthValue);
+  const [year, setYear] = useState(currentPayrollYearValue);
   const [department, setDepartment] = useState<string>('all');
   const [departmentOptions, setDepartmentOptions] = useState<{ value: string; label: string }[]>([]);
   const [employeesById, setEmployeesById] = useState<Record<string, Employee>>({});
@@ -306,6 +315,13 @@ export default function PayrollReportTab() {
     [t, i18n.language]
   );
 
+  const yearOptions = useMemo(() => {
+    const current = new Date().getFullYear();
+    const start = current - 2;
+    const end = current + 1;
+    return Array.from({ length: end - start + 1 }, (_, i) => String(start + i));
+  }, []);
+
   const col = useCallback((key: string) => t(`payroll.columns.${key}`), [t]);
 
   useEffect(() => {
@@ -361,7 +377,29 @@ export default function PayrollReportTab() {
         const saved = await getSavedPayrollReport(companyId, y, m, department);
         if (seq !== loadSeqRef.current) return;
         if (saved?.report_data?.meta && Array.isArray(saved?.report_data?.rows)) {
-          applySavedReport(saved);
+          let reportToApply = saved;
+          const pendingApproval = ['pending_gm', 'pending_ceo', 'pending_accountant', 'pending_approval'];
+          if (pendingApproval.includes(saved.approval_status ?? '')) {
+            try {
+              const sync = await syncPayrollApprovalStatus(companyId, saved.id);
+              if (seq !== loadSeqRef.current) return;
+              if (sync.synced) {
+                const refreshed = await getSavedPayrollReport(companyId, y, m, department);
+                if (refreshed) reportToApply = refreshed;
+              }
+            } catch (e) {
+              console.warn('payroll approval sync failed', e);
+            }
+          }
+          applySavedReport(reportToApply);
+          if (reportToApply.approval_status !== saved.approval_status) {
+            toast.success(
+              t('payroll.toast.approvalStatusSynced', {
+                status: payrollApprovalStatusLabel(reportToApply.approval_status),
+                defaultValue: `Approval updated: ${reportToApply.approval_status}`,
+              }),
+            );
+          }
           toast.success(
             t('payroll.loadedSaved', {
               period: formatPayrollPeriodLabel(month, year, t),
@@ -1075,9 +1113,9 @@ export default function PayrollReportTab() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="2024">2024</SelectItem>
-                <SelectItem value="2025">2025</SelectItem>
-                <SelectItem value="2026">2026</SelectItem>
+                {yearOptions.map((y) => (
+                  <SelectItem key={y} value={y}>{y}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

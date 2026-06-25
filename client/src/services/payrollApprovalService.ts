@@ -76,6 +76,45 @@ export async function submitPayrollForApproval(
   return data as SubmitPayrollApprovalResult;
 }
 
+export interface SyncPayrollApprovalResult {
+  ok: boolean;
+  synced?: boolean;
+  approval_status?: string;
+  skipped?: boolean;
+  reason?: string;
+}
+
+export async function syncPayrollApprovalStatus(
+  companyId: string,
+  payrollReportId: string,
+): Promise<SyncPayrollApprovalResult> {
+  let token: string | null = null
+  try {
+    token = await getAccessToken()
+  } catch {
+    token = null
+  }
+
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/payroll-sync-approval-status`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(SUPABASE_ANON_KEY ? { apikey: SUPABASE_ANON_KEY } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      company_id: companyId,
+      payroll_report_id: payrollReportId,
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data?.error ?? `Failed to sync approval status (${res.status})`);
+  }
+  return data as SyncPayrollApprovalResult;
+}
+
 import i18n from '@/utils/i18n';
 
 export function payrollApprovalStatusLabel(status?: string): string {

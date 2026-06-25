@@ -82,6 +82,25 @@ function formatPayrollPeriodAr(month: number, year: number): string {
   return `${AR_PAYROLL_MONTHS[m - 1]} ${year}`
 }
 
+function buildUniquePayrollAttachmentMeta(
+  reportYear: number,
+  reportMonth: number,
+  companyId: string,
+  reportId: string,
+  originalFilename: string,
+): { storagePath: string; filename: string } {
+  const now = new Date()
+  const y = reportYear > 0 ? reportYear : now.getUTCFullYear()
+  const m = reportMonth >= 1 && reportMonth <= 12 ? reportMonth : now.getUTCMonth() + 1
+  const stamp = now.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, '')
+  const serial = crypto.randomUUID().slice(0, 8)
+  const extMatch = originalFilename.match(/(\.[a-z0-9]+)$/i)
+  const ext = extMatch ? extMatch[1].toLowerCase() : '.xlsx'
+  const filename = `payroll-${y}-${String(m).padStart(2, '0')}-${stamp}-${serial}${ext}`
+  const storagePath = `${companyId}/${reportId}/submissions/${stamp}-${serial}${ext}`
+  return { storagePath, filename }
+}
+
 interface PayrollNotifySettings {
   workspace_user_id: string
   hr_jid?: string
@@ -350,23 +369,34 @@ serve(async (req) => {
   const integrationRef = `payroll_report:${report.id}:gm`
 
   let attachmentPath: string | null = null
+  let submissionFilename = excelFilename
   if (excelBase64) {
     try {
       const binary = Uint8Array.from(atob(excelBase64), (c) => c.charCodeAt(0))
-      attachmentPath = `${companyId}/${report.id}/approval`
+      const uniqueMeta = buildUniquePayrollAttachmentMeta(
+        reportYear,
+        reportMonth,
+        companyId,
+        report.id,
+        excelFilename,
+      )
+      attachmentPath = uniqueMeta.storagePath
+      submissionFilename = uniqueMeta.filename
       const { error: uploadErr } = await admin.storage
         .from(ATTACHMENT_BUCKET)
         .upload(attachmentPath, binary, {
           contentType: attachmentMime,
-          upsert: true,
+          upsert: false,
         })
       if (uploadErr) {
         console.error('attachment upload failed', uploadErr)
         attachmentPath = null
+        submissionFilename = excelFilename
       }
     } catch (e) {
       console.error('attachment encode failed', e)
       attachmentPath = null
+      submissionFilename = excelFilename
     }
   }
 
@@ -384,7 +414,7 @@ serve(async (req) => {
     payroll_year: reportYear,
     attachment: excelBase64
       ? {
-          filename: excelFilename,
+          filename: submissionFilename,
           mime: attachmentMime,
           base64: excelBase64,
         }
@@ -421,7 +451,7 @@ serve(async (req) => {
       approved_by_name: null,
       approval_note: null,
       approval_attachment_path: attachmentPath,
-      approval_attachment_filename: excelBase64 ? excelFilename : null,
+      approval_attachment_filename: excelBase64 ? submissionFilename : null,
       approval_attachment_mime: excelBase64 ? attachmentMime : null,
     })
     .eq('id', report.id)

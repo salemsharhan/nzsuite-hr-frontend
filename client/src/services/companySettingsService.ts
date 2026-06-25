@@ -142,7 +142,44 @@ export interface RolePermissionsConfig {
   updated_at: string;
 }
 
+export function buildDefaultCompanySettings(companyId: string): CompanySettings {
+  return {
+    id: '',
+    company_id: companyId,
+    default_working_hours_per_day: 8,
+    default_working_days_per_week: 5,
+    work_week_start_day: 1,
+    work_week_end_day: 5,
+    annual_leave_days_per_year: 20,
+    sick_leave_days_per_year: 10,
+    carry_forward_annual_leave: true,
+    max_carry_forward_days: 5,
+    payroll_cycle: 'monthly',
+    payroll_day: 1,
+    late_tolerance_minutes: 15,
+    overtime_threshold_hours: 8,
+    overtime_multiplier: 1.5,
+    timezone: 'UTC',
+    currency: 'USD',
+    created_at: '',
+    updated_at: '',
+  };
+}
+
 class CompanySettingsService {
+  private defaultCompanySettings(companyId: string) {
+    const { id, created_at, updated_at, ...defaults } = buildDefaultCompanySettings(companyId);
+    return defaults;
+  }
+
+  private stripReadOnlyFields(settings: Partial<CompanySettings>): Record<string, unknown> {
+    const out: Record<string, unknown> = { ...settings };
+    delete out.id;
+    delete out.created_at;
+    delete out.updated_at;
+    return out;
+  }
+
   // Company Settings
   async getCompanySettings(companyId: string): Promise<CompanySettings | null> {
     try {
@@ -163,15 +200,37 @@ class CompanySettingsService {
   }
 
   async updateCompanySettings(companyId: string, settings: Partial<CompanySettings>): Promise<CompanySettings> {
-    const response = await adminApi.patch('/company_settings', settings, {
-      params: {
-        company_id: `eq.${companyId}`
+    const existing = await this.getCompanySettings(companyId);
+    const payload = {
+      ...this.defaultCompanySettings(companyId),
+      ...this.stripReadOnlyFields(settings),
+      company_id: companyId,
+    };
+
+    if (existing?.id) {
+      const payload = {
+        ...this.stripReadOnlyFields(existing),
+        ...this.stripReadOnlyFields(settings),
+        company_id: companyId,
+      };
+      const response = await adminApi.patch('/company_settings', payload, {
+        params: {
+          company_id: `eq.${companyId}`
+        }
+      });
+      const row = Array.isArray(response.data) ? response.data[0] : response.data;
+      if (!row) {
+        throw new Error('Company settings update matched no rows');
       }
-    });
-    if (Array.isArray(response.data)) {
-      return response.data[0];
+      return row as CompanySettings;
     }
-    return response.data;
+
+    const response = await adminApi.post('/company_settings', payload);
+    const row = Array.isArray(response.data) ? response.data[0] : response.data;
+    if (!row) {
+      throw new Error('Company settings were not created');
+    }
+    return row as CompanySettings;
   }
 
   async getCompanyHolidays(

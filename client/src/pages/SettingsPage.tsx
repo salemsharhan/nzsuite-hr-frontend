@@ -9,7 +9,7 @@ import { departmentService, Department } from '../services/departmentService';
 import { roleService, Role } from '../services/roleService';
 import { jobService, Job } from '../services/jobService';
 import { companyService, Company, CreateCompanyData } from '../services/companyService';
-import { companySettingsService, CompanySettings, RoleSalaryConfig, RolePermissionsConfig, CompanyHoliday } from '../services/companySettingsService';
+import { companySettingsService, CompanySettings, buildDefaultCompanySettings, RoleSalaryConfig, RolePermissionsConfig, CompanyHoliday } from '../services/companySettingsService';
 import { useAuth } from '../contexts/AuthContext';
 import { Clock, DollarSign, Calendar, Settings as SettingsIcon, MapPin, MessageSquare } from 'lucide-react';
 import { attendanceLocationService, AttendanceLocationSettings } from '../services/attendanceLocationService';
@@ -405,8 +405,11 @@ export default function SettingsPage() {
     if (!user?.company_id) return;
     try {
       const settings = await companySettingsService.getCompanySettings(user.company_id);
-      console.log('Loaded company settings:', settings);
-      setCompanySettings(settings);
+      if (settings) {
+        setCompanySettings(settings);
+      } else {
+        setCompanySettings(buildDefaultCompanySettings(user.company_id));
+      }
     } catch (error) {
       console.error('Failed to load company settings:', error);
     }
@@ -592,36 +595,19 @@ export default function SettingsPage() {
 
   const handleSaveCompanySettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user?.company_id) return;
+    if (!user?.company_id || !companySettings) return;
     try {
-      if (companySettings) {
-        await companySettingsService.updateCompanySettings(user.company_id, companySettings);
-      } else {
-        // Create new settings
-        const newSettings = await companySettingsService.updateCompanySettings(user.company_id, {
-          company_id: user.company_id,
-          default_working_hours_per_day: 8.00,
-          default_working_days_per_week: 5,
-          work_week_start_day: 1,
-          work_week_end_day: 5,
-          annual_leave_days_per_year: 20,
-          sick_leave_days_per_year: 10,
-          carry_forward_annual_leave: true,
-          max_carry_forward_days: 5,
-          payroll_cycle: 'monthly',
-          payroll_day: 1,
-          late_tolerance_minutes: 15,
-          overtime_threshold_hours: 8.00,
-          overtime_multiplier: 1.50,
-          timezone: 'UTC',
-          currency: 'USD'
-        } as CompanySettings);
-        setCompanySettings(newSettings);
-      }
+      const saved = await companySettingsService.updateCompanySettings(user.company_id, companySettings);
+      setCompanySettings(saved);
       alert(t('settings.settingsSavedSuccess'));
     } catch (error: any) {
       console.error('Failed to save company settings:', error);
-      alert(`${t('settings.failedToSave')}: ${error?.message || t('settings.unknownError')}`);
+      const msg =
+        error?.response?.data?.message ||
+        error?.response?.data?.hint ||
+        error?.message ||
+        t('settings.unknownError');
+      alert(`${t('settings.failedToSave')}: ${msg}`);
     }
   };
 

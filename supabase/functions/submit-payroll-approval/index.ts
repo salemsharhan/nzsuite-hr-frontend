@@ -27,10 +27,9 @@ function whatsTaskFunctionUrl(baseUrl: string, functionName: string): string {
   return `${normalizeWhatsTaskBaseUrl(baseUrl)}/functions/v1/${functionName}`
 }
 
-function whatsTaskFetchHeaders(integrationSecret: string): Record<string, string> {
+function whatsTaskFetchHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'X-Integration-Secret': integrationSecret,
   }
   const anonKey = (Deno.env.get('WHATS_TASK_ANON_KEY') ?? '').trim()
   if (anonKey) {
@@ -60,13 +59,12 @@ function validateWhatsTaskBaseUrl(baseUrl: string): string | null {
 async function callWhatsTaskFunction(
   baseUrl: string,
   functionName: string,
-  integrationSecret: string,
   body: Record<string, unknown>,
 ): Promise<{ ok: boolean; status: number; url: string; data: Record<string, unknown>; raw: string }> {
   const url = whatsTaskFunctionUrl(baseUrl, functionName)
   const res = await fetch(url, {
     method: 'POST',
-    headers: whatsTaskFetchHeaders(integrationSecret),
+    headers: whatsTaskFetchHeaders(),
     body: JSON.stringify(body),
   })
   const raw = await res.text()
@@ -120,7 +118,6 @@ async function loadPayrollNotifySettings(
 
 async function sendWhatsAppText(
   whatsTaskUrl: string,
-  integrationSecret: string,
   workspaceUserId: string,
   recipientJid: string,
   text: string,
@@ -130,7 +127,7 @@ async function sendWhatsAppText(
 
   const res = await fetch(whatsTaskFunctionUrl(whatsTaskUrl, 'hr-send-text-message'), {
     method: 'POST',
-    headers: whatsTaskFetchHeaders(integrationSecret),
+    headers: whatsTaskFetchHeaders(),
     body: JSON.stringify({
       workspace_user_id: workspaceUserId,
       recipient_wa_jid: jid,
@@ -147,14 +144,13 @@ async function sendWhatsAppText(
 
 async function notifyPayrollJids(
   whatsTaskUrl: string,
-  integrationSecret: string,
   settings: PayrollNotifySettings,
   jids: string[],
   message: string,
 ): Promise<void> {
   const unique = [...new Set(jids.map((j) => j.trim().toLowerCase()).filter(Boolean))]
   for (const jid of unique) {
-    const result = await sendWhatsAppText(whatsTaskUrl, integrationSecret, settings.workspace_user_id, jid, message)
+    const result = await sendWhatsAppText(whatsTaskUrl, settings.workspace_user_id, jid, message)
     if (!result.ok) console.error('payroll notify failed', jid, result.error)
   }
 }
@@ -169,14 +165,12 @@ function json(data: unknown, status = 200) {
 
 async function createWhatsTaskApproval(
   whatsTaskUrl: string,
-  integrationSecret: string,
   _callbackUrl: string,
   payload: Record<string, unknown>,
 ): Promise<{ task_id?: string; reused?: boolean; attachment_links?: string[]; assignee_jid?: string; error?: string }> {
   const wt = await callWhatsTaskFunction(
     whatsTaskUrl,
     'hr-create-approval-task',
-    integrationSecret,
     payload,
   )
 
@@ -195,9 +189,7 @@ async function createWhatsTaskApproval(
     const hint =
       wt.status === 405
         ? ` — check WHATS_TASK_URL (must be https://YOUR_WHATS_TASK_PROJECT.supabase.co, not nztask portal) and set WHATS_TASK_ANON_KEY. Called ${wt.url}`
-        : wt.status === 401
-          ? ' — check WHATS_TASK_INTEGRATION_SECRET matches Whats-Task NZSUITE_HR_INTEGRATION_SECRET'
-          : ''
+        : ''
     return { error: `Whats-Task hr-create-approval-task: ${detail}${hint}` }
   }
 
@@ -207,7 +199,7 @@ async function createWhatsTaskApproval(
   if (wtJson.whatsapp_skipped || wtJson.whatsapp_sent === false) {
     return {
       error:
-        'Task was created in Task Hub but WhatsApp was not sent. Redeploy hr-create-approval-task on Whats-Task, revert payroll to draft, and submit again.',
+        'Task was created but GM WhatsApp poll was not sent. Redeploy hr-create-approval-task on Whats-Task, revert payroll to draft, and submit again.',
       task_id: taskId,
     }
   }
@@ -230,16 +222,10 @@ serve(async (req) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   const whatsTaskUrl = (Deno.env.get('WHATS_TASK_URL') ?? '').trim().replace(/\/+$/, '')
-  const integrationSecret = (
-    Deno.env.get('WHATS_TASK_INTEGRATION_SECRET') ??
-    Deno.env.get('PAYROLL_INTEGRATION_SECRET') ??
-    Deno.env.get('NZSUITE_HR_INTEGRATION_SECRET') ??
-    ''
-  ).trim()
   const callbackUrl = `${supabaseUrl}/functions/v1/payroll-approval-callback`
 
-  if (!whatsTaskUrl || !integrationSecret) {
-    return json({ error: 'Payroll integration not configured on server' }, 503)
+  if (!whatsTaskUrl) {
+    return json({ error: 'WHATS_TASK_URL is not configured on server' }, 503)
   }
 
   const whatsTaskUrlError = validateWhatsTaskBaseUrl(whatsTaskUrl)
@@ -405,7 +391,7 @@ serve(async (req) => {
       : undefined,
   }
 
-  let wtResult = await createWhatsTaskApproval(whatsTaskUrl, integrationSecret, callbackUrl, taskPayload)
+  const wtResult = await createWhatsTaskApproval(whatsTaskUrl, callbackUrl, taskPayload)
 
   if (wtResult.error) {
     console.error('whats-task create failed', wtResult.error)
@@ -446,7 +432,6 @@ serve(async (req) => {
   if (notifySettings?.hr_jid) {
     await notifyPayrollJids(
       whatsTaskUrl,
-      integrationSecret,
       notifySettings,
       [notifySettings.hr_jid],
       `📋 تحديث رواتب — ${periodLabelAr}\n\n` +

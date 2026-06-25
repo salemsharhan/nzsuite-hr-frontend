@@ -17,7 +17,9 @@ import {
   X,
   ArrowRight,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Lock,
+  LockOpen
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card } from '@/components/ui/card';
@@ -62,7 +64,7 @@ import {
 import { parsePunchLog } from '@/utils/payrollPunchLogParser';
 import { holidayDatesInPeriod, PAYROLL_LATE_TOLERANCE_MINUTES } from '@/utils/payrollWorkingDays';
 import { extractAttendanceTextFromPdfs } from '@/utils/payrollAttendancePdfExtract';
-import { recalcPayrollRow } from '@/utils/payrollRowRecalc';
+import { recalcPayrollRow, patchPayrollRow, applyManualPayrollRow } from '@/utils/payrollRowRecalc';
 import { employeeService, type Employee } from '@/services/employeeService';
 import {
   getSavedPayrollReport,
@@ -75,6 +77,17 @@ import {
   payrollApprovalStatusLabel,
   submitPayrollForApproval
 } from '@/services/payrollApprovalService';
+import {
+  checkPayrollCeoUnlock,
+  clearCeoUnlockSession,
+  isCeoUnlockSessionActive,
+  loadCeoUnlockSession,
+  saveCeoUnlockSession,
+  sendPayrollCeoOtp,
+  verifyPayrollCeoOtp,
+  type CeoUnlockSession
+} from '@/services/payrollCeoOtpService';
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { toast } from 'sonner';
 import {
   formatPayrollCompanyTitle,
@@ -99,6 +112,67 @@ function formatKwd(n: number): string {
   return n.toFixed(3);
 }
 
+function PayrollNumInput({
+  value,
+  onChange,
+  disabled,
+  className,
+  min = 0,
+  step = 0.001,
+  center = false
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  disabled?: boolean;
+  className?: string;
+  min?: number;
+  step?: number;
+  center?: boolean;
+}) {
+  if (disabled) {
+    return (
+      <span className={cn('tabular-nums', className)}>
+        {step >= 1 ? value : formatKwd(value)}
+      </span>
+    );
+  }
+  return (
+    <Input
+      type="number"
+      min={min}
+      step={step}
+      className={cn(
+        'num-input h-8 min-w-[4rem] w-full tabular-nums',
+        center ? 'text-center' : 'text-right',
+        className
+      )}
+      value={value}
+      onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+    />
+  );
+}
+
+function adjustableAbsentDays(row: KdaPayrollReportRow): number {
+  return Math.max(0, row.absentDays ?? 0);
+}
+
+function readEmployeeOnPaperSalary(emp: Employee | undefined): number {
+  if (!emp) return 0;
+  const raw =
+    emp.on_paper_salary ??
+    (emp as { onPaperSalary?: number }).onPaperSalary;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function readEmployeeBaseSalary(emp: Employee | undefined, row: KdaPayrollReportRow): number {
+  if (emp) {
+    const n = Number(emp.base_salary ?? emp.salary ?? 0);
+    if (Number.isFinite(n)) return Math.max(0, n);
+  }
+  return Math.max(0, row.basicSalaryKwd ?? 0);
+}
+
 export default function PayrollReportTab() {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
@@ -117,6 +191,8 @@ export default function PayrollReportTab() {
   const [rows, setRows] = useState<KdaPayrollReportRow[]>([]);
   /** Days to move from absent → permitted late (per employee, draft before clicking move) */
   const [permittedLateMoveQty, setPermittedLateMoveQty] = useState<Record<string, string>>({});
+  const [permittedLeaveMoveQty, setPermittedLeaveMoveQty] = useState<Record<string, string>>({});
+  const [unpermittedLateMoveQty, setUnpermittedLateMoveQty] = useState<Record<string, string>>({});
   const [savedInfo, setSavedInfo] = useState<{
     savedAt: string;
     savedByEmail: string | null;
@@ -129,6 +205,8 @@ export default function PayrollReportTab() {
     approvedAt?: string | null;
     approvedByName?: string | null;
     approvalNote?: string | null;
+    accountantCompletedAt?: string | null;
+    accountantCompletedByName?: string | null;
   } | null>(null);
   const [saving, setSaving] = useState(false);
   const [submittingApproval, setSubmittingApproval] = useState(false);
@@ -144,10 +222,80 @@ export default function PayrollReportTab() {
   const [generatingFromPunch, setGeneratingFromPunch] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [tableFullscreen, setTableFullscreen] = useState(false);
+  const [ceoOtpDialogOpen, setCeoOtpDialogOpen] = useState(false);
+  const [ceoOtpSending, setCeoOtpSending] = useState(false);
+  const [ceoOtpVerifying, setCeoOtpVerifying] = useState(false);
+  const [ceoOtpSent, setCeoOtpSent] = useState(false);
+  const [ceoOtpValue, setCeoOtpValue] = useState('');
+  const [ceoUnlockSession, setCeoUnlockSession] = useState<CeoUnlockSession | null>(null);
   const punchPdfInputRef = useRef<HTMLInputElement>(null);
   const suppressAutoLoad = useRef(false);
+  const loadSeqRef = useRef(0);
+  const employeesByIdRef = useRef<Record<string, Employee>>({});
+  employeesByIdRef.current = employeesById;
 
   const companyId = user?.company_id;
+
+  const recalcRow = useCallback(
+    (row: KdaPayrollReportRow, updates: Partial<KdaPayrollReportRow> = {}) => {
+      const emp = employeesByIdRef.current[row.employeeId];
+      const rawOnPaper = readEmployeeOnPaperSalary(emp);
+      const basic = readEmployeeBaseSalary(emp, row);
+      return recalcPayrollRow(
+        row,
+        { ...updates, onPaperSalaryKwd: rawOnPaper, basicSalaryKwd: basic },
+        { employeeBaseSalaryKwd: basic }
+      );
+    },
+    []
+  );
+
+  const refreshEmployees = useCallback(async () => {
+    if (!companyId) return;
+    const employees = await employeeService.getAll(companyId);
+    const byId: Record<string, Employee> = {};
+    const depts = new Set<string>();
+    employees.forEach((e) => {
+      byId[e.id] = e;
+      const d = e.department || (e as { departments?: { name?: string } }).departments?.name;
+      if (d) depts.add(d);
+    });
+    employeesByIdRef.current = byId;
+    setEmployeesById(byId);
+    setDepartmentOptions([
+      { value: 'all', label: t('payroll.allDepartments') },
+      ...Array.from(depts).sort().map((d) => ({ value: d, label: d }))
+    ]);
+  }, [companyId, t]);
+
+  const applySavedReport = useCallback((saved: SavedPayrollReport, options?: { preserveRows?: boolean }) => {
+    setMeta(saved.report_data.meta);
+    if (!options?.preserveRows) {
+      // Use saved values as-is — recalc would overwrite manual salary/refund/deduction edits
+      setRows(saved.report_data.rows.map((r) => ({ ...r })) as KdaPayrollReportRow[]);
+    }
+    setSavedInfo({
+        savedAt: saved.saved_at,
+        savedByEmail: saved.saved_by_email ?? null,
+        reportId: saved.id,
+        approvalStatus: saved.approval_status ?? 'draft',
+        submittedAt: saved.submitted_at ?? null,
+        gmApprovedAt: saved.gm_approved_at ?? null,
+        gmApprovedByName: saved.gm_approved_by_name ?? null,
+        gmApprovalNote: saved.gm_approval_note ?? null,
+        approvedAt: saved.approved_at ?? null,
+        approvedByName: saved.approved_by_name ?? null,
+        approvalNote: saved.approval_note ?? null,
+        accountantCompletedAt: saved.accountant_completed_at ?? null,
+        accountantCompletedByName: saved.accountant_completed_by_name ?? null
+      });
+    setReportSource('saved');
+    setDirty(false);
+  }, []);
+
+  const applySavedReportStatus = useCallback((saved: SavedPayrollReport) => {
+    applySavedReport(saved, { preserveRows: true });
+  }, [applySavedReport]);
 
   const months = useMemo(
     () =>
@@ -175,56 +323,43 @@ export default function PayrollReportTab() {
   }, [tableFullscreen]);
 
   useEffect(() => {
-    if (!companyId) return;
-    employeeService.getAll(companyId).then((employees) => {
-      const byId: Record<string, Employee> = {};
-      const depts = new Set<string>();
-      employees.forEach((e) => {
-        byId[e.id] = e;
-        const d = e.department || (e as { departments?: { name?: string } }).departments?.name;
-        if (d) depts.add(d);
-      });
-      setEmployeesById(byId);
-      setDepartmentOptions([
-        { value: 'all', label: t('payroll.allDepartments') },
-        ...Array.from(depts).sort().map((d) => ({ value: d, label: d }))
-      ]);
-    });
-  }, [companyId, t, i18n.language]);
+    void refreshEmployees();
+  }, [refreshEmployees]);
 
-  const applySavedReport = (saved: SavedPayrollReport) => {
-    setMeta(saved.report_data.meta);
-    setRows(saved.report_data.rows.map((r) => recalcPayrollRow(r as KdaPayrollReportRow)));
-    setSavedInfo({
-      savedAt: saved.saved_at,
-      savedByEmail: saved.saved_by_email ?? null,
-      reportId: saved.id,
-      approvalStatus: saved.approval_status ?? 'draft',
-      submittedAt: saved.submitted_at ?? null,
-      gmApprovedAt: saved.gm_approved_at ?? null,
-      gmApprovedByName: saved.gm_approved_by_name ?? null,
-      gmApprovalNote: saved.gm_approval_note ?? null,
-      approvedAt: saved.approved_at ?? null,
-      approvedByName: saved.approved_by_name ?? null,
-      approvalNote: saved.approval_note ?? null
+  /** Re-apply on-paper salaries when employee profiles finish loading (generated/punch only) */
+  useEffect(() => {
+    if (!rows.length || Object.keys(employeesById).length === 0) return;
+    if (reportSource === 'saved') return;
+    setRows((prev) => {
+      const next = prev.map((r) => recalcRow(r));
+      const unchanged = next.every(
+        (r, i) =>
+          r.salaryRefund === prev[i].salaryRefund &&
+          r.amountScheduledToPay === prev[i].amountScheduledToPay &&
+          r.onPaperSalaryKwd === (prev[i].onPaperSalaryKwd ?? 0)
+      );
+      return unchanged ? prev : next;
     });
-    setReportSource('saved');
-    setDirty(false);
-  };
+  }, [employeesById, rows.length, recalcRow, reportSource]);
 
   const loadReport = useCallback(async (options?: { forceRegenerate?: boolean }) => {
     if (!companyId) {
       toast.error(t('payroll.companyNotSet'));
       return;
     }
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     try {
+      await refreshEmployees();
+      if (seq !== loadSeqRef.current) return;
+
       const y = parseInt(year, 10);
       const m = parseInt(month, 10);
       const forceRegenerate = options?.forceRegenerate ?? false;
 
       if (!forceRegenerate) {
         const saved = await getSavedPayrollReport(companyId, y, m, department);
+        if (seq !== loadSeqRef.current) return;
         if (saved?.report_data?.meta && Array.isArray(saved?.report_data?.rows)) {
           applySavedReport(saved);
           toast.success(
@@ -235,6 +370,13 @@ export default function PayrollReportTab() {
           );
           return;
         }
+        // Saved payroll only — do not pull shifts/attendance until user rebuilds
+        setMeta(null);
+        setRows([]);
+        setSavedInfo(null);
+        setReportSource(null);
+        setDirty(false);
+        return;
       }
 
       setSavedInfo(null);
@@ -243,6 +385,7 @@ export default function PayrollReportTab() {
         getWorkingDaysInMonthByEmployee(companyId, y, m),
         getActualWorkingDaysFromAttendance(companyId, y, m)
       ]);
+      if (seq !== loadSeqRef.current) return;
       const report = await buildKdaPayrollReport({
         companyId,
         month: m,
@@ -252,27 +395,27 @@ export default function PayrollReportTab() {
         paidLeaveDaysByEmployeeId: leaveDays,
         actualDaysByEmployeeId: actualDaysMap
       });
+      if (seq !== loadSeqRef.current) return;
       setMeta({
         companyName: report.companyName,
         companyNameArabic: report.companyNameArabic,
         periodLabel: report.periodLabel,
         departmentLabel: report.departmentLabel
       });
-      setRows(report.rows);
+      setRows(report.rows.map((row) => recalcRow(row)));
       setDirty(false);
       setReportSource('generated');
-      toast.success(
-        forceRegenerate
-          ? t('payroll.rebuiltPayroll', { count: report.rows.length })
-          : t('payroll.builtPayroll', { count: report.rows.length })
-      );
+      toast.success(t('payroll.rebuiltPayroll', { count: report.rows.length }));
     } catch (e) {
+      if (seq !== loadSeqRef.current) return;
       console.error(e);
       toast.error(t('payroll.loadFailed'));
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) {
+        setLoading(false);
+      }
     }
-  }, [companyId, month, year, department, t]);
+  }, [companyId, month, year, department, t, applySavedReport, recalcRow, refreshEmployees]);
 
   /** Auto-load when month/year/department changes */
   useEffect(() => {
@@ -300,6 +443,8 @@ export default function PayrollReportTab() {
 
     setGeneratingFromPunch(true);
     try {
+      await refreshEmployees();
+
       let combinedText = punchLogText.trim();
       if (punchPdfFiles.length > 0) {
         setExtractingPdf(true);
@@ -366,7 +511,7 @@ export default function PayrollReportTab() {
         periodLabel: report.periodLabel,
         departmentLabel: report.departmentLabel
       });
-      setRows(report.rows.map((row) => recalcPayrollRow(row)));
+      setRows(report.rows.map((row) => recalcRow(row)));
       setDirty(false);
       setReportSource('punch');
 
@@ -401,7 +546,7 @@ export default function PayrollReportTab() {
       setGeneratingFromPunch(false);
       setExtractingPdf(false);
     }
-  }, [companyId, punchLogText, punchPdfFiles, year, month, department, employeesById, t]);
+  }, [companyId, punchLogText, punchPdfFiles, year, month, department, employeesById, t, refreshEmployees, recalcRow]);
 
   const handlePunchPdfFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -445,18 +590,7 @@ export default function PayrollReportTab() {
     setRows((prev) =>
       prev.map((r) =>
         r.employeeId === employeeId
-          ? recalcPayrollRow(r, { paidLeaveDays: Math.max(0, value) })
-          : r
-      )
-    );
-  };
-
-  const updateSalaryRefund = (employeeId: string, value: number) => {
-    setDirty(true);
-    setRows((prev) =>
-      prev.map((r) =>
-        r.employeeId === employeeId
-          ? recalcPayrollRow(r, { salaryRefund: Math.max(0, value) })
+          ? recalcRow(r, { paidLeaveDays: Math.max(0, value) })
           : r
       )
     );
@@ -467,8 +601,8 @@ export default function PayrollReportTab() {
     setRows((prev) =>
       prev.map((r) => {
         if (r.employeeId !== employeeId) return r;
-        return recalcPayrollRow(r, {
-          paidLeaveDays: (r.paidLeaveDays ?? 0) + (r.absentDays ?? 0)
+        return recalcRow(r, {
+          paidLeaveDays: (r.paidLeaveDays ?? 0) + adjustableAbsentDays(r)
         });
       })
     );
@@ -479,7 +613,7 @@ export default function PayrollReportTab() {
     setRows((prev) =>
       prev.map((r) =>
         r.employeeId === employeeId
-          ? recalcPayrollRow(r, { permittedLateDays: Math.max(0, value) })
+          ? recalcRow(r, { permittedLateDays: Math.max(0, value) })
           : r
       )
     );
@@ -487,20 +621,78 @@ export default function PayrollReportTab() {
 
   const moveAbsentToPermittedLate = (employeeId: string) => {
     const row = rows.find((r) => r.employeeId === employeeId);
-    if (!row || (row.absentDays ?? 0) <= 0) return;
+    if (!row || adjustableAbsentDays(row) <= 0) return;
     const qty = parseFloat(permittedLateMoveQty[employeeId] ?? '1') || 0;
     if (qty <= 0) return;
-    const move = Math.min(qty, row.absentDays ?? 0);
+    const move = Math.min(qty, adjustableAbsentDays(row));
     setDirty(true);
     setRows((prev) =>
       prev.map((r) => {
         if (r.employeeId !== employeeId) return r;
-        return recalcPayrollRow(r, {
+        return recalcRow(r, {
           permittedLateDays: (r.permittedLateDays ?? 0) + move
         });
       })
     );
     setPermittedLateMoveQty((prev) => ({ ...prev, [employeeId]: '' }));
+  };
+
+  const updatePermittedLeaveDays = (employeeId: string, value: number) => {
+    setDirty(true);
+    setRows((prev) =>
+      prev.map((r) =>
+        r.employeeId === employeeId
+          ? recalcRow(r, { permittedLeaveDays: Math.max(0, value) })
+          : r
+      )
+    );
+  };
+
+  const moveAbsentToPermittedLeave = (employeeId: string) => {
+    const row = rows.find((r) => r.employeeId === employeeId);
+    if (!row || adjustableAbsentDays(row) <= 0) return;
+    const qty = parseFloat(permittedLeaveMoveQty[employeeId] ?? '1') || 0;
+    if (qty <= 0) return;
+    const move = Math.min(qty, adjustableAbsentDays(row));
+    setDirty(true);
+    setRows((prev) =>
+      prev.map((r) => {
+        if (r.employeeId !== employeeId) return r;
+        return recalcRow(r, {
+          permittedLeaveDays: (r.permittedLeaveDays ?? 0) + move
+        });
+      })
+    );
+    setPermittedLeaveMoveQty((prev) => ({ ...prev, [employeeId]: '' }));
+  };
+
+  const updateUnpermittedLateDays = (employeeId: string, value: number) => {
+    setDirty(true);
+    setRows((prev) =>
+      prev.map((r) =>
+        r.employeeId === employeeId
+          ? recalcRow(r, { unpermittedLateDays: Math.max(0, value) })
+          : r
+      )
+    );
+  };
+
+  const moveAbsentToUnpermittedLate = (employeeId: string) => {
+    const row = rows.find((r) => r.employeeId === employeeId);
+    if (!row || adjustableAbsentDays(row) <= 0) return;
+    const qty = parseFloat(unpermittedLateMoveQty[employeeId] ?? '1') || 0;
+    if (qty <= 0) return;
+    const move = Math.min(qty, adjustableAbsentDays(row));
+    setDirty(true);
+    setRows((prev) =>
+      prev.map((r) => {
+        if (r.employeeId !== employeeId) return r;
+        return recalcRow(r, {
+          unpermittedLateDays: (r.unpermittedLateDays ?? 0) + move
+        });
+      })
+    );
+    setUnpermittedLateMoveQty((prev) => ({ ...prev, [employeeId]: '' }));
   };
 
   const removePayrollRow = (employeeId: string) => {
@@ -543,7 +735,9 @@ export default function PayrollReportTab() {
         gmApprovalNote: saved.gm_approval_note ?? null,
         approvedAt: saved.approved_at ?? null,
         approvedByName: saved.approved_by_name ?? null,
-        approvalNote: saved.approval_note ?? null
+        approvalNote: saved.approval_note ?? null,
+        accountantCompletedAt: saved.accountant_completed_at ?? null,
+        accountantCompletedByName: saved.accountant_completed_by_name ?? null
       });
       setReportSource('saved');
       setDirty(false);
@@ -561,7 +755,118 @@ export default function PayrollReportTab() {
     approvalStatus === 'pending_approval' ||
     approvalStatus === 'pending_gm' ||
     approvalStatus === 'pending_ceo' ||
+    approvalStatus === 'pending_accountant' ||
+    approvalStatus === 'completed' ||
     approvalStatus === 'approved';
+  const hasSavedReport = Boolean(savedInfo?.reportId);
+  const ceoEditUnlocked = isCeoUnlockSessionActive(ceoUnlockSession);
+  /** Saved payroll requires GM OTP before any field edits */
+  const isEditLocked = hasSavedReport && !ceoEditUnlocked;
+  const fullFieldEdit = !isEditLocked;
+
+  useEffect(() => {
+    const reportId = savedInfo?.reportId;
+    if (!reportId || !companyId) {
+      setCeoUnlockSession(null);
+      return;
+    }
+    const stored = loadCeoUnlockSession(reportId);
+    if (!stored) {
+      setCeoUnlockSession(null);
+      return;
+    }
+    void checkPayrollCeoUnlock(companyId, reportId, stored.unlockToken)
+      .then((res) => {
+        if (res.valid) {
+          setCeoUnlockSession(stored);
+        } else {
+          clearCeoUnlockSession(reportId);
+          setCeoUnlockSession(null);
+        }
+      })
+      .catch(() => {
+        setCeoUnlockSession(stored);
+      });
+  }, [savedInfo?.reportId, companyId]);
+
+  const handleSendCeoOtp = useCallback(async () => {
+    if (!companyId || !savedInfo?.reportId) {
+      toast.error(t('payroll.toast.loadFirst'));
+      return;
+    }
+    setCeoOtpSending(true);
+    try {
+      await sendPayrollCeoOtp(companyId, savedInfo.reportId);
+      setCeoOtpSent(true);
+      setCeoOtpValue('');
+      toast.success(t('payroll.toast.gmOtpSent'));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t('payroll.toast.gmOtpSendFailed'));
+    } finally {
+      setCeoOtpSending(false);
+    }
+  }, [companyId, savedInfo?.reportId, t]);
+
+  const handleVerifyCeoOtp = useCallback(async () => {
+    if (!companyId || !savedInfo?.reportId) return;
+    const otp = ceoOtpValue.replace(/\D/g, '');
+    if (otp.length !== 6) {
+      toast.error(t('payroll.toast.gmOtpInvalid'));
+      return;
+    }
+    setCeoOtpVerifying(true);
+    try {
+      const result = await verifyPayrollCeoOtp(companyId, savedInfo.reportId, otp);
+      const session: CeoUnlockSession = {
+        reportId: savedInfo.reportId,
+        unlockToken: result.unlock_token,
+        unlockExpiresAt: result.unlock_expires_at
+      };
+      saveCeoUnlockSession(session);
+      setCeoUnlockSession(session);
+      setCeoOtpDialogOpen(false);
+      setCeoOtpSent(false);
+      setCeoOtpValue('');
+      toast.success(t('payroll.toast.gmUnlockSuccess'));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t('payroll.toast.gmOtpVerifyFailed'));
+    } finally {
+      setCeoOtpVerifying(false);
+    }
+  }, [companyId, savedInfo?.reportId, ceoOtpValue, t]);
+
+  const handleLockPayrollEdits = useCallback(() => {
+    if (savedInfo?.reportId) clearCeoUnlockSession(savedInfo.reportId);
+    setCeoUnlockSession(null);
+    toast.message(t('payroll.toast.gmEditLocked'));
+  }, [savedInfo?.reportId, t]);
+
+  const patchRow = useCallback(
+    (employeeId: string, updates: Partial<KdaPayrollReportRow>) => {
+      setDirty(true);
+      setRows((prev) =>
+        prev.map((r) => {
+          if (r.employeeId !== employeeId) return r;
+          const emp = employeesByIdRef.current[r.employeeId];
+          const basic = readEmployeeBaseSalary(emp, r);
+          if (fullFieldEdit) {
+            return patchPayrollRow(r, updates, {
+              employeeBaseSalaryKwd: updates.basicSalaryKwd ?? basic
+            });
+          }
+          return recalcRow(r, updates);
+        })
+      );
+    },
+    [recalcRow, fullFieldEdit]
+  );
+
+  const patchRowManual = useCallback((employeeId: string, updates: Partial<KdaPayrollReportRow>) => {
+    setDirty(true);
+    setRows((prev) =>
+      prev.map((r) => (r.employeeId === employeeId ? applyManualPayrollRow(r, updates) : r))
+    );
+  }, []);
 
   const handleSubmitForApproval = useCallback(async (format: PayrollApprovalAttachmentFormat) => {
     if (!companyId || !user || !meta || rows.length === 0) {
@@ -601,12 +906,14 @@ export default function PayrollReportTab() {
         year: y,
         month: m,
         department,
+        submittedByEmail: user.email ?? undefined,
+        submittedByUserId: user.id,
         attachmentBase64: attachment.base64,
         attachmentFilename: attachment.filename,
         attachmentMime: attachment.mime
       });
 
-      applySavedReport({
+      applySavedReportStatus({
         ...saved,
         approval_status: 'pending_gm',
         submitted_at: new Date().toISOString(),
@@ -622,7 +929,7 @@ export default function PayrollReportTab() {
     } finally {
       setSubmittingApproval(false);
     }
-  }, [companyId, user, meta, rows, year, month, department, isApprovalLocked, approvalStatus, t]);
+  }, [companyId, user, meta, rows, year, month, department, isApprovalLocked, approvalStatus, t, applySavedReportStatus]);
 
   const canRevertApproval = Boolean(savedInfo?.reportId && approvalStatus !== 'draft');
 
@@ -712,11 +1019,12 @@ export default function PayrollReportTab() {
           {savedInfo?.approvalStatus && savedInfo.approvalStatus !== 'draft' && (
             <Badge
               variant={
-                savedInfo.approvalStatus === 'approved'
+                savedInfo.approvalStatus === 'approved' || savedInfo.approvalStatus === 'completed'
                   ? 'default'
                   : savedInfo.approvalStatus === 'rejected'
                     ? 'destructive'
-                    : savedInfo.approvalStatus === 'pending_ceo'
+                    : savedInfo.approvalStatus === 'pending_ceo' ||
+                        savedInfo.approvalStatus === 'pending_accountant'
                       ? 'outline'
                       : 'secondary'
               }
@@ -790,12 +1098,24 @@ export default function PayrollReportTab() {
             {loading ? <Loader2 className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />}
             {t('payroll.reload')}
           </Button>
-          <Button onClick={handleRegenerate} disabled={busy} variant="outline">
+          <Button onClick={handleRegenerate} disabled={busy || isEditLocked} variant="outline">
             {t('payroll.rebuildFromAttendance')}
           </Button>
           {rows.length > 0 && (
             <>
-              <Button variant="default" onClick={handleSaveReport} disabled={saving || submittingApproval || isApprovalLocked}>
+              {isEditLocked && (
+                <Button variant="default" onClick={() => setCeoOtpDialogOpen(true)} disabled={busy}>
+                  <Lock className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                  {t('payroll.unlockWithGmOtp')}
+                </Button>
+              )}
+              {ceoEditUnlocked && hasSavedReport && (
+                <Button variant="outline" onClick={handleLockPayrollEdits} disabled={busy}>
+                  <LockOpen className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                  {t('payroll.lockEdits')}
+                </Button>
+              )}
+              <Button variant="default" onClick={handleSaveReport} disabled={saving || submittingApproval || isEditLocked}>
                 {saving ? <Loader2 className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0 animate-spin" /> : <Save className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />}
                 {t('payroll.savePayroll')}
               </Button>
@@ -855,6 +1175,27 @@ export default function PayrollReportTab() {
                 {t('payroll.awaitingCeoApproval')}
               </>
             )}
+            {savedInfo.approvalStatus === 'pending_accountant' && savedInfo.approvedAt && (
+              <>
+                {t('payroll.ceoApprovedOn', {
+                  date: new Date(savedInfo.approvedAt).toLocaleString(),
+                  by: savedInfo.approvedByName
+                    ? t('payroll.approvedBy', { name: savedInfo.approvedByName })
+                    : ''
+                })}
+                {t('payroll.awaitingAccountant')}
+              </>
+            )}
+            {savedInfo.approvalStatus === 'completed' && savedInfo.accountantCompletedAt && (
+              <>
+                {t('payroll.accountantCompletedOn', {
+                  date: new Date(savedInfo.accountantCompletedAt).toLocaleString(),
+                  by: savedInfo.accountantCompletedByName
+                    ? t('payroll.accountantCompletedBy', { name: savedInfo.accountantCompletedByName })
+                    : ''
+                })}
+              </>
+            )}
             {savedInfo.approvalStatus === 'approved' && savedInfo.approvedAt && (
               <>
                 {t('payroll.approvedOn', {
@@ -864,6 +1205,19 @@ export default function PayrollReportTab() {
               </>
             )}
             {savedInfo.approvalNote ? t('payroll.approvalNote', { note: savedInfo.approvalNote }) : ''}
+            {ceoEditUnlocked && hasSavedReport && ceoUnlockSession && (
+              <span className="block mt-1 text-amber-700 font-medium">
+                {t('payroll.gmEditModeActive', {
+                  time: new Date(ceoUnlockSession.unlockExpiresAt).toLocaleString()
+                })}
+              </span>
+            )}
+            {isEditLocked && (
+              <span className="block mt-1 text-amber-700 font-medium">{t('payroll.savedEditLockedHint')}</span>
+            )}
+            {!hasSavedReport && rows.length > 0 && (
+              <span className="block mt-1 text-muted-foreground">{t('payroll.unsavedEditHint')}</span>
+            )}
           </p>
         )}
       </Card>
@@ -897,7 +1251,7 @@ export default function PayrollReportTab() {
                   multiple
                   className="hidden"
                   onChange={handlePunchPdfFilesChange}
-                  disabled={busy || isApprovalLocked}
+                  disabled={busy || isEditLocked}
                 />
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -905,7 +1259,7 @@ export default function PayrollReportTab() {
                     variant="outline"
                     size="sm"
                     onClick={() => punchPdfInputRef.current?.click()}
-                    disabled={busy || isApprovalLocked}
+                    disabled={busy || isEditLocked}
                   >
                     <Upload className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />
                     {t('payroll.uploadAttendancePdfBtn')}
@@ -916,7 +1270,7 @@ export default function PayrollReportTab() {
                       variant="outline"
                       size="sm"
                       onClick={() => void handlePreviewPdfExtraction()}
-                      disabled={busy || isApprovalLocked}
+                      disabled={busy || isEditLocked}
                     >
                       {extractingPdf ? (
                         <Loader2 className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0 animate-spin" />
@@ -941,7 +1295,7 @@ export default function PayrollReportTab() {
                           size="icon"
                           className="h-7 w-7 shrink-0"
                           onClick={() => removePunchPdfFile(index)}
-                          disabled={busy || isApprovalLocked}
+                          disabled={busy || isEditLocked}
                           aria-label={t('common.delete')}
                         >
                           <X className="w-4 h-4" />
@@ -960,12 +1314,12 @@ export default function PayrollReportTab() {
                   onChange={(e) => setPunchLogText(e.target.value)}
                   placeholder={t('payroll.pastePunchLogPlaceholder')}
                   className="min-h-[120px] font-mono text-xs"
-                  disabled={busy || isApprovalLocked}
+                  disabled={busy || isEditLocked}
                 />
               </div>
               <Button
                 onClick={() => void handleGenerateFromPunchLog()}
-                disabled={busy || isApprovalLocked || !canGenerateFromPunch}
+                disabled={busy || isEditLocked || !canGenerateFromPunch}
               >
                 {generatingFromPunch ? (
                   <Loader2 className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0 animate-spin" />
@@ -981,6 +1335,17 @@ export default function PayrollReportTab() {
 
       {meta && rows.length > 0 && (
         <>
+          {isEditLocked && (
+            <Card className="rounded-xl border-2 border-amber-500/40 bg-amber-50/80 p-4 shadow-sm dark:bg-amber-950/30">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm font-medium text-amber-900 dark:text-amber-100">{t('payroll.savedEditLockedHint')}</p>
+                <Button onClick={() => setCeoOtpDialogOpen(true)} disabled={busy}>
+                  <Lock className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                  {t('payroll.unlockWithGmOtp')}
+                </Button>
+              </div>
+            </Card>
+          )}
           <div className="flex flex-wrap gap-4">
             <Card className="p-4 flex-1 min-w-[160px] rounded-xl border-2 bg-gradient-to-br from-primary/5 to-transparent border-primary/20 shadow-sm">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('payroll.totalGross')}</p>
@@ -1055,10 +1420,13 @@ export default function PayrollReportTab() {
                     <th rowSpan={2} className="text-center min-w-[90px] border-r border-border/60">{col('joinDate')}</th>
                     <th rowSpan={2} className="text-right min-w-[88px] border-r border-border/60">{col('basicSalary')}</th>
                     <th rowSpan={2} className="text-center min-w-[64px] border-r border-border/60">{col('scheduledDays')}</th>
+                    <th rowSpan={2} className="text-center min-w-[56px] border-r border-border/60">{col('companyHolidayDays')}</th>
                     <th rowSpan={2} className="text-center min-w-[64px] border-r border-border/60">{col('presentDays')}</th>
                     <th rowSpan={2} className="text-center min-w-[72px] border-r border-border/60">{col('absentDays')}</th>
                     <th rowSpan={2} className="text-center min-w-[88px] border-r border-primary/30">{col('paidLeaveDays')}</th>
                     <th rowSpan={2} className="text-center min-w-[88px] border-r border-primary/30">{col('permittedLateDays')}</th>
+                    <th rowSpan={2} className="text-center min-w-[88px] border-r border-primary/30">{col('permittedLeaveDays')}</th>
+                    <th rowSpan={2} className="text-center min-w-[96px] border-r border-primary/30">{col('unpermittedLateDays')}</th>
                     <th rowSpan={2} className="text-right min-w-[80px] border-r border-border/60">{col('absentDeduction')}</th>
                     <th colSpan={6} className="text-center border-r border-primary/30 bg-[#FFF2CC]">{col('grossAccrualMonth')}</th>
                     <th colSpan={4} className="text-center border-r border-primary/30 bg-[#FFF2CC]">{col('deductions')}</th>
@@ -1092,12 +1460,57 @@ export default function PayrollReportTab() {
                       <td className="px-2 py-2 font-mono text-xs align-middle text-center border-r border-border/40">{r.empCode}</td>
                       <td className="px-2 py-2 max-w-[200px] truncate align-middle border-r border-border/40" title={getPayrollEmployeeDisplayName(r, employeesById)}>{getPayrollEmployeeDisplayName(r, employeesById)}</td>
                       <td className="px-2 py-2 text-center align-middle tabular-nums border-r border-border/40">{r.joinDate}</td>
-                      <td className="px-2 py-2 text-right align-middle tabular-nums border-r border-border/40">{formatKwd(r.basicSalaryKwd)}</td>
-                      <td className="px-2 py-2 text-center align-middle tabular-nums border-r border-border/40">{r.workingDaysInMonth}</td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums border-r border-border/40">
+                        <PayrollNumInput
+                          value={r.basicSalaryKwd}
+                          disabled={!fullFieldEdit}
+                          onChange={(v) => patchRow(r.employeeId, { basicSalaryKwd: v })}
+                        />
+                      </td>
+                      <td className="px-2 py-2 text-center align-middle tabular-nums border-r border-border/40">
+                        <PayrollNumInput
+                          value={r.workingDaysInMonth}
+                          step={1}
+                          center
+                          disabled={!fullFieldEdit}
+                          onChange={(v) => patchRow(r.employeeId, { workingDaysInMonth: v })}
+                        />
+                      </td>
                       <td className="px-2 py-2 text-center align-middle border-r border-border/40">
-                        <Badge variant="outline" className="tabular-nums bg-emerald-500/10 text-emerald-700 border-emerald-500/30">
-                          {r.actualWorkingDays}
-                        </Badge>
+                        {fullFieldEdit ? (
+                          <PayrollNumInput
+                            value={r.companyHolidayDays ?? 0}
+                            step={1}
+                            center
+                            onChange={(v) => patchRow(r.employeeId, { companyHolidayDays: v })}
+                          />
+                        ) : (
+                          <Badge
+                            variant="outline"
+                            className={`tabular-nums ${
+                              (r.companyHolidayDays ?? 0) > 0
+                                ? 'bg-sky-500/10 text-sky-700 border-sky-500/30'
+                                : 'bg-muted/30 text-muted-foreground'
+                            }`}
+                            title={t('payroll.attendanceBalanceHint')}
+                          >
+                            {r.companyHolidayDays ?? 0}
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="px-2 py-2 text-center align-middle border-r border-border/40">
+                        {fullFieldEdit ? (
+                          <PayrollNumInput
+                            value={r.actualWorkingDays}
+                            step={1}
+                            center
+                            onChange={(v) => patchRow(r.employeeId, { actualWorkingDays: v })}
+                          />
+                        ) : (
+                          <Badge variant="outline" className="tabular-nums bg-emerald-500/10 text-emerald-700 border-emerald-500/30">
+                            {r.actualWorkingDays}
+                          </Badge>
+                        )}
                       </td>
                       <td className="px-2 py-2 text-center align-middle border-r border-border/40">
                         <div className="flex flex-col items-center gap-1">
@@ -1111,7 +1524,7 @@ export default function PayrollReportTab() {
                           >
                             {r.absentDays}
                           </Badge>
-                          {r.absentDays > 0 && !isApprovalLocked && (
+                          {adjustableAbsentDays(r) > 0 && !isEditLocked && (
                             <div className="flex flex-col items-center gap-0.5">
                               <Button
                                 type="button"
@@ -1128,7 +1541,7 @@ export default function PayrollReportTab() {
                                 <Input
                                   type="number"
                                   min={1}
-                                  max={r.absentDays}
+                                  max={adjustableAbsentDays(r)}
                                   step={1}
                                   placeholder="1"
                                   className="num-input h-6 w-10 px-1 text-[10px] text-center tabular-nums"
@@ -1158,6 +1571,74 @@ export default function PayrollReportTab() {
                                   {t('payroll.moveToPermittedLate')}
                                 </Button>
                               </div>
+                              <div className="flex items-center gap-0.5">
+                                <Input
+                                  type="number"
+                                  min={1}
+                                  max={adjustableAbsentDays(r)}
+                                  step={1}
+                                  placeholder="1"
+                                  className="num-input h-6 w-10 px-1 text-[10px] text-center tabular-nums"
+                                  value={permittedLeaveMoveQty[r.employeeId] ?? ''}
+                                  onChange={(e) =>
+                                    setPermittedLeaveMoveQty((prev) => ({
+                                      ...prev,
+                                      [r.employeeId]: e.target.value
+                                    }))
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      moveAbsentToPermittedLeave(r.employeeId);
+                                    }
+                                  }}
+                                />
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 px-1 text-[10px] text-violet-700 shrink-0"
+                                  onClick={() => moveAbsentToPermittedLeave(r.employeeId)}
+                                  title={t('payroll.moveAbsentToPermittedLeave')}
+                                >
+                                  <ArrowRight className="w-3 h-3 mr-0.5" />
+                                  {t('payroll.moveToPermittedLeave')}
+                                </Button>
+                              </div>
+                              <div className="flex items-center gap-0.5">
+                                <Input
+                                  type="number"
+                                  min={1}
+                                  max={adjustableAbsentDays(r)}
+                                  step={1}
+                                  placeholder="1"
+                                  className="num-input h-6 w-10 px-1 text-[10px] text-center tabular-nums"
+                                  value={unpermittedLateMoveQty[r.employeeId] ?? ''}
+                                  onChange={(e) =>
+                                    setUnpermittedLateMoveQty((prev) => ({
+                                      ...prev,
+                                      [r.employeeId]: e.target.value
+                                    }))
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      moveAbsentToUnpermittedLate(r.employeeId);
+                                    }
+                                  }}
+                                />
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 px-1 text-[10px] text-orange-700 shrink-0"
+                                  onClick={() => moveAbsentToUnpermittedLate(r.employeeId)}
+                                  title={t('payroll.moveAbsentToUnpermittedLate')}
+                                >
+                                  <ArrowRight className="w-3 h-3 mr-0.5" />
+                                  {t('payroll.moveToUnpermittedLate')}
+                                </Button>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1166,10 +1647,11 @@ export default function PayrollReportTab() {
                         <Input
                           type="number"
                           min={0}
-                          step={0.001}
+                          step={1}
+                          title={t('payroll.paidLeaveBecHint')}
                           className="num-input h-8 min-w-[3.5rem] w-full text-center tabular-nums"
                           value={r.paidLeaveDays}
-                          disabled={isApprovalLocked}
+                          disabled={isEditLocked}
                           onChange={(e) =>
                             updatePaidLeaveDays(r.employeeId, parseFloat(e.target.value) || 0)
                           }
@@ -1182,48 +1664,180 @@ export default function PayrollReportTab() {
                           step={1}
                           className="num-input h-8 min-w-[3.5rem] w-full text-center tabular-nums"
                           value={r.permittedLateDays ?? 0}
-                          disabled={isApprovalLocked}
+                          disabled={isEditLocked}
                           onChange={(e) =>
                             updatePermittedLateDays(r.employeeId, parseFloat(e.target.value) || 0)
                           }
                         />
                       </td>
-                      <td className="px-2 py-2 text-right align-middle tabular-nums border-r border-border/40 text-red-600">
-                        {r.absentDeductionKwd > 0 ? `−${formatKwd(r.absentDeductionKwd)}` : '—'}
-                      </td>
-                      <td className="px-2 py-2 text-right align-middle tabular-nums bg-muted/20 border-r border-border/40">{formatKwd(r.salaryKwd)}</td>
-                      <td className="px-2 py-2 text-right align-middle tabular-nums bg-muted/20 border-r border-border/40">{formatKwd(r.paidLeaveKwd)}</td>
-                      <td className="px-2 py-2 text-right align-middle tabular-nums bg-muted/20 border-r border-border/40">{formatKwd(r.overTimeKwd)}</td>
-                      <td className="px-2 py-2 text-right align-middle tabular-nums bg-muted/20 border-r border-border/40">{formatKwd(r.housingAllowanceKwd)}</td>
-                      <td className="px-2 py-2 text-right align-middle tabular-nums bg-muted/20 border-r border-border/40">{formatKwd(r.otherKwd)}</td>
-                      <td className="px-2 py-2 text-right font-medium align-middle tabular-nums border-r border-primary/20">{formatKwd(r.totalGrossKwd)}</td>
-                      <td className="px-2 py-2 text-right align-middle tabular-nums border-r border-border/40">{formatKwd(r.penaltiesKwd)}</td>
-                      <td className="px-2 py-2 text-right align-middle tabular-nums border-r border-border/40">{formatKwd(r.deductionsKwd)}</td>
-                      <td className="px-2 py-2 text-right align-middle tabular-nums border-r border-border/40">{formatKwd(r.loanKwd)}</td>
-                      <td className="px-2 py-2 text-right align-middle tabular-nums border-r border-primary/20">{formatKwd(r.deductionsOtherKwd)}</td>
-                      <td className="px-2 py-2 text-right align-middle tabular-nums font-medium border-r border-border/40">{formatKwd(r.netSalaryKwd)}</td>
-                      <td className="px-2 py-2 align-middle bg-amber-500/15 border-r border-amber-500/30">
+                      <td className="px-2 py-2 align-middle border-r border-primary/20">
                         <Input
                           type="number"
                           min={0}
-                          step={0.001}
-                          className="num-input h-8 min-w-[5rem] w-full text-right tabular-nums bg-background"
-                          value={r.salaryRefund}
-                          disabled={isApprovalLocked}
+                          step={1}
+                          className="num-input h-8 min-w-[3.5rem] w-full text-center tabular-nums"
+                          value={r.permittedLeaveDays ?? 0}
+                          disabled={isEditLocked}
                           onChange={(e) =>
-                            updateSalaryRefund(r.employeeId, parseFloat(e.target.value) || 0)
+                            updatePermittedLeaveDays(r.employeeId, parseFloat(e.target.value) || 0)
                           }
                         />
                       </td>
-                      <td className="px-2 py-2 text-right align-middle tabular-nums font-semibold border-r border-border/40">
-                        {formatKwd(r.amountScheduledToPay)}
+                      <td className="px-2 py-2 align-middle border-r border-primary/20">
+                        <Input
+                          type="number"
+                          min={0}
+                          step={1}
+                          title={t('payroll.unpermittedLateHint')}
+                          className="num-input h-8 min-w-[3.5rem] w-full text-center tabular-nums border-orange-500/30 focus-visible:ring-orange-500/40"
+                          value={r.unpermittedLateDays ?? 0}
+                          disabled={isEditLocked}
+                          onChange={(e) =>
+                            updateUnpermittedLateDays(r.employeeId, parseFloat(e.target.value) || 0)
+                          }
+                        />
                       </td>
-                      <td className="px-2 py-2 align-middle border-r border-border/40">{translatePaymentMethod(r.methodOfPayment, t)}</td>
-                      <td className="px-2 py-2 align-middle text-muted-foreground border-r border-border/40">{r.notes || '—'}</td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums border-r border-border/40 text-red-600">
+                        {fullFieldEdit ? (
+                          <PayrollNumInput
+                            value={r.absentDeductionKwd ?? 0}
+                            onChange={(v) => patchRowManual(r.employeeId, { absentDeductionKwd: v })}
+                          />
+                        ) : r.absentDeductionKwd > 0 ? (
+                          `−${formatKwd(r.absentDeductionKwd)}`
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums bg-muted/20 border-r border-border/40">
+                        <PayrollNumInput
+                          value={r.salaryKwd}
+                          disabled={!fullFieldEdit}
+                          onChange={(v) => patchRowManual(r.employeeId, { salaryKwd: v })}
+                        />
+                      </td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums bg-muted/20 border-r border-border/40">
+                        <PayrollNumInput
+                          value={r.paidLeaveKwd}
+                          disabled={!fullFieldEdit}
+                          onChange={(v) => patchRowManual(r.employeeId, { paidLeaveKwd: v })}
+                        />
+                      </td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums bg-muted/20 border-r border-border/40">
+                        <PayrollNumInput
+                          value={r.overTimeKwd}
+                          disabled={!fullFieldEdit}
+                          onChange={(v) => patchRowManual(r.employeeId, { overTimeKwd: v })}
+                        />
+                      </td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums bg-muted/20 border-r border-border/40">
+                        <PayrollNumInput
+                          value={r.housingAllowanceKwd}
+                          disabled={!fullFieldEdit}
+                          onChange={(v) => patchRowManual(r.employeeId, { housingAllowanceKwd: v })}
+                        />
+                      </td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums bg-muted/20 border-r border-border/40">
+                        <PayrollNumInput
+                          value={r.otherKwd}
+                          disabled={!fullFieldEdit}
+                          onChange={(v) => patchRowManual(r.employeeId, { otherKwd: v })}
+                        />
+                      </td>
+                      <td className="px-2 py-2 text-right font-medium align-middle tabular-nums border-r border-primary/20">
+                        <PayrollNumInput
+                          value={r.totalGrossKwd}
+                          disabled={!fullFieldEdit}
+                          onChange={(v) => patchRowManual(r.employeeId, { totalGrossKwd: v })}
+                        />
+                      </td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums border-r border-border/40">
+                        <PayrollNumInput
+                          value={r.penaltiesKwd}
+                          disabled={!fullFieldEdit}
+                          onChange={(v) => patchRowManual(r.employeeId, { penaltiesKwd: v })}
+                        />
+                      </td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums border-r border-border/40">
+                        <PayrollNumInput
+                          value={r.deductionsKwd}
+                          disabled={!fullFieldEdit}
+                          onChange={(v) => patchRowManual(r.employeeId, { deductionsKwd: v })}
+                        />
+                      </td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums border-r border-border/40">
+                        <PayrollNumInput
+                          value={r.loanKwd}
+                          disabled={!fullFieldEdit}
+                          onChange={(v) => patchRowManual(r.employeeId, { loanKwd: v })}
+                        />
+                      </td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums border-r border-primary/20">
+                        <PayrollNumInput
+                          value={r.deductionsOtherKwd}
+                          disabled={!fullFieldEdit}
+                          onChange={(v) => patchRowManual(r.employeeId, { deductionsOtherKwd: v })}
+                        />
+                      </td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums font-medium border-r border-border/40">
+                        <PayrollNumInput
+                          value={r.netSalaryKwd}
+                          disabled={!fullFieldEdit}
+                          onChange={(v) => patchRowManual(r.employeeId, { netSalaryKwd: v })}
+                        />
+                      </td>
+                      <td
+                        className="px-2 py-2 text-right align-middle tabular-nums bg-amber-500/15 border-r border-amber-500/30"
+                        title={
+                          (r.onPaperSalaryKwd ?? 0) > 0
+                            ? t('payroll.salaryRefundAutoHint', {
+                                onPaper: formatKwd(r.onPaperSalaryKwd ?? 0),
+                                net: formatKwd(r.netSalaryKwd)
+                              })
+                            : t('payroll.salaryRefundNoOnPaper')
+                        }
+                      >
+                        <PayrollNumInput
+                          value={r.salaryRefund}
+                          disabled={!fullFieldEdit}
+                          onChange={(v) => patchRowManual(r.employeeId, { salaryRefund: v })}
+                        />
+                      </td>
+                      <td className="px-2 py-2 text-right align-middle tabular-nums font-semibold border-r border-border/40">
+                        <PayrollNumInput
+                          value={r.amountScheduledToPay}
+                          disabled={!fullFieldEdit}
+                          onChange={(v) => patchRowManual(r.employeeId, { amountScheduledToPay: v })}
+                        />
+                      </td>
+                      <td className="px-2 py-2 align-middle border-r border-border/40">
+                        {fullFieldEdit ? (
+                          <Input
+                            className="h-8 min-w-[7rem]"
+                            value={r.methodOfPayment || ''}
+                            onChange={(e) =>
+                              patchRowManual(r.employeeId, { methodOfPayment: e.target.value })
+                            }
+                          />
+                        ) : (
+                          translatePaymentMethod(r.methodOfPayment, t)
+                        )}
+                      </td>
+                      <td className="px-2 py-2 align-middle text-muted-foreground border-r border-border/40">
+                        {fullFieldEdit ? (
+                          <Input
+                            className="h-8 min-w-[4rem]"
+                            value={r.notes || ''}
+                            onChange={(e) => patchRowManual(r.employeeId, { notes: e.target.value })}
+                          />
+                        ) : (
+                          r.notes || '—'
+                        )}
+                      </td>
                       <td
                         className={`sticky right-0 z-10 px-1 py-2 align-middle text-center border-l border-border/40 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.15)] ${idx % 2 === 1 ? 'bg-muted/20' : 'bg-background'}`}
                       >
-                        {!isApprovalLocked && (
+                        {!isEditLocked && (
                           <Button
                             type="button"
                             variant="ghost"
@@ -1288,6 +1902,66 @@ export default function PayrollReportTab() {
                 <Send className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />
               )}
               {t('payroll.approvalSend')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={ceoOtpDialogOpen}
+        onOpenChange={(open) => {
+          setCeoOtpDialogOpen(open);
+          if (!open) {
+            setCeoOtpSent(false);
+            setCeoOtpValue('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('payroll.gmOtpDialogTitle')}</DialogTitle>
+            <DialogDescription>{t('payroll.gmOtpDialogDesc')}</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col items-center gap-4 py-2">
+            <Button
+              variant="outline"
+              onClick={() => void handleSendCeoOtp()}
+              disabled={ceoOtpSending || ceoOtpVerifying}
+            >
+              {ceoOtpSending ? (
+                <Loader2 className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0 animate-spin" />
+              ) : (
+                <Send className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />
+              )}
+              {ceoOtpSent ? t('payroll.gmOtpResend') : t('payroll.gmOtpSend')}
+            </Button>
+            {ceoOtpSent && (
+              <InputOTP maxLength={6} value={ceoOtpValue} onChange={setCeoOtpValue}>
+                <InputOTPGroup>
+                  <InputOTPSlot index={0} />
+                  <InputOTPSlot index={1} />
+                  <InputOTPSlot index={2} />
+                  <InputOTPSlot index={3} />
+                  <InputOTPSlot index={4} />
+                  <InputOTPSlot index={5} />
+                </InputOTPGroup>
+              </InputOTP>
+            )}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setCeoOtpDialogOpen(false)} disabled={ceoOtpVerifying}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              onClick={() => void handleVerifyCeoOtp()}
+              disabled={!ceoOtpSent || ceoOtpValue.length !== 6 || ceoOtpVerifying}
+            >
+              {ceoOtpVerifying ? (
+                <Loader2 className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0 animate-spin" />
+              ) : (
+                <LockOpen className="w-4 h-4 mr-2 rtl:ml-2 rtl:mr-0" />
+              )}
+              {t('payroll.gmOtpVerify')}
             </Button>
           </DialogFooter>
         </DialogContent>

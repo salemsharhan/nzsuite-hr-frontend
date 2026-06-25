@@ -1138,11 +1138,11 @@ export default function SettingsPage() {
 
                   <div className="mt-4 pt-4 border-t border-white/10 space-y-4">
                     <p className="text-sm text-muted-foreground">
-                      Two-stage WhatsApp approval: payroll is sent to the GM first, then to the CEO after GM approves.
-                      Register both approvers in Task Hub → WhatsApp directory.
+                      WhatsApp workflow: GM → CEO → Accountant. HR receives a status message at each step.
+                      Register all contacts in Task Hub → WhatsApp directory.
                     </p>
 
-                    <h4 className="text-sm font-semibold">GM (first approval)</h4>
+                    <h4 className="text-sm font-semibold pt-2">GM (first approval)</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <label className="text-sm font-medium">GM name</label>
@@ -1176,7 +1176,7 @@ export default function SettingsPage() {
                       </div>
                     </div>
 
-                    <h4 className="text-sm font-semibold pt-2">CEO (final approval)</h4>
+                    <h4 className="text-sm font-semibold pt-2">CEO (second approval)</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <label className="text-sm font-medium">CEO name</label>
@@ -1207,6 +1207,77 @@ export default function SettingsPage() {
                           value={companySettings?.payroll_ceo_approver_wa_jid || ''}
                           onChange={(e) =>
                             setCompanySettings({ ...companySettings!, payroll_ceo_approver_wa_jid: e.target.value })
+                          }
+                          placeholder="965xxxxxxxx@c.us"
+                        />
+                      </div>
+                    </div>
+
+                    <h4 className="text-sm font-semibold pt-2">Accountant (final processing)</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Accountant name</label>
+                        <Input
+                          value={companySettings?.payroll_accountant_name || ''}
+                          onChange={(e) =>
+                            setCompanySettings({ ...companySettings!, payroll_accountant_name: e.target.value })
+                          }
+                          placeholder="e.g. Accountant"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Accountant phone (E.164)</label>
+                        <Input
+                          value={companySettings?.payroll_accountant_phone_e164 || ''}
+                          onChange={(e) =>
+                            setCompanySettings({
+                              ...companySettings!,
+                              payroll_accountant_phone_e164: e.target.value
+                            })
+                          }
+                          placeholder="+965xxxxxxxx"
+                        />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <label className="text-sm font-medium">Accountant WhatsApp JID</label>
+                        <Input
+                          value={companySettings?.payroll_accountant_wa_jid || ''}
+                          onChange={(e) =>
+                            setCompanySettings({ ...companySettings!, payroll_accountant_wa_jid: e.target.value })
+                          }
+                          placeholder="965xxxxxxxx@c.us"
+                        />
+                      </div>
+                    </div>
+
+                    <h4 className="text-sm font-semibold pt-2">HR (status updates)</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">HR name</label>
+                        <Input
+                          value={companySettings?.payroll_hr_name || ''}
+                          onChange={(e) =>
+                            setCompanySettings({ ...companySettings!, payroll_hr_name: e.target.value })
+                          }
+                          placeholder="e.g. HR Officer"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">HR phone (E.164)</label>
+                        <Input
+                          value={companySettings?.payroll_hr_phone_e164 || ''}
+                          onChange={(e) =>
+                            setCompanySettings({ ...companySettings!, payroll_hr_phone_e164: e.target.value })
+                          }
+                          placeholder="+965xxxxxxxx"
+                        />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <label className="text-sm font-medium">HR WhatsApp JID</label>
+                        <Input
+                          value={companySettings?.payroll_hr_wa_jid || ''}
+                          onChange={(e) =>
+                            setCompanySettings({ ...companySettings!, payroll_hr_wa_jid: e.target.value })
                           }
                           placeholder="965xxxxxxxx@c.us"
                         />

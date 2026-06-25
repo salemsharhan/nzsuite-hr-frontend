@@ -45,6 +45,7 @@ interface SupabaseEmployee {
   employment_type?: string;
   salary?: string;
   base_salary?: number;
+  on_paper_salary?: number;
   housing_allowance?: number;
   transport_allowance?: number;
   meal_allowance?: number;
@@ -104,6 +105,7 @@ export interface Employee {
   hireDate?: string;
   salary?: string;
   base_salary?: number;
+  on_paper_salary?: number;
   housing_allowance?: number;
   transport_allowance?: number;
   meal_allowance?: number;
@@ -178,6 +180,7 @@ function mapSupabaseToEmployee(supabaseEmp: any): Employee {
     hireDate: supabaseEmp.join_date,
     salary: supabaseEmp.salary,
     base_salary: supabaseEmp.base_salary,
+    on_paper_salary: supabaseEmp.on_paper_salary,
     housing_allowance: supabaseEmp.housing_allowance,
     transport_allowance: supabaseEmp.transport_allowance,
     meal_allowance: supabaseEmp.meal_allowance,
@@ -244,6 +247,7 @@ function mapEmployeeToSupabase(employee: any): Partial<SupabaseEmployee & { comp
   if (employee.job_id !== undefined) mapped.job_id = employee.job_id;
   if (employee.salary !== undefined) mapped.salary = employee.salary;
   if (employee.base_salary !== undefined) mapped.base_salary = employee.base_salary;
+  if (employee.on_paper_salary !== undefined) mapped.on_paper_salary = employee.on_paper_salary;
   if (employee.housing_allowance !== undefined) mapped.housing_allowance = employee.housing_allowance;
   if (employee.transport_allowance !== undefined) mapped.transport_allowance = employee.transport_allowance;
   if (employee.meal_allowance !== undefined) mapped.meal_allowance = employee.meal_allowance;

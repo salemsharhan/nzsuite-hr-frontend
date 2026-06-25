@@ -25,6 +25,12 @@ export interface CompanySettings {
   payroll_ceo_approver_wa_jid?: string | null;
   payroll_ceo_approver_phone_e164?: string | null;
   payroll_ceo_approver_name?: string | null;
+  payroll_hr_wa_jid?: string | null;
+  payroll_hr_phone_e164?: string | null;
+  payroll_hr_name?: string | null;
+  payroll_accountant_wa_jid?: string | null;
+  payroll_accountant_phone_e164?: string | null;
+  payroll_accountant_name?: string | null;
   taskhub_workspace_user_id?: string | null;
   created_at: string;
   updated_at: string;
@@ -314,6 +320,38 @@ class CompanySettingsService {
   }
 
   // Employee Shifts (Multiple shifts per day)
+  /**
+   * Fetch shifts for many employees in one request (avoids N+1 on payroll rebuild).
+   */
+  async getEmployeeShiftsForEmployees(
+    employeeIds: string[],
+    companyId?: string
+  ): Promise<Record<string, EmployeeShift[]>> {
+    const uniqueIds = [...new Set(employeeIds.filter(Boolean))];
+    const empty = Object.fromEntries(uniqueIds.map((id) => [id, [] as EmployeeShift[]]));
+    if (uniqueIds.length === 0) return {};
+
+    try {
+      let query = `/employee_shifts?employee_id=in.(${uniqueIds.join(',')})&is_active=eq.true&select=*&order=employee_id.asc,day_of_week.asc,start_time.asc`;
+      if (companyId) {
+        query += `&company_id=eq.${companyId}`;
+      }
+      const response = await adminApi.get<EmployeeShift[]>(query);
+      const shifts = Array.isArray(response.data) ? response.data : [];
+      const byEmployee: Record<string, EmployeeShift[]> = { ...empty };
+      for (const shift of shifts) {
+        if (companyId && shift.company_id !== companyId) continue;
+        const empId = shift.employee_id;
+        if (!byEmployee[empId]) byEmployee[empId] = [];
+        byEmployee[empId].push(shift);
+      }
+      return byEmployee;
+    } catch (error) {
+      console.error('Error bulk fetching employee shifts:', error);
+      return empty;
+    }
+  }
+
   /**
    * Get employee shifts by UUID employee_id
    */

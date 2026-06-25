@@ -120,6 +120,7 @@ export default function EmployeeListPage() {
     employment_type: 'Full Time',
     join_date: new Date().toISOString().split('T')[0],
     base_salary: '',
+    on_paper_salary: '',
     work_location: 'Office',
     reporting_manager_id: '',
     
@@ -514,6 +515,7 @@ export default function EmployeeListPage() {
       employment_type: employee.employment_type || employee.employmentType || 'Full Time',
       join_date: employee.join_date || employee.hireDate || new Date().toISOString().split('T')[0],
       base_salary: (employee as any).base_salary || employee.salary || '',
+      on_paper_salary: (employee as any).on_paper_salary ?? '',
       work_location: employee.work_location || 'Office',
       reporting_manager_id: employee.reporting_manager_id || '',
       housing_allowance: (employee as any).housing_allowance || '',
@@ -572,6 +574,9 @@ export default function EmployeeListPage() {
         employee_type: newEmployee.employment_type,
         join_date: newEmployee.join_date || null,
         base_salary: newEmployee.base_salary ? parseFloat(newEmployee.base_salary) : null,
+        on_paper_salary: newEmployee.on_paper_salary
+          ? parseFloat(newEmployee.on_paper_salary)
+          : null,
         housing_allowance: newEmployee.housing_allowance ? parseFloat(newEmployee.housing_allowance) : 0,
         transport_allowance: newEmployee.transport_allowance ? parseFloat(newEmployee.transport_allowance) : 0,
         meal_allowance: newEmployee.meal_allowance ? parseFloat(newEmployee.meal_allowance) : 0,
@@ -733,6 +738,7 @@ export default function EmployeeListPage() {
         employment_type: 'Full Time',
         join_date: new Date().toISOString().split('T')[0],
         base_salary: '',
+        on_paper_salary: '',
         housing_allowance: '',
         transport_allowance: '',
         meal_allowance: '',
@@ -1308,6 +1314,20 @@ export default function EmployeeListPage() {
                     placeholder={t('employees.baseSalaryPlaceholder') || '5000.00'} 
                     className="h-11"
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">{t('employees.onPaperSalary')}</label>
+                  <Input
+                    type="number"
+                    step="0.001"
+                    min={0}
+                    value={newEmployee.on_paper_salary}
+                    onChange={(e) => setNewEmployee({ ...newEmployee, on_paper_salary: e.target.value })}
+                    placeholder={t('employees.onPaperSalaryPlaceholder')}
+                    className="h-11"
+                  />
+                  <p className="text-xs text-muted-foreground">{t('employees.onPaperSalaryHint')}</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-5">
@@ -1988,6 +2008,7 @@ export default function EmployeeListPage() {
                 employment_type: 'Full Time',
                 join_date: new Date().toISOString().split('T')[0],
                 base_salary: '',
+                on_paper_salary: '',
                 work_location: 'Office',
                 reporting_manager_id: '',
                 housing_allowance: '',

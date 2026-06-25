@@ -129,11 +129,11 @@ export default function PayrollManagementPage() {
         </TabsContent>
 
         <TabsContent value="payroll-report">
-          <PayrollReportTab />
+          {activeTab === 'payroll-report' ? <PayrollReportTab /> : null}
         </TabsContent>
 
         <TabsContent value="reports">
-          <ReportsTab />
+          {activeTab === 'reports' ? <ReportsTab /> : null}
         </TabsContent>
       </Tabs>
     </div>

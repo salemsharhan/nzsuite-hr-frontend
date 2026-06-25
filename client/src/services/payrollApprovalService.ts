@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 export interface SubmitPayrollApprovalInput {
   companyId: string;
@@ -34,14 +35,21 @@ async function getAccessToken(): Promise<string> {
 }
 
 export async function submitPayrollForApproval(
-  input: SubmitPayrollApprovalInput
+  input: SubmitPayrollApprovalInput & { submittedByEmail?: string; submittedByUserId?: string }
 ): Promise<SubmitPayrollApprovalResult> {
-  const token = await getAccessToken();
+  let token: string | null = null
+  try {
+    token = await getAccessToken()
+  } catch {
+    token = null
+  }
+
   const res = await fetch(`${SUPABASE_URL}/functions/v1/submit-payroll-approval`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+      ...(SUPABASE_ANON_KEY ? { apikey: SUPABASE_ANON_KEY } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify({
       company_id: input.companyId,
@@ -51,6 +59,8 @@ export async function submitPayrollForApproval(
       department: input.department ?? 'all',
       title: input.title,
       description: input.description,
+      submitted_by_email: input.submittedByEmail,
+      submitted_by_user_id: input.submittedByUserId,
       attachment_base64: input.attachmentBase64,
       attachment_filename: input.attachmentFilename,
       attachment_mime: input.attachmentMime,

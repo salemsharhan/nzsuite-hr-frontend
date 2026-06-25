@@ -35,6 +35,13 @@ export const PAYROLL_TABLE_COLUMNS: PayrollTableColumn[] = [
     format: (r) => r.workingDaysInMonth
   },
   {
+    key: 'companyHolidayDays',
+    headerEn: 'Holidays',
+    headerAr: 'عطل',
+    align: 'center',
+    format: (r) => r.companyHolidayDays ?? 0
+  },
+  {
     key: 'actualWorkingDays',
     headerEn: 'Present',
     headerAr: 'الحضور',
@@ -61,6 +68,20 @@ export const PAYROLL_TABLE_COLUMNS: PayrollTableColumn[] = [
     headerAr: 'تأخير مسموح',
     align: 'center',
     format: (r) => r.permittedLateDays ?? 0
+  },
+  {
+    key: 'permittedLeaveDays',
+    headerEn: 'Permitted leave',
+    headerAr: 'إجازة مسموحة',
+    align: 'center',
+    format: (r) => r.permittedLeaveDays ?? 0
+  },
+  {
+    key: 'unpermittedLateDays',
+    headerEn: 'Unperm. late',
+    headerAr: 'تأخير غير مسموح',
+    align: 'center',
+    format: (r) => r.unpermittedLateDays ?? 0
   },
   {
     key: 'absentDeductionKwd',
@@ -150,7 +171,10 @@ const INTEGER_KEYS = new Set<keyof KdaPayrollReportRow | 'amountScheduledToPay'>
   'actualWorkingDays',
   'paidLeaveDays',
   'permittedLateDays',
+  'permittedLeaveDays',
+  'unpermittedLateDays',
   'workingDaysInMonth',
+  'companyHolidayDays',
   'absentDays'
 ]);
 

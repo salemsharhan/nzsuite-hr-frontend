@@ -48,9 +48,10 @@ export function calcLatePenaltyKwd(
   basicSalaryKwd: number,
   tierPenaltyMinutes: number,
   hoursPerDay: number,
+  monthDivisor: number = PAYROLL_MONTH_DIVISOR,
 ): number {
   if (tierPenaltyMinutes <= 0 || hoursPerDay <= 0 || basicSalaryKwd <= 0) return 0;
-  const monthlyHours = PAYROLL_MONTH_DIVISOR * hoursPerDay;
+  const monthlyHours = monthDivisor * hoursPerDay;
   return Math.round((basicSalaryKwd * (tierPenaltyMinutes / 60) / monthlyHours) * 1000) / 1000;
 }
 
@@ -119,6 +120,8 @@ export interface ComputeLatePenaltiesOptions {
   excludedDates?: Set<string>;
   /** Only count lateness on/after this date (YYYY-MM-DD), e.g. return from overseas */
   countFromDate?: string;
+  /** Salary divisor (26 or 21 for Saturday-off) */
+  monthDivisor?: number;
 }
 
 export function computeLatePenaltiesFromEvents(
@@ -135,6 +138,7 @@ export function computeLatePenaltiesFromEvents(
     excludedDates = new Set(),
     countFromDate,
   } = options;
+  const monthDivisor = options.monthDivisor ?? PAYROLL_MONTH_DIVISOR;
 
   const byDate = new Map<string, AttendancePunchEvent[]>();
   for (const event of events) {
@@ -166,13 +170,13 @@ export function computeLatePenaltiesFromEvents(
     const tierMinutes = latePenaltyTierMinutes(minutesLate);
     if (tierMinutes <= 0) continue;
 
-    const penalty_kwd = calcLatePenaltyKwd(basicSalaryKwd, tierMinutes, hoursPerDay);
+    const penalty_kwd = calcLatePenaltyKwd(basicSalaryKwd, tierMinutes, hoursPerDay, monthDivisor);
     totalTierMinutes += tierMinutes;
     days.push({ date: dateIso, minutes_late: minutesLate, tier_minutes: tierMinutes, penalty_kwd });
   }
 
   days.sort((a, b) => a.date.localeCompare(b.date));
-  const total_kwd = calcLatePenaltyKwd(basicSalaryKwd, totalTierMinutes, hoursPerDay);
+  const total_kwd = calcLatePenaltyKwd(basicSalaryKwd, totalTierMinutes, hoursPerDay, monthDivisor);
   return { total_kwd, days };
 }
 

@@ -5,6 +5,7 @@ import { attendanceService } from './attendanceService';
 import {
   buildKdaPayrollReport,
   getApprovedLeaveDaysForMonth,
+  getApprovedPermittedLeaveDaysForMonth,
   getWorkingDaysInMonthByEmployee,
   getActualWorkingDaysFromAttendance,
   getCompanyHolidaysForMonth,
@@ -15,7 +16,12 @@ import {
 import { employeePayrollMonthService } from './employeePayrollMonthService';
 import { recalcPayrollRow } from '@/utils/payrollRowRecalc';
 import { parsePunchLog } from '@/utils/payrollPunchLogParser';
-import { holidayDatesInPeriod, PAYROLL_LATE_TOLERANCE_MINUTES } from '@/utils/payrollWorkingDays';
+import {
+  holidayDatesInPeriod,
+  PAYROLL_LATE_TOLERANCE_MINUTES,
+  employeeHasSaturdayOff,
+  resolvePayrollMonthDivisor,
+} from '@/utils/payrollWorkingDays';
 import { getPayrollPeriodBounds, formatPayrollPeriodRange, isDateInPayrollPeriod } from '@/utils/payrollPeriod';
 import type { MonthAdjustmentSummary } from '@/utils/payrollMonthAdjustments';
 import { applyMonthAdjustmentsToPayrollRow } from '@/utils/payrollMonthAdjustments';
@@ -282,6 +288,7 @@ export async function generatePayrollWithAi(
     settings,
     holidays,
     leaveDays,
+    permittedLeaveDays,
     workingDaysMap,
     actualDaysMap,
     shiftsByEmployeeId,
@@ -293,6 +300,7 @@ export async function generatePayrollWithAi(
     companySettingsService.getCompanySettings(companyId),
     getCompanyHolidaysForMonth(companyId, year, month),
     getApprovedLeaveDaysForMonth(companyId, year, month),
+    getApprovedPermittedLeaveDaysForMonth(companyId, year, month),
     getWorkingDaysInMonthByEmployee(companyId, year, month),
     getActualWorkingDaysFromAttendance(companyId, year, month),
     getEmployeeShiftsByEmployeeId(companyId),
@@ -439,6 +447,10 @@ export async function generatePayrollWithAi(
       const shifts = shiftsByEmployeeId[emp.id] ?? [];
       const hoursPerDay = resolveHoursPerDay(shifts, defaultHours);
       const basic = Number(emp.base_salary ?? emp.salary ?? 0) || 0;
+      const scheduled = workingDaysMap[emp.id] ?? 26;
+      const monthDivisor = resolvePayrollMonthDivisor(scheduled, {
+        saturdayOff: employeeHasSaturdayOff(shifts),
+      });
 
       const { total_kwd } = computeLatePenaltiesFromPunchText(punchText, {
         period,
@@ -449,6 +461,7 @@ export async function generatePayrollWithAi(
         holidayDates,
         excludedDates,
         countFromDate: monthHr?.late_penalty_count_from,
+        monthDivisor,
       });
 
       lateDeductionByEmpId[emp.id] = total_kwd;
@@ -462,6 +475,7 @@ export async function generatePayrollWithAi(
     department: deptFilter,
     workingDaysByEmployeeId: workingDaysMap,
     paidLeaveDaysByEmployeeId: leaveDays,
+    permittedLeaveDaysByEmployeeId: permittedLeaveDays,
     actualDaysByEmployeeId: punchText ? punchPresentByEmp : actualDaysMap,
     missingAttendanceDefaultsToFullPresent: Boolean(punchText),
   });

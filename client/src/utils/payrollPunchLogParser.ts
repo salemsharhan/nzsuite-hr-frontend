@@ -137,7 +137,11 @@ function isPresentDay(
   const dayOfWeek = new Date(`${dateIso}T12:00:00`).getDay();
   const dayShifts = shifts.filter((s) => s.day_of_week === dayOfWeek && s.start_time);
 
-  if (dayShifts.length === 0) return valid.length > 0;
+  // Rest day for this employee (e.g. Saturday off) — punches do not count as present
+  if (dayShifts.length === 0) {
+    if (shifts.length > 0) return false;
+    return valid.length > 0;
+  }
 
   const { starts: shiftStarts, ends: shiftEnds } = uniqueShiftTimes(dayShifts);
   if (shiftStarts.length === 0) return valid.length > 0;
@@ -406,6 +410,11 @@ export function parsePunchLog(
     if (byDate) {
       const shifts = uuid ? shiftsByEmployeeId[uuid] ?? [] : [];
       for (const [dateIso, dayEvents] of Array.from(byDate.entries())) {
+        if (shifts.length > 0) {
+          const dayOfWeek = new Date(`${dateIso}T12:00:00`).getDay();
+          const onScheduledDay = shifts.some((s) => s.day_of_week === dayOfWeek);
+          if (!onScheduledDay) continue;
+        }
         if (isPresentDay(dayEvents, shifts, dateIso, lateToleranceMinutes)) days++;
       }
     }

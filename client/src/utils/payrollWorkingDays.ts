@@ -1,4 +1,38 @@
 import { eachDateInPayrollPeriod, type PayrollPeriodBounds } from './payrollPeriod';
+import {
+  PAYROLL_MONTH_DIVISOR,
+  PAYROLL_SATURDAY_OFF_DIVISOR,
+} from './payrollTemplate';
+
+/** Saturday = 6 (Date.getDay). True when shift exists and has no Saturday work day. */
+export function employeeHasSaturdayOff(shifts: { day_of_week: number }[]): boolean {
+  if (shifts.length === 0) return false;
+  return !shifts.some((s) => s.day_of_week === 6);
+}
+
+/**
+ * Salary daily-rate divisor: 21 for Saturday-off shifts, else 26.
+ * Falls back to inferring from scheduled days on legacy rows without stored divisor.
+ */
+export function resolvePayrollMonthDivisor(
+  workingDaysInMonth: number,
+  options: { saturdayOff?: boolean; storedDivisor?: number } = {}
+): number {
+  if (options.storedDivisor != null && options.storedDivisor > 0) {
+    return options.storedDivisor;
+  }
+  if (options.saturdayOff) {
+    return PAYROLL_SATURDAY_OFF_DIVISOR;
+  }
+  if (
+    workingDaysInMonth > 0 &&
+    workingDaysInMonth < PAYROLL_MONTH_DIVISOR &&
+    workingDaysInMonth <= PAYROLL_SATURDAY_OFF_DIVISOR + 1
+  ) {
+    return PAYROLL_SATURDAY_OFF_DIVISOR;
+  }
+  return PAYROLL_MONTH_DIVISOR;
+}
 
 /** Grace period before a check-in is treated as late in payroll (minutes after shift start). */
 export const PAYROLL_LATE_TOLERANCE_MINUTES = 15;

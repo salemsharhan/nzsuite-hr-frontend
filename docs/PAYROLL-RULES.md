@@ -70,11 +70,18 @@ Absent = max(0, Scheduled − Present − Holidays − Paid leave − Permitted 
 
 ### Daily rate divisor (BEC)
 
-Always **26** (`PAYROLL_MONTH_DIVISOR`), not the scheduled-day count in the period.
+| Schedule | Divisor |
+|----------|---------|
+| **Mon–Sat** (default) | **26** |
+| **Saturday off** (Sun–Fri shift) | **21** |
+
+Detected from employee shift: no `day_of_week = 6` (Saturday) → use **21**.
 
 ```
-Daily rate = Basic salary ÷ 26
+Daily rate = Basic salary ÷ divisor
 ```
+
+Full basic when `(Present + Holidays + Permitted sick/leave + Paid leave days)` equals the divisor (21 or 26).
 
 ---
 

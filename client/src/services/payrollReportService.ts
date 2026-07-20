@@ -8,7 +8,9 @@ import { PAYROLL_MONTH_DIVISOR, calcBecSalaryParts, calcSalaryRefundKwd, resolve
 import {
   countScheduledDaysInPeriod,
   countCompanyHolidayDaysInPeriod,
-  holidayDatesInPeriod
+  holidayDatesInPeriod,
+  employeeHasSaturdayOff,
+  resolvePayrollMonthDivisor,
 } from '@/utils/payrollWorkingDays';
 import {
   getPayrollPeriodBounds,
@@ -23,9 +25,30 @@ export { getPayrollPeriodBounds, formatPayrollPeriodRange, type PayrollPeriodBou
 /** Default working days per month — matches Excel template divisor (e.g. =E6/26*F6) */
 const DEFAULT_WORKING_DAYS = PAYROLL_MONTH_DIVISOR;
 
+/** Approved leave types that add extra salary days (Paid Leave KWD column). Sick/unpaid are excluded. */
+export function isPaidSalaryLeaveType(leaveType: string): boolean {
+  const t = leaveType.trim().toLowerCase();
+  if (!t) return false;
+  if (
+    /sick|unpaid|without\s*pay|emergency|مرض|غير\s*مدفوع|طارئ/.test(t)
+  ) {
+    return false;
+  }
+  if (/annual|vacation|personal|marriage|haj|bereavement|paternity|سنوية|مدفوعة/.test(t)) {
+    return true;
+  }
+  return false;
+}
+
 /**
- * Get number of days that a leave range overlaps with a payroll period.
+ * Sick / emergency approved leave — excused, full pay (permitted leave column), not paid-leave KWD.
  */
+export function isPermittedExcusedLeaveType(leaveType: string): boolean {
+  const t = leaveType.trim().toLowerCase();
+  if (!t) return false;
+  return /sick|emergency|مرض|طارئ/.test(t);
+}
+
 function daysOverlappingPeriod(
   startDate: string,
   endDate: string,
@@ -61,6 +84,33 @@ export async function getApprovedLeaveDaysForMonth(
   });
   const byEmployee: Record<string, number> = {};
   for (const req of requests) {
+    if (!isPaidSalaryLeaveType(req.leave_type ?? '')) continue;
+    const days = daysOverlappingPeriod(req.start_date, req.end_date, period);
+    const id = req.employee_id;
+    byEmployee[id] = (byEmployee[id] || 0) + days;
+  }
+  return byEmployee;
+}
+
+/**
+ * Approved sick / emergency leave days per employee (permitted leave — full pay, no absent cut).
+ */
+export async function getApprovedPermittedLeaveDaysForMonth(
+  companyId: string,
+  year: number,
+  month: number
+): Promise<Record<string, number>> {
+  const period = getPayrollPeriodBounds(year, month);
+  const requests = await leaveService.getAll({
+    companyId,
+    status: 'Approved',
+    date_from: period.periodStart,
+    date_to: period.periodEnd,
+    limit: 2000
+  });
+  const byEmployee: Record<string, number> = {};
+  for (const req of requests) {
+    if (!isPermittedExcusedLeaveType(req.leave_type ?? '')) continue;
     const days = daysOverlappingPeriod(req.start_date, req.end_date, period);
     const id = req.employee_id;
     byEmployee[id] = (byEmployee[id] || 0) + days;
@@ -104,6 +154,7 @@ export async function getActualWorkingDaysFromAttendance(
     dateFrom: period.periodStart,
     dateTo: period.periodEnd
   });
+  const { shiftsByEmp } = await getEmployeeShiftsMapForCompany(companyId);
   const byEmployee: Record<string, number> = {};
   const seen = new Map<string, Set<string>>();
   for (const log of response.data) {
@@ -112,7 +163,17 @@ export async function getActualWorkingDaysFromAttendance(
     if (!empId || !date) continue;
     if (!isDateInPayrollPeriod(date, period)) continue;
     if (holidays.has(date)) continue;
-    if (log.status === 'Late' || log.status === 'Absent') continue;
+    if (log.status === 'Absent' || log.status === 'Leave') continue;
+    // Late counts as present for salary; lateness is handled in deductions column
+    if (log.status !== 'Present' && log.status !== 'Late') continue;
+
+    const shifts = shiftsByEmp[empId] ?? [];
+    if (shifts.length > 0) {
+      const dayOfWeek = new Date(`${date}T12:00:00`).getDay();
+      const onScheduledDay = shifts.some((s) => s.day_of_week === dayOfWeek);
+      if (!onScheduledDay) continue;
+    }
+
     if (!seen.has(empId)) seen.set(empId, new Set());
     seen.get(empId)!.add(date);
   }
@@ -216,6 +277,8 @@ export interface KdaPayrollReportRow {
   nameArabicEnglish: string;
   joinDate: string;
   basicSalaryKwd: number;
+  /** Daily-rate divisor for salary (26 Mon–Sat, 21 Saturday off) */
+  payrollMonthDivisor: number;
   workingDaysInMonth: number; // scheduled days from shift
   actualWorkingDays: number;  // present days from attendance
   /** Company holidays on working days — paid, not counted as absent */
@@ -276,6 +339,8 @@ export interface KdaPayrollReportInput {
   workingDaysByEmployeeId?: Record<string, number>;
   /** Paid leave days per employee for this month (optional; default 0) */
   paidLeaveDaysByEmployeeId?: Record<string, number>;
+  /** Sick / emergency approved leave — permitted leave, full pay (optional; default 0) */
+  permittedLeaveDaysByEmployeeId?: Record<string, number>;
   /** Actual days present from attendance API (optional); when set, used for actualWorkingDays */
   actualDaysByEmployeeId?: Record<string, number>;
   /** When set, only these employee UUIDs appear in the report (e.g. attendance import) */
@@ -339,6 +404,7 @@ export async function buildKdaPayrollReport(input: KdaPayrollReportInput): Promi
   rows: KdaPayrollReportRow[];
 }> {
   const paidLeaveByEmp = input.paidLeaveDaysByEmployeeId ?? {};
+  const permittedLeaveByEmp = input.permittedLeaveDaysByEmployeeId ?? {};
   const actualDaysByEmp = input.actualDaysByEmployeeId ?? {};
   const paymentMethodByEmp = input.paymentMethodByEmployeeId ?? {};
   const returnAmountByEmp = input.returnAmountByEmployeeId ?? {};
@@ -349,6 +415,7 @@ export async function buildKdaPayrollReport(input: KdaPayrollReportInput): Promi
     input.year,
     input.month
   );
+  const shiftsByEmp = await getEmployeeShiftsByEmployeeId(input.companyId);
 
   let companyName = '';
   let companyNameArabic = '';
@@ -388,6 +455,8 @@ export async function buildKdaPayrollReport(input: KdaPayrollReportInput): Promi
   const rows: KdaPayrollReportRow[] = list.map((emp, index) => {
     const baseSalary = Number(emp.base_salary ?? emp.salary ?? 0) || 0;
     const workingDaysInMonth = workingDaysByEmp[emp.id] ?? input.workingDays ?? DEFAULT_WORKING_DAYS;
+    const saturdayOff = employeeHasSaturdayOff(shiftsByEmp[emp.id] ?? []);
+    const payrollMonthDivisor = resolvePayrollMonthDivisor(workingDaysInMonth, { saturdayOff });
     const companyHolidayDays = companyHolidayByEmp[emp.id] ?? 0;
     const paidLeaveDays = paidLeaveByEmp[emp.id] ?? 0;
     const attendanceProvided = input.actualDaysByEmployeeId !== undefined;
@@ -400,7 +469,7 @@ export async function buildKdaPayrollReport(input: KdaPayrollReportInput): Promi
             ? 0
             : Math.max(0, workingDaysInMonth - paidLeaveDays - companyHolidayDays);
     const permittedLateDays = 0;
-    const permittedLeaveDays = 0;
+    const permittedLeaveDays = permittedLeaveByEmp[emp.id] ?? 0;
     const unpermittedLateDays = 0;
     const absentDays = Math.max(
       0,
@@ -412,15 +481,16 @@ export async function buildKdaPayrollReport(input: KdaPayrollReportInput): Promi
         permittedLeaveDays -
         unpermittedLateDays
     );
-    const dailyRate =
-      DEFAULT_WORKING_DAYS > 0 ? baseSalary / DEFAULT_WORKING_DAYS : 0;
+    const dailyRate = payrollMonthDivisor > 0 ? baseSalary / payrollMonthDivisor : 0;
     const absentDeductionKwd = round3(dailyRate * absentDays);
     const { salaryKwd, paidLeaveKwd } = calcBecSalaryParts(
       baseSalary,
       actualWorkingDays,
       paidLeaveDays,
       unpermittedLateDays,
-      companyHolidayDays
+      companyHolidayDays,
+      permittedLeaveDays,
+      payrollMonthDivisor
     );
     const overTimeKwd = 0;
     const housingAllowanceKwd = Number(emp.housing_allowance ?? 0) || 0;
@@ -453,6 +523,7 @@ export async function buildKdaPayrollReport(input: KdaPayrollReportInput): Promi
       nameArabicEnglish: getNameArabicEnglish(emp),
       joinDate: formatJoinDate(emp.join_date || emp.hireDate),
       basicSalaryKwd: baseSalary,
+      payrollMonthDivisor,
       workingDaysInMonth,
       actualWorkingDays,
       companyHolidayDays,

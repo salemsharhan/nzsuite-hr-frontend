@@ -7,6 +7,7 @@ import {
   dailySalaryKwd,
   resolveOnPaperSalaryKwd
 } from './payrollTemplate';
+import { resolvePayrollMonthDivisor } from './payrollWorkingDays';
 
 function round3(n: number): number {
   return Math.round(n * 1000) / 1000;
@@ -24,6 +25,9 @@ export function recalcPayrollRow(
   const basicSalaryKwd =
     options.employeeBaseSalaryKwd ?? next.basicSalaryKwd ?? 0;
   const scheduled = next.workingDaysInMonth ?? PAYROLL_MONTH_DIVISOR;
+  const monthDivisor = resolvePayrollMonthDivisor(scheduled, {
+    storedDivisor: next.payrollMonthDivisor,
+  });
   const present = next.actualWorkingDays ?? 0;
   const companyHolidayDays = Math.max(0, next.companyHolidayDays ?? 0);
   const paidLeave = Math.max(0, next.paidLeaveDays ?? 0);
@@ -38,7 +42,7 @@ export function recalcPayrollRow(
   unpermittedLate = Math.min(unpermittedLate, remaining);
   remaining = Math.max(0, remaining - unpermittedLate);
   const absent = remaining;
-  const daily = dailySalaryKwd(basicSalaryKwd);
+  const daily = dailySalaryKwd(basicSalaryKwd, monthDivisor);
   const absentDeductionKwd = round3(
     daily * absent + daily * PAYROLL_UNPERMITTED_LATE_DAY_FRACTION * unpermittedLate
   );
@@ -47,7 +51,9 @@ export function recalcPayrollRow(
     present,
     paidLeave,
     unpermittedLate,
-    companyHolidayDays
+    companyHolidayDays,
+    permittedLeave,
+    monthDivisor
   );
 
   const totalGrossKwd = round3(
@@ -71,6 +77,7 @@ export function recalcPayrollRow(
   return {
     ...next,
     basicSalaryKwd,
+    payrollMonthDivisor: monthDivisor,
     paidLeaveDays: paidLeave,
     permittedLateDays: permittedLate,
     permittedLeaveDays: permittedLeave,

@@ -48,6 +48,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import {
   buildKdaPayrollReport,
   getApprovedLeaveDaysForMonth,
+  getApprovedPermittedLeaveDaysForMonth,
   getWorkingDaysInMonthByEmployee,
   getActualWorkingDaysFromAttendance,
   getCompanyHolidaysForMonth,
@@ -426,8 +427,10 @@ export default function PayrollReportTab() {
       }
 
       setSavedInfo(null);
-      const [leaveDays, workingDaysMap, actualDaysMap, monthAdjustments] = await Promise.all([
+      const [leaveDays, permittedLeaveDays, workingDaysMap, actualDaysMap, monthAdjustments] =
+        await Promise.all([
         getApprovedLeaveDaysForMonth(companyId, y, m),
+        getApprovedPermittedLeaveDaysForMonth(companyId, y, m),
         getWorkingDaysInMonthByEmployee(companyId, y, m),
         getActualWorkingDaysFromAttendance(companyId, y, m),
         employeePayrollMonthService.getSummariesByCompanyMonth(companyId, y, m),
@@ -440,6 +443,7 @@ export default function PayrollReportTab() {
         department: department === 'all' ? undefined : department,
         workingDaysByEmployeeId: workingDaysMap,
         paidLeaveDaysByEmployeeId: leaveDays,
+        permittedLeaveDaysByEmployeeId: permittedLeaveDays,
         actualDaysByEmployeeId: actualDaysMap,
         monthAdjustmentsByEmployeeId: monthAdjustments,
       });
@@ -535,8 +539,9 @@ export default function PayrollReportTab() {
         return;
       }
 
-      const [leaveDays, workingDaysMap, monthAdjustments] = await Promise.all([
+      const [leaveDays, permittedLeaveDays, workingDaysMap, monthAdjustments] = await Promise.all([
         getApprovedLeaveDaysForMonth(companyId, y, m),
+        getApprovedPermittedLeaveDaysForMonth(companyId, y, m),
         getWorkingDaysInMonthByEmployee(companyId, y, m),
         employeePayrollMonthService.getSummariesByCompanyMonth(companyId, y, m),
       ]);
@@ -548,6 +553,7 @@ export default function PayrollReportTab() {
         department: department === 'all' ? undefined : department,
         workingDaysByEmployeeId: workingDaysMap,
         paidLeaveDaysByEmployeeId: leaveDays,
+        permittedLeaveDaysByEmployeeId: permittedLeaveDays,
         actualDaysByEmployeeId: parseResult.actualDaysByEmployeeId,
         missingAttendanceDefaultsToFullPresent: true,
         monthAdjustmentsByEmployeeId: monthAdjustments,

@@ -42,6 +42,16 @@ const statusConfig: Record<string, { bg: string; text: string; border: string }>
     bg: 'bg-gray-500/10',
     text: 'text-gray-500',
     border: 'border-gray-500/20'
+  },
+  'Pending_GM': {
+    bg: 'bg-blue-500/10',
+    text: 'text-blue-500',
+    border: 'border-blue-500/20'
+  },
+  'On_Hold': {
+    bg: 'bg-orange-500/10',
+    text: 'text-orange-500',
+    border: 'border-orange-500/20'
   }
 };
 

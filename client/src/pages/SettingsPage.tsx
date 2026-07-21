@@ -1138,11 +1138,12 @@ export default function SettingsPage() {
 
                   <div className="mt-4 pt-4 border-t border-white/10 space-y-4">
                     <p className="text-sm text-muted-foreground">
-                      WhatsApp workflow: GM → CEO → Accountant. HR receives a status message at each step.
+                      Shared WhatsApp contacts for payroll, leave, and HR→GM approvals.
+                      Workflow (payroll): GM → CEO → Accountant. Leave: employee → HR → optional GM.
                       Register all contacts in Task Hub → WhatsApp directory.
                     </p>
 
-                    <h4 className="text-sm font-semibold pt-2">GM (first approval)</h4>
+                    <h4 className="text-sm font-semibold pt-2">GM (payroll + leave / HR approvals)</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <label className="text-sm font-medium">GM name</label>
@@ -1250,7 +1251,7 @@ export default function SettingsPage() {
                       </div>
                     </div>
 
-                    <h4 className="text-sm font-semibold pt-2">HR (status updates)</h4>
+                    <h4 className="text-sm font-semibold pt-2">HR (payroll status + new leave alerts)</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <label className="text-sm font-medium">HR name</label>

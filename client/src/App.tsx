@@ -27,6 +27,7 @@ import EmployeeDashboard from "./pages/EmployeeDashboard";
 import MyRequestsPage from "./pages/MyRequestsPage";
 import MyPayslipsPage from "./pages/MyPayslipsPage";
 import LeaveManagementPage from "./pages/LeaveManagementPage";
+import HrApprovalsPage from "./pages/HrApprovalsPage";
 import EmployeeLeavesPage from "./pages/EmployeeLeavesPage";
 import EmployeeProfilePage from "./pages/EmployeeProfilePage";
 import DocumentRequestsPage from "./pages/DocumentRequestsPage";
@@ -60,6 +61,7 @@ function Router() {
             <Route path="/payroll" component={PayrollPage} />
             <Route path="/setup" component={SetupPage} />
             <Route path="/leaves" component={LeaveManagementPage} />
+            <Route path="/approvals" component={HrApprovalsPage} />
             <Route path="/recruitment" component={RecruitmentPage} />
             <Route path="/ess" component={ESSPage} />
             <Route path="/self-service" component={EmployeeDashboard} />

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Filter, Download, Plus, CheckCircle, XCircle, Eye } from 'lucide-react';
+import { Search, Filter, Download, Plus, CheckCircle, XCircle, Eye, Forward } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,9 +10,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { leaveService, LeaveRequest } from '@/services/leaveService';
+import { submitHrApproval, fileToBase64 } from '@/services/hrApprovalService';
 import { useAuth } from '@/contexts/AuthContext';
 import { getEmployeeDisplayName } from '@/utils/employeeName';
 import { toast } from 'sonner';
+
+type LeaveStatus = 'Pending' | 'Pending_GM' | 'On_Hold' | 'Approved' | 'Rejected';
 
 // Interface for display
 interface DisplayLeaveRequest {
@@ -23,6 +26,7 @@ interface DisplayLeaveRequest {
     name: string; 
     department: string; 
     avatar?: string;
+    companyId?: string;
     reportingManager?: {
       id: string;
       name: string;
@@ -33,11 +37,12 @@ interface DisplayLeaveRequest {
   endDate: string;
   duration: number;
   reason: string;
-  status: 'Pending' | 'Approved' | 'Rejected';
+  status: LeaveStatus;
   submittedAt: string;
   reviewedAt?: string;
   reviewedBy?: string;
   reviewComments?: string;
+  gmNote?: string;
   attachments?: Array<{ name: string; url: string }>;
 }
 
@@ -75,6 +80,7 @@ function mapLeaveRequestToDisplay(request: LeaveRequest): DisplayLeaveRequest {
       name: employeeName,
       department: request.employees?.department || 'N/A',
       avatar: request.employees?.avatar_url,
+      companyId: request.employees?.company_id,
       reportingManager: request.employees?.reporting_manager ? {
         id: request.employees.reporting_manager.id,
         name: reportingManagerName
@@ -90,6 +96,7 @@ function mapLeaveRequestToDisplay(request: LeaveRequest): DisplayLeaveRequest {
     reason: request.reason || '',
     status: request.status,
     submittedAt: new Date(request.created_at).toLocaleString(),
+    gmNote: request.gm_note || undefined,
     attachments: []
   };
 }
@@ -108,7 +115,7 @@ export default function LeaveRequestsTab({ onRequestUpdated }: LeaveRequestsTabP
   
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'Pending' | 'Approved' | 'Rejected' | 'all'>('all');
+  const [statusFilter, setStatusFilter] = useState<LeaveStatus | 'all'>('all');
   const [leaveTypeFilter, setLeaveTypeFilter] = useState('all');
   const [dateFromFilter, setDateFromFilter] = useState('');
   const [dateToFilter, setDateToFilter] = useState('');
@@ -116,9 +123,13 @@ export default function LeaveRequestsTab({ onRequestUpdated }: LeaveRequestsTabP
   const [selectedRequests, setSelectedRequests] = useState<string[]>([]);
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [actionModalOpen, setActionModalOpen] = useState(false);
+  const [gmModalOpen, setGmModalOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<DisplayLeaveRequest | null>(null);
   const [actionType, setActionType] = useState<'approve' | 'reject'>('approve');
   const [actionComments, setActionComments] = useState('');
+  const [gmNote, setGmNote] = useState('');
+  const [gmFile, setGmFile] = useState<File | null>(null);
+  const [gmSubmitting, setGmSubmitting] = useState(false);
 
   useEffect(() => {
     loadRequests();
@@ -200,7 +211,9 @@ export default function LeaveRequestsTab({ onRequestUpdated }: LeaveRequestsTabP
     
     try {
       const newStatus = actionType === 'approve' ? 'Approved' : 'Rejected';
-      await leaveService.updateStatus(selectedRequest.id, newStatus);
+      await leaveService.updateStatus(selectedRequest.id, newStatus, {
+        hr_note: actionComments || undefined,
+      });
       
       // Update local state
       setRequests(
@@ -228,6 +241,61 @@ export default function LeaveRequestsTab({ onRequestUpdated }: LeaveRequestsTabP
     } catch (error) {
       console.error('Error updating leave status:', error);
       toast.error(`Failed to ${actionType} leave request`);
+    }
+  };
+
+  const handleOpenGmForward = (request: DisplayLeaveRequest) => {
+    setSelectedRequest(request);
+    setGmNote('');
+    setGmFile(null);
+    setGmModalOpen(true);
+  };
+
+  const handleSubmitGmForward = async () => {
+    if (!selectedRequest) return;
+    const companyId = selectedRequest.employee.companyId || user?.company_id;
+    if (!companyId) {
+      toast.error('Company not found for this employee');
+      return;
+    }
+    try {
+      setGmSubmitting(true);
+      let attachment: { base64: string; filename: string; mime: string } | undefined;
+      if (gmFile) {
+        attachment = await fileToBase64(gmFile);
+      }
+      await submitHrApproval({
+        companyId,
+        title: `Leave: ${selectedRequest.employee.name} — ${selectedRequest.leaveType.name}`,
+        body: [
+          `Employee: ${selectedRequest.employee.name}`,
+          `Type: ${selectedRequest.leaveType.name}`,
+          `From: ${selectedRequest.startDate}`,
+          `To: ${selectedRequest.endDate}`,
+          `Reason: ${selectedRequest.reason || '—'}`,
+          gmNote ? `HR note: ${gmNote}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n'),
+        source: 'leave',
+        leaveRequestId: selectedRequest.id,
+        hrCreatedBy: user?.id,
+        attachmentBase64: attachment?.base64,
+        attachmentFilename: attachment?.filename,
+        attachmentMime: attachment?.mime,
+      });
+      setRequests(
+        requests.map((req) =>
+          req.id === selectedRequest.id ? { ...req, status: 'Pending_GM' as LeaveStatus } : req,
+        ),
+      );
+      toast.success('Forwarded to GM for approval');
+      setGmModalOpen(false);
+      if (onRequestUpdated) onRequestUpdated();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to forward to GM');
+    } finally {
+      setGmSubmitting(false);
     }
   };
 
@@ -301,7 +369,9 @@ export default function LeaveRequestsTab({ onRequestUpdated }: LeaveRequestsTabP
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="Pending">Pending</SelectItem>
+              <SelectItem value="Pending">Pending (HR)</SelectItem>
+              <SelectItem value="Pending_GM">Pending GM</SelectItem>
+              <SelectItem value="On_Hold">On Hold</SelectItem>
               <SelectItem value="Approved">Approved</SelectItem>
               <SelectItem value="Rejected">Rejected</SelectItem>
             </SelectContent>
@@ -474,7 +544,16 @@ export default function LeaveRequestsTab({ onRequestUpdated }: LeaveRequestsTabP
                               <XCircle className="w-3 h-3 mr-1" />
                               Reject
                             </Button>
+                            <Button size="sm" variant="secondary" onClick={() => handleOpenGmForward(request)}>
+                              <Forward className="w-3 h-3 mr-1" />
+                              Take GM approval
+                            </Button>
                           </>
+                        )}
+                        {(request.status === 'Pending_GM' || request.status === 'On_Hold') && (
+                          <span className="text-xs text-muted-foreground">
+                            {request.status === 'On_Hold' ? 'On hold with GM' : 'Awaiting GM'}
+                          </span>
                         )}
                         <Button size="sm" variant="ghost" onClick={() => handleViewRequest(request)}>
                           <Eye className="w-3 h-3 mr-1" />
@@ -668,6 +747,48 @@ export default function LeaveRequestsTab({ onRequestUpdated }: LeaveRequestsTabP
               variant={actionType === 'reject' ? 'destructive' : 'default'}
             >
               {actionType === 'approve' ? 'Approve' : 'Reject'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={gmModalOpen} onOpenChange={setGmModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Take approval from GM</DialogTitle>
+          </DialogHeader>
+          {selectedRequest && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Forward leave for <span className="font-medium text-foreground">{selectedRequest.employee.name}</span> to
+                the GM WhatsApp number with an optional note and attachment.
+              </p>
+              <div>
+                <Label>Note to GM (optional)</Label>
+                <Textarea
+                  value={gmNote}
+                  onChange={(e) => setGmNote(e.target.value)}
+                  rows={3}
+                  className="mt-1"
+                  placeholder="Context for the GM..."
+                />
+              </div>
+              <div>
+                <Label>Attachment (optional)</Label>
+                <Input
+                  type="file"
+                  className="mt-1"
+                  onChange={(e) => setGmFile(e.target.files?.[0] ?? null)}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setGmModalOpen(false)} disabled={gmSubmitting}>
+              Cancel
+            </Button>
+            <Button onClick={() => void handleSubmitGmForward()} disabled={gmSubmitting}>
+              {gmSubmitting ? 'Sending…' : 'Send to GM'}
             </Button>
           </DialogFooter>
         </DialogContent>

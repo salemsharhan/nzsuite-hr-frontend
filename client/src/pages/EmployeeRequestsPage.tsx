@@ -7,18 +7,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { employeeRequestService, EmployeeRequest } from '@/services/employeeRequestService';
 import { documentRequestService, DocumentRequest } from '@/services/documentRequestService';
-import { leaveService, LeaveRequest } from '@/services/leaveService';
+import { leaveService } from '@/services/leaveService';
+import { submitHrApproval } from '@/services/hrApprovalService';
 import { useAuth } from '@/contexts/AuthContext';
 import { 
   Search, 
-  Filter, 
   FileText, 
   Eye,
   CheckCircle,
   XCircle,
-  Clock,
   User,
-  Calendar
+  Calendar,
+  Forward
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
@@ -49,13 +49,16 @@ export default function EmployeeRequestsPage() {
   const [requests, setRequests] = useState<CombinedRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'Pending' | 'In Review' | 'Approved' | 'Rejected' | 'Completed' | 'Cancelled'>('all');
+  const [statusFilter, setStatusFilter] = useState<
+    'all' | 'Pending' | 'Pending_GM' | 'On_Hold' | 'In Review' | 'Approved' | 'Rejected' | 'Completed' | 'Cancelled'
+  >('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [selectedRequest, setSelectedRequest] = useState<CombinedRequest | null>(null);
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [actionModalOpen, setActionModalOpen] = useState(false);
   const [actionType, setActionType] = useState<'approve' | 'reject'>('approve');
   const [actionComments, setActionComments] = useState('');
+  const [gmForwardingId, setGmForwardingId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const itemsPerPage = 25;
@@ -64,6 +67,15 @@ export default function EmployeeRequestsPage() {
     if (user?.company_id) {
       loadRequests();
     }
+  }, [user?.company_id, statusFilter, categoryFilter, currentPage]);
+
+  // Keep table in sync with WhatsApp poll decisions on leave_requests
+  useEffect(() => {
+    if (!user?.company_id) return;
+    const timer = window.setInterval(() => {
+      void loadRequests();
+    }, 20000);
+    return () => window.clearInterval(timer);
   }, [user?.company_id, statusFilter, categoryFilter, currentPage]);
 
   const loadRequests = async () => {
@@ -217,6 +229,39 @@ export default function EmployeeRequestsPage() {
     }
   };
 
+  const handleForwardLeaveToGm = async (request: CombinedRequest) => {
+    if (request.source !== 'leave_request') return;
+    const companyId = user?.company_id;
+    if (!companyId) {
+      toast.error('Company not found');
+      return;
+    }
+    try {
+      setGmForwardingId(request.id);
+      const fd = request.formData || {};
+      await submitHrApproval({
+        companyId,
+        title: `Leave: ${request.employee.name} — ${fd.leaveType || 'leave'}`,
+        body: [
+          `Employee: ${request.employee.name}`,
+          `Type: ${fd.leaveType || '—'}`,
+          `From: ${fd.fromDate || '—'}`,
+          `To: ${fd.toDate || '—'}`,
+          `Reason: ${fd.reason || '—'}`,
+        ].join('\n'),
+        source: 'leave',
+        leaveRequestId: request.id,
+        hrCreatedBy: user?.id,
+      });
+      toast.success('Forwarded to GM for approval');
+      await loadRequests();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to forward to GM');
+    } finally {
+      setGmForwardingId(null);
+    }
+  };
+
   const filteredRequests = requests.filter(req => {
     const matchesSearch = 
       req.type.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -239,6 +284,10 @@ export default function EmployeeRequestsPage() {
         return <StatusBadge status="In Review" />;
       case 'Pending':
         return <StatusBadge status="Pending" />;
+      case 'Pending_GM':
+        return <StatusBadge status="Pending_GM" />;
+      case 'On_Hold':
+        return <StatusBadge status="On_Hold" />;
       default:
         return <StatusBadge status={status as any} />;
     }
@@ -279,6 +328,8 @@ export default function EmployeeRequestsPage() {
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="Pending">Pending</SelectItem>
+                <SelectItem value="Pending_GM">Pending GM</SelectItem>
+                <SelectItem value="On_Hold">On Hold</SelectItem>
                 <SelectItem value="In Review">In Review</SelectItem>
                 <SelectItem value="Approved">Approved</SelectItem>
                 <SelectItem value="Completed">Completed</SelectItem>
@@ -390,7 +441,7 @@ export default function EmployeeRequestsPage() {
                             <Eye className="w-3 h-3 md:w-4 md:h-4 md:mr-1" />
                             <span className="hidden md:inline">View</span>
                           </Button>
-                          {(request.status === 'Pending' || request.status === 'In Review') && (
+                          {(request.status === 'Pending' || request.status === 'In Review' || request.status === 'On_Hold') && (
                             <>
                               <Button
                                 size="sm"
@@ -410,6 +461,20 @@ export default function EmployeeRequestsPage() {
                                 <XCircle className="w-3 h-3 md:w-4 md:h-4 md:mr-1" />
                                 <span className="hidden md:inline">Reject</span>
                               </Button>
+                              {request.source === 'leave_request' && request.status === 'Pending' && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={gmForwardingId === request.id}
+                                  onClick={() => void handleForwardLeaveToGm(request)}
+                                  className="h-7 md:h-8 text-[10px] md:text-xs px-2 md:px-3"
+                                >
+                                  <Forward className="w-3 h-3 md:w-4 md:h-4 md:mr-1" />
+                                  <span className="hidden md:inline">
+                                    {gmForwardingId === request.id ? 'Sending…' : 'Take GM approval'}
+                                  </span>
+                                </Button>
+                              )}
                             </>
                           )}
                         </div>

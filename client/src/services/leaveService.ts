@@ -7,8 +7,11 @@ export interface LeaveRequest {
   start_date: string;
   end_date: string;
   reason: string;
-  status: 'Pending' | 'Approved' | 'Rejected';
+  status: 'Pending' | 'Pending_GM' | 'On_Hold' | 'Approved' | 'Rejected';
   created_at: string;
+  gm_note?: string | null;
+  hr_note?: string | null;
+  approval_request_id?: string | null;
   employees?: {
     first_name: string;
     middle_name?: string;
@@ -35,10 +38,12 @@ export interface LeaveRequest {
 }
 
 export interface LeaveRequestFilters {
-  status?: 'Pending' | 'Approved' | 'Rejected' | 'all';
+  status?: 'Pending' | 'Pending_GM' | 'On_Hold' | 'Approved' | 'Rejected' | 'all';
   leave_type?: string;
   date_from?: string;
   date_to?: string;
+  /** When true with date_from+date_to, match leaves that overlap the range (not fully contained). */
+  date_overlap?: boolean;
   employee_name?: string;
   companyId?: string; // Filter by company ID (for admin users)
   page?: number;
@@ -79,12 +84,17 @@ export const leaveService = {
         params.push(`leave_type=eq.${filters.leave_type}`);
       }
       
-      if (filters?.date_from) {
-        params.push(`start_date=gte.${filters.date_from}`);
-      }
-      
-      if (filters?.date_to) {
-        params.push(`end_date=lte.${filters.date_to}`);
+      // Overlap mode: leave intersects [date_from, date_to]
+      if (filters?.date_from && filters?.date_to && filters.date_overlap) {
+        params.push(`start_date=lte.${filters.date_to}`);
+        params.push(`end_date=gte.${filters.date_from}`);
+      } else {
+        if (filters?.date_from) {
+          params.push(`start_date=gte.${filters.date_from}`);
+        }
+        if (filters?.date_to) {
+          params.push(`end_date=lte.${filters.date_to}`);
+        }
       }
       
       // Pagination
@@ -174,12 +184,16 @@ export const leaveService = {
         params.push(`leave_type=eq.${filters.leave_type}`);
       }
       
-      if (filters?.date_from) {
-        params.push(`start_date=gte.${filters.date_from}`);
-      }
-      
-      if (filters?.date_to) {
-        params.push(`end_date=lte.${filters.date_to}`);
+      if (filters?.date_from && filters?.date_to && filters.date_overlap) {
+        params.push(`start_date=lte.${filters.date_to}`);
+        params.push(`end_date=gte.${filters.date_from}`);
+      } else {
+        if (filters?.date_from) {
+          params.push(`start_date=gte.${filters.date_from}`);
+        }
+        if (filters?.date_to) {
+          params.push(`end_date=lte.${filters.date_to}`);
+        }
       }
       
       if (params.length > 0) {
@@ -217,22 +231,50 @@ export const leaveService = {
     }
   },
 
-  async create(request: Omit<LeaveRequest, 'id' | 'created_at' | 'status'>) {
+  async create(request: Omit<LeaveRequest, 'id' | 'created_at' | 'status'> & { company_id?: string }) {
     try {
       const response = await adminApi.post('/leave_requests', { ...request, status: 'Pending' });
-      if (response.data && response.data.length > 0) {
-        return response.data[0];
+      const created =
+        response.data && Array.isArray(response.data) && response.data.length > 0
+          ? response.data[0]
+          : response.data;
+
+      const leaveId = created?.id as string | undefined;
+      let companyId = (request as { company_id?: string }).company_id;
+      if (!companyId && request.employee_id) {
+        try {
+          const empRes = await adminApi.get(`/employees?id=eq.${request.employee_id}&select=company_id`);
+          companyId = empRes.data?.[0]?.company_id;
+        } catch {
+          /* ignore */
+        }
       }
-      return response.data;
+      if (leaveId) {
+        try {
+          const { notifyLeaveToHr } = await import('./hrApprovalService');
+          await notifyLeaveToHr(leaveId, companyId);
+        } catch (e) {
+          console.warn('HR WhatsApp notify skipped', e);
+        }
+      }
+      return created;
     } catch (error) {
       console.error('Error creating leave request:', error);
       throw error;
     }
   },
 
-  async updateStatus(id: string, status: 'Approved' | 'Rejected') {
+  async updateStatus(
+    id: string,
+    status: 'Pending' | 'Pending_GM' | 'On_Hold' | 'Approved' | 'Rejected',
+    extra?: { hr_note?: string; gm_note?: string; hr_decided_by?: string },
+  ) {
     try {
-      const response = await adminApi.patch(`/leave_requests?id=eq.${id}`, { status });
+      const patch: Record<string, unknown> = { status, ...extra };
+      if (status === 'Approved' || status === 'Rejected') {
+        patch.hr_decision_at = new Date().toISOString();
+      }
+      const response = await adminApi.patch(`/leave_requests?id=eq.${id}`, patch);
       if (response.data && response.data.length > 0) {
         return response.data[0];
       }

@@ -80,6 +80,7 @@ export async function getApprovedLeaveDaysForMonth(
     status: 'Approved',
     date_from: period.periodStart,
     date_to: period.periodEnd,
+    date_overlap: true,
     limit: 2000
   });
   const byEmployee: Record<string, number> = {};
@@ -106,6 +107,7 @@ export async function getApprovedPermittedLeaveDaysForMonth(
     status: 'Approved',
     date_from: period.periodStart,
     date_to: period.periodEnd,
+    date_overlap: true,
     limit: 2000
   });
   const byEmployee: Record<string, number> = {};

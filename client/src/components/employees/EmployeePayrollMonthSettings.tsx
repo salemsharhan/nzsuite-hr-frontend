@@ -18,8 +18,11 @@ import {
   employeePayrollMonthService,
   type EmployeePayrollMonthAdjustment,
 } from '@/services/employeePayrollMonthService';
+import { leaveService, type LeaveRequest } from '@/services/leaveService';
+import { normalizeLeaveBucket } from '@/services/leaveBalanceService';
 import {
   PAYROLL_MONTH_ENTRY_EFFECT,
+  type PayrollMonthAdjustmentEntry,
   type PayrollMonthEntryType,
   type PayrollMonthInputMode,
   summarizeMonthAdjustments,
@@ -48,6 +51,26 @@ const EMPTY_FORM = {
   notes: '',
 };
 
+function leaveRequestToEntryType(leaveType: string): PayrollMonthEntryType {
+  const bucket = normalizeLeaveBucket(leaveType);
+  if (bucket === 'sick') return 'sick_leave';
+  if (bucket === 'emergency') return 'emergency_leave';
+  if (bucket === 'annual') return 'paid_leave_from_balance';
+  const t = leaveType.trim().toLowerCase();
+  if (/unpaid|بدون|without/.test(t)) return 'unpaid_leave';
+  return 'paid_leave';
+}
+
+function leaveOverlapsPeriod(
+  leave: LeaveRequest,
+  periodStart: string,
+  periodEnd: string,
+): boolean {
+  const from = String(leave.start_date).slice(0, 10);
+  const to = String(leave.end_date).slice(0, 10);
+  return from <= periodEnd && to >= periodStart;
+}
+
 interface EmployeePayrollMonthSettingsProps {
   employeeId: string;
   companyId: string;
@@ -64,6 +87,7 @@ export function EmployeePayrollMonthSettings({
   const [year, setYear] = useState(String(now.getFullYear()));
   const [month, setMonth] = useState(String(now.getMonth() + 1));
   const [entries, setEntries] = useState<EmployeePayrollMonthAdjustment[]>([]);
+  const [approvedLeaves, setApprovedLeaves] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -71,14 +95,51 @@ export function EmployeePayrollMonthSettings({
   const y = parseInt(year, 10);
   const m = parseInt(month, 10);
   const period = useMemo(() => getPayrollPeriodBounds(y, m), [y, m]);
-  const summary = useMemo(() => summarizeMonthAdjustments(entries, period), [entries, period]);
+
+  const leaveDerivedEntries = useMemo((): PayrollMonthAdjustmentEntry[] => {
+    return approvedLeaves.map((leave) => ({
+      id: `leave:${leave.id}`,
+      employee_id: employeeId,
+      company_id: companyId,
+      payroll_year: y,
+      payroll_month: m,
+      entry_type: leaveRequestToEntryType(leave.leave_type),
+      input_mode: 'date_range' as const,
+      days_count: null,
+      date_from: String(leave.start_date).slice(0, 10),
+      date_to: String(leave.end_date).slice(0, 10),
+      notes: leave.reason
+        ? `${leave.leave_type} — ${leave.reason}`
+        : `${leave.leave_type} (approved leave request)`,
+    }));
+  }, [approvedLeaves, employeeId, companyId, y, m]);
+
+  const summaryEntries = useMemo(
+    () => [...entries, ...leaveDerivedEntries],
+    [entries, leaveDerivedEntries],
+  );
+  const summary = useMemo(
+    () => summarizeMonthAdjustments(summaryEntries, period),
+    [summaryEntries, period],
+  );
 
   const load = useCallback(async () => {
     if (!employeeId || !y || !m) return;
     setLoading(true);
     try {
-      const data = await employeePayrollMonthService.getByEmployeeMonth(employeeId, y, m);
+      const bounds = getPayrollPeriodBounds(y, m);
+      const [data, leaves] = await Promise.all([
+        employeePayrollMonthService.getByEmployeeMonth(employeeId, y, m),
+        leaveService.getByEmployee(employeeId),
+      ]);
       setEntries(data);
+      setApprovedLeaves(
+        (leaves || []).filter(
+          (leave) =>
+            leave.status === 'Approved' &&
+            leaveOverlapsPeriod(leave, bounds.periodStart, bounds.periodEnd),
+        ),
+      );
     } catch (e) {
       console.error(e);
       toast.error(t('employees.payrollMonth.loadFailed'));
@@ -177,7 +238,7 @@ export function EmployeePayrollMonthSettings({
     );
   };
 
-  return (
+  const hasAnyRows = entries.length > 0 || approvedLeaves.length > 0;
     <Card className="overflow-hidden">
       <CardHeader className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-white/10">
         <CardTitle className="flex items-center gap-2 text-xl">
@@ -335,10 +396,33 @@ export function EmployeePayrollMonthSettings({
             <Loader2 className="w-4 h-4 animate-spin" />
             {t('common.loading')}
           </div>
-        ) : entries.length === 0 ? (
+        ) : !hasAnyRows ? (
           <p className="text-sm text-muted-foreground">{t('employees.payrollMonth.noEntries')}</p>
         ) : (
           <ul className="space-y-2">
+            {approvedLeaves.map((leave) => {
+              const entryType = leaveRequestToEntryType(leave.leave_type);
+              return (
+                <li
+                  key={`leave-${leave.id}`}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-sm"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{t(`employees.payrollMonthEntry.${entryType}`)}</span>
+                    <Badge variant="outline" className="text-xs border-emerald-500/40 text-emerald-700 dark:text-emerald-400">
+                      {t('employees.payrollMonth.fromApprovedLeave')}
+                    </Badge>
+                    {effectBadge(entryType)}
+                    <span className="text-muted-foreground">
+                      {String(leave.start_date).slice(0, 10)} → {String(leave.end_date).slice(0, 10)}
+                    </span>
+                    {leave.reason ? (
+                      <span className="text-muted-foreground italic">— {leave.reason}</span>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
             {entries.map((entry) => (
               <li
                 key={entry.id}

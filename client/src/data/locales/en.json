@@ -1438,5 +1438,115 @@
     "method": "Method",
     "refund": "Refund",
     "notes": "Notes"
+  },
+  "approvalFlow": {
+    "title": "Approvals",
+    "subtitle": "Leave, permission and document requests go to the GM and HR together on WhatsApp. Decide here or on WhatsApp — both stay in sync.",
+    "tabRequests": "Employee requests",
+    "tabManual": "Manual approvals for GM",
+    "manualIntro": "Raise anything else for the GM (text + optional file), e.g. purchases or exceptions. Employee requests are in the first tab.",
+    "stage": {
+      "pending_gm": "Waiting for GM",
+      "pending_hr_docs": "HR collecting documents",
+      "pending_hr_doc_prep": "HR preparing document",
+      "approved": "Approved",
+      "completed": "Completed",
+      "rejected": "Rejected",
+      "cancelled": "Cancelled"
+    },
+    "action": {
+      "approve": "Approve",
+      "reject": "Reject",
+      "to_hr": "Send to HR for documents",
+      "docs_received": "Documents received → back to GM",
+      "ready": "Document ready"
+    },
+    "short": {
+      "approve": "Approve",
+      "reject": "Reject",
+      "to_hr": "To HR",
+      "docs_received": "Docs received",
+      "ready": "Document ready",
+      "cannot_issue": "Cannot issue"
+    },
+    "kind": {
+      "leave": "Leave",
+      "request": "Request",
+      "document": "Document"
+    },
+    "stats": {
+      "waitingGm": "Waiting for GM",
+      "waitingHr": "Waiting for HR",
+      "decidedToday": "Decided today",
+      "oldestOpen": "Oldest open",
+      "nothingWaiting": "Nothing waiting"
+    },
+    "view": {
+      "open": "Open",
+      "decided": "Decided",
+      "all": "All"
+    },
+    "filters": {
+      "allTypes": "All types",
+      "leave": "Leave",
+      "request": "Requests",
+      "document": "Documents",
+      "allCompanies": "All companies",
+      "search": "Search name, #ref, type…"
+    },
+    "refresh": "Refresh",
+    "loading": "Loading…",
+    "emptyOpen": "Nothing is waiting for a decision. 🎉",
+    "emptyFiltered": "No requests match these filters.",
+    "footer": "Decisions made here or on WhatsApp update each other instantly. GM and HR receive WhatsApp polls from the KDA GM number.",
+    "whatsappFlow": "WhatsApp flow",
+    "history": "History",
+    "historyReceived": "Request received — GM and HR notified on WhatsApp",
+    "historyNoGm": "No GM WhatsApp number configured for this company",
+    "by": {
+      "app": "{{name}} (in the app)",
+      "gm": "GM (WhatsApp)",
+      "hr": "HR (WhatsApp)",
+      "system": "System"
+    },
+    "gmNote": "GM note",
+    "hrNote": "HR note",
+    "fields": {
+      "from": "From",
+      "to": "To",
+      "reason": "Reason",
+      "category": "Category",
+      "submitted": "Submitted",
+      "gm": "GM",
+      "hr": "HR",
+      "date": "Date",
+      "fromTime": "From time",
+      "toTime": "To time",
+      "purpose": "Purpose",
+      "language": "Language",
+      "destination": "Destination"
+    },
+    "dialog": {
+      "note": "Note (optional)",
+      "notePlaceholderDocs": "Which documents are needed?",
+      "notePlaceholder": "Shown to the employee and HR on WhatsApp",
+      "info": "The GM, HR and the employee are notified on WhatsApp, and any open WhatsApp poll for this request is closed.",
+      "cancel": "Cancel"
+    },
+    "toast": {
+      "done": "#{{ref}}: {{stage}} — WhatsApp notifications sent",
+      "failed": "Action failed",
+      "loadFailed": "Failed to load approvals",
+      "fulfilledNotified": "#{{ref}}: employee notified on WhatsApp",
+      "fulfilledNotifyFailed": "Fulfilled, but the WhatsApp update failed: {{error}}"
+    },
+    "pipeline": {
+      "gm": "GM",
+      "hrDocs": "HR docs",
+      "prep": "HR prepares",
+      "done": "Done",
+      "rejected": "Rejected"
+    },
+    "bulkInFlow": "{{count}} selected request(s) are in the WhatsApp GM flow — decide them one by one or on the Approvals page."
   }
 }

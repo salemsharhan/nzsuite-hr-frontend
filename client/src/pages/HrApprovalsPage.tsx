@@ -18,8 +18,38 @@ import {
   type HrApprovalStatus,
 } from '@/services/hrApprovalService';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { RequestApprovalsBoard } from '@/components/approvals/RequestApprovalsBoard';
 
 export default function HrApprovalsPage() {
+  const { t } = useTranslation();
+  return (
+    <div className="p-6 space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold font-heading">{t('approvalFlow.title')}</h1>
+        <p className="text-muted-foreground text-sm mt-1">
+          {t('approvalFlow.subtitle')}
+        </p>
+      </div>
+      <Tabs defaultValue="requests" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="requests">{t('approvalFlow.tabRequests')}</TabsTrigger>
+          <TabsTrigger value="manual">{t('approvalFlow.tabManual')}</TabsTrigger>
+        </TabsList>
+        <TabsContent value="requests">
+          <RequestApprovalsBoard />
+        </TabsContent>
+        <TabsContent value="manual">
+          <ManualGmApprovals />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+function ManualGmApprovals() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const companyId = user?.company_id;
   const [rows, setRows] = useState<HrApprovalRequest[]>([]);
@@ -121,14 +151,11 @@ export default function HrApprovalsPage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-bold font-heading">HR Approvals</h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Raise a request for the GM (text + optional file). Leave forwards also appear here.
-          </p>
-        </div>
+        <p className="text-muted-foreground text-sm">
+          {t('approvalFlow.manualIntro')}
+        </p>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => void load()} disabled={loading}>
             <RefreshCw className="w-4 h-4 mr-2" />

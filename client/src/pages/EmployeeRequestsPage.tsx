@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
+import { approvalFlowService, actionsForStage, ACTION_META, type ApprovalAction, type ApprovalSourceTable, type RequestApproval } from '@/services/approvalFlowService';
+import { ApprovalActionDialog, ApprovalActionIcon, ApprovalActionLabel, ApprovalFlowCaption, ApprovalStageBadge } from '@/components/approvals/ApprovalBits';
+
+const FLOW_TABLE: Record<'employee_request' | 'document_request' | 'leave_request', ApprovalSourceTable> = {
+  employee_request: 'employee_requests',
+  document_request: 'document_requests',
+  leave_request: 'leave_requests',
+};
 
 interface CombinedRequest {
   id: string;
@@ -48,6 +56,10 @@ export default function EmployeeRequestsPage() {
   const { user } = useAuth();
   const [requests, setRequests] = useState<CombinedRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  // Requests in the WhatsApp GM/HR flow are decided through the shared engine (keeps WhatsApp and the app in sync)
+  const [flowMap, setFlowMap] = useState<Record<string, RequestApproval>>({});
+  const [flowDialog, setFlowDialog] = useState<{ approval: RequestApproval; action: ApprovalAction } | null>(null);
+  const flowReload = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<
     'all' | 'Pending' | 'Pending_GM' | 'On_Hold' | 'In Review' | 'Approved' | 'Rejected' | 'Completed' | 'Cancelled'
@@ -70,6 +82,18 @@ export default function EmployeeRequestsPage() {
   }, [user?.company_id, statusFilter, categoryFilter, currentPage]);
 
   // Keep table in sync with WhatsApp poll decisions on leave_requests
+  useEffect(() => {
+    // WhatsApp votes change statuses in the background — refresh live
+    const unsubscribe = approvalFlowService.subscribe(() => {
+      if (flowReload.current) clearTimeout(flowReload.current);
+      flowReload.current = setTimeout(() => void loadRequests(), 500);
+    });
+    return () => {
+      unsubscribe();
+      if (flowReload.current) clearTimeout(flowReload.current);
+    };
+  }, [currentPage, itemsPerPage, statusFilter, user?.company_id]);
+
   useEffect(() => {
     if (!user?.company_id) return;
     const timer = window.setInterval(() => {
@@ -172,6 +196,12 @@ export default function EmployeeRequestsPage() {
       
       setRequests(combined);
       setTotalCount(combined.length);
+      const maps = await Promise.all(
+        (Object.keys(FLOW_TABLE) as (keyof typeof FLOW_TABLE)[]).map((src) =>
+          approvalFlowService.mapForSources(FLOW_TABLE[src], combined.filter((c) => c.source === src).map((c) => c.id)),
+        ),
+      );
+      setFlowMap(Object.assign({}, ...maps));
     } catch (error) {
       console.error('Error loading requests:', error);
       toast.error('Failed to load requests');
@@ -428,7 +458,14 @@ export default function EmployeeRequestsPage() {
                         </div>
                       </td>
                       <td className="py-3 px-4">
-                        {getStatusBadge(request.status)}
+                        {flowMap[request.id] ? (
+                          <div className="flex flex-col gap-1">
+                            <ApprovalStageBadge stage={flowMap[request.id].stage} />
+                            <ApprovalFlowCaption approval={flowMap[request.id]} />
+                          </div>
+                        ) : (
+                          getStatusBadge(request.status)
+                        )}
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
@@ -441,7 +478,22 @@ export default function EmployeeRequestsPage() {
                             <Eye className="w-3 h-3 md:w-4 md:h-4 md:mr-1" />
                             <span className="hidden md:inline">View</span>
                           </Button>
-                          {(request.status === 'Pending' || request.status === 'In Review' || request.status === 'On_Hold') && (
+                          {flowMap[request.id] &&
+                            actionsForStage(flowMap[request.id].stage).map((a) => (
+                              <Button
+                                key={a}
+                                size="sm"
+                                variant={ACTION_META[a].variant}
+                                onClick={() => setFlowDialog({ approval: flowMap[request.id], action: a })}
+                                className="h-7 md:h-8 text-[10px] md:text-xs px-2 md:px-3"
+                              >
+                                <ApprovalActionIcon action={a} className="w-3 h-3 md:w-4 md:h-4 md:mr-1" />
+                                <span className="hidden md:inline">
+                                  <ApprovalActionLabel action={a} />
+                                </span>
+                              </Button>
+                            ))}
+                          {!flowMap[request.id] && (request.status === 'Pending' || request.status === 'In Review' || request.status === 'On_Hold') && (
                             <>
                               <Button
                                 size="sm"
@@ -593,6 +645,13 @@ export default function EmployeeRequestsPage() {
           </div>
         </DialogContent>
       </Dialog>
+      <ApprovalActionDialog
+        approval={flowDialog?.approval ?? null}
+        action={flowDialog?.action ?? null}
+        open={!!flowDialog}
+        onOpenChange={(o) => !o && setFlowDialog(null)}
+        onDone={() => void loadRequests()}
+      />
     </div>
   );
 }

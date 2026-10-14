@@ -25,6 +25,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
+import { approvalFlowService, actionsForStage, ACTION_META, type ApprovalAction, type RequestApproval } from '@/services/approvalFlowService';
+import { ApprovalActionDialog, ApprovalActionIcon, ApprovalActionLabel, ApprovalFlowCaption, ApprovalStageBadge } from '@/components/approvals/ApprovalBits';
 
 export default function DocumentRequestsPage() {
   const { t } = useTranslation();
@@ -52,6 +54,12 @@ export default function DocumentRequestsPage() {
     }
   }, [user?.company_id, statusFilter, documentTypeFilter, currentPage]);
 
+  // Requests in the WhatsApp GM/HR flow: GM decides first; fulfilling then completes the flow and notifies the employee
+  const [flowMap, setFlowMap] = useState<Record<string, RequestApproval>>({});
+  const [flowDialog, setFlowDialog] = useState<{ approval: RequestApproval; action: ApprovalAction } | null>(null);
+
+  useEffect(() => approvalFlowService.subscribe(() => void loadRequests()), [currentPage, itemsPerPage, statusFilter, documentTypeFilter]);
+
   const loadRequests = async () => {
     try {
       setLoading(true);
@@ -68,6 +76,7 @@ export default function DocumentRequestsPage() {
       ]);
       setRequests(data);
       setTotalCount(count);
+      setFlowMap(await approvalFlowService.mapForSources('document_requests', data.map((d) => d.id)));
     } catch (error) {
       console.error('Error loading document requests:', error);
       toast.error('Failed to load document requests');
@@ -136,6 +145,15 @@ export default function DocumentRequestsPage() {
         toast.success('Document uploaded and request fulfilled successfully');
       }
       
+      const flow = flowMap[selectedRequest.id];
+      if (flow && flow.stage === 'pending_hr_doc_prep') {
+        try {
+          await approvalFlowService.act(flow.id, 'ready', notes);
+          toast.success(t('approvalFlow.toast.fulfilledNotified', { ref: flow.ref_no }));
+        } catch (e) {
+          toast.error(t('approvalFlow.toast.fulfilledNotifyFailed', { error: e instanceof Error ? e.message : '' }));
+        }
+      }
       setIsFulfillModalOpen(false);
       setSelectedRequest(null);
       await loadRequests();
@@ -314,11 +332,36 @@ export default function DocumentRequestsPage() {
                         </span>
                       </td>
                       <td className="py-3 px-4">
-                        {getStatusBadge(request.status)}
+                        {flowMap[request.id] ? (
+                          <div className="flex flex-col gap-1">
+                            <ApprovalStageBadge stage={flowMap[request.id].stage} />
+                            <ApprovalFlowCaption approval={flowMap[request.id]} />
+                          </div>
+                        ) : (
+                          getStatusBadge(request.status)
+                        )}
                       </td>
                       <td className="py-3 px-4">
-                        <div className="flex items-center gap-2">
-                          {request.status === 'Pending' || request.status === 'In Progress' ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          {flowMap[request.id] && flowMap[request.id].stage !== 'pending_hr_doc_prep' ? (
+                            actionsForStage(flowMap[request.id].stage).map((a) => (
+                              <Button key={a} size="sm" variant={ACTION_META[a].variant} onClick={() => setFlowDialog({ approval: flowMap[request.id], action: a })}>
+                                <ApprovalActionIcon action={a} className="w-4 h-4 mr-1" />
+                                <ApprovalActionLabel action={a} />
+                              </Button>
+                            ))
+                          ) : flowMap[request.id] && flowMap[request.id].stage === 'pending_hr_doc_prep' ? (
+                            <>
+                              <Button size="sm" variant="default" onClick={() => handleFulfillClick(request)}>
+                                <CheckCircle className="w-4 h-4 mr-1" />
+                                Fulfill
+                              </Button>
+                              <Button size="sm" variant="destructive" onClick={() => setFlowDialog({ approval: flowMap[request.id], action: 'reject' })}>
+                                <XCircle className="w-4 h-4 mr-1" />
+                                <ApprovalActionLabel action="cannot_issue" />
+                              </Button>
+                            </>
+                          ) : request.status === 'Pending' || request.status === 'In Progress' ? (
                             <>
                               <Button
                                 size="sm"
@@ -482,6 +525,13 @@ export default function DocumentRequestsPage() {
           )}
         </DialogContent>
       </Dialog>
+      <ApprovalActionDialog
+        approval={flowDialog?.approval ?? null}
+        action={flowDialog?.action ?? null}
+        open={!!flowDialog}
+        onOpenChange={(o) => !o && setFlowDialog(null)}
+        onDone={() => void loadRequests()}
+      />
     </div>
   );
 }

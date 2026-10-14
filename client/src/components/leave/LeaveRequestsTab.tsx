@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Search, Filter, Download, Plus, CheckCircle, XCircle, Eye, Forward } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,9 @@ import { submitHrApproval, fileToBase64 } from '@/services/hrApprovalService';
 import { useAuth } from '@/contexts/AuthContext';
 import { getEmployeeDisplayName } from '@/utils/employeeName';
 import { toast } from 'sonner';
+import i18n from 'i18next';
+import { approvalFlowService, actionsForStage, ACTION_META, type ApprovalAction, type RequestApproval } from '@/services/approvalFlowService';
+import { ApprovalActionDialog, ApprovalActionIcon, ApprovalActionLabel, ApprovalFlowCaption, ApprovalStageBadge } from '@/components/approvals/ApprovalBits';
 
 type LeaveStatus = 'Pending' | 'Pending_GM' | 'On_Hold' | 'Approved' | 'Rejected';
 
@@ -130,9 +133,25 @@ export default function LeaveRequestsTab({ onRequestUpdated }: LeaveRequestsTabP
   const [gmNote, setGmNote] = useState('');
   const [gmFile, setGmFile] = useState<File | null>(null);
   const [gmSubmitting, setGmSubmitting] = useState(false);
+  // Requests in the WhatsApp GM/HR flow are decided through the shared engine so WhatsApp and the app stay in sync
+  const [flowMap, setFlowMap] = useState<Record<string, RequestApproval>>({});
+  const [flowDialog, setFlowDialog] = useState<{ approval: RequestApproval; action: ApprovalAction } | null>(null);
+  const flowReload = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     loadRequests();
+  }, [currentPage, itemsPerPage, statusFilter, leaveTypeFilter, dateFromFilter, dateToFilter]);
+
+  useEffect(() => {
+    // WhatsApp votes change statuses in the background — refresh live
+    const unsubscribe = approvalFlowService.subscribe(() => {
+      if (flowReload.current) clearTimeout(flowReload.current);
+      flowReload.current = setTimeout(() => void loadRequests(), 500);
+    });
+    return () => {
+      unsubscribe();
+      if (flowReload.current) clearTimeout(flowReload.current);
+    };
   }, [currentPage, itemsPerPage, statusFilter, leaveTypeFilter, dateFromFilter, dateToFilter]);
 
   const loadRequests = async () => {
@@ -156,6 +175,7 @@ export default function LeaveRequestsTab({ onRequestUpdated }: LeaveRequestsTabP
       const mappedRequests = data.map(mapLeaveRequestToDisplay);
       setRequests(mappedRequests);
       setTotalCount(count);
+      setFlowMap(await approvalFlowService.mapForSources('leave_requests', data.map((d) => d.id)));
     } catch (error) {
       console.error('Error loading leave requests:', error);
       toast.error('Failed to load leave requests');
@@ -300,9 +320,13 @@ export default function LeaveRequestsTab({ onRequestUpdated }: LeaveRequestsTabP
   };
 
   const handleBulkAction = async (type: 'approve' | 'reject') => {
-    const selectedReqs = requests.filter((r) => selectedRequests.includes(r.id) && r.status === 'Pending');
+    const inFlow = requests.filter((r) => selectedRequests.includes(r.id) && flowMap[r.id]);
+    const selectedReqs = requests.filter((r) => selectedRequests.includes(r.id) && r.status === 'Pending' && !flowMap[r.id]);
+    if (inFlow.length > 0) {
+      toast.info(i18n.t('approvalFlow.bulkInFlow', { count: inFlow.length }));
+    }
     if (selectedReqs.length === 0) {
-      toast.error('Please select pending requests');
+      if (inFlow.length === 0) toast.error('Please select pending requests');
       return;
     }
     
@@ -530,11 +554,30 @@ export default function LeaveRequestsTab({ onRequestUpdated }: LeaveRequestsTabP
                       {new Date(request.submittedAt).toLocaleString()}
                     </td>
                     <td className="py-3 px-4">
-                      <StatusBadge status={request.status as any} />
+                      {flowMap[request.id] ? (
+                        <div className="flex flex-col gap-1">
+                          <ApprovalStageBadge stage={flowMap[request.id].stage} />
+                          <ApprovalFlowCaption approval={flowMap[request.id]} />
+                        </div>
+                      ) : (
+                        <StatusBadge status={request.status as any} />
+                      )}
                     </td>
                     <td className="py-3 px-4">
-                      <div className="flex gap-2">
-                        {request.status === 'Pending' && (
+                      <div className="flex flex-wrap gap-2">
+                        {flowMap[request.id] &&
+                          actionsForStage(flowMap[request.id].stage).map((a) => (
+                            <Button
+                              key={a}
+                              size="sm"
+                              variant={ACTION_META[a].variant}
+                              onClick={() => setFlowDialog({ approval: flowMap[request.id], action: a })}
+                            >
+                              <ApprovalActionIcon action={a} className="w-3 h-3 mr-1" />
+                              <ApprovalActionLabel action={a} />
+                            </Button>
+                          ))}
+                        {!flowMap[request.id] && request.status === 'Pending' && (
                           <>
                             <Button size="sm" onClick={() => handleAction(request, 'approve')}>
                               <CheckCircle className="w-3 h-3 mr-1" />
@@ -550,7 +593,7 @@ export default function LeaveRequestsTab({ onRequestUpdated }: LeaveRequestsTabP
                             </Button>
                           </>
                         )}
-                        {(request.status === 'Pending_GM' || request.status === 'On_Hold') && (
+                        {!flowMap[request.id] && (request.status === 'Pending_GM' || request.status === 'On_Hold') && (
                           <span className="text-xs text-muted-foreground">
                             {request.status === 'On_Hold' ? 'On hold with GM' : 'Awaiting GM'}
                           </span>
@@ -793,6 +836,16 @@ export default function LeaveRequestsTab({ onRequestUpdated }: LeaveRequestsTabP
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ApprovalActionDialog
+        approval={flowDialog?.approval ?? null}
+        action={flowDialog?.action ?? null}
+        open={!!flowDialog}
+        onOpenChange={(o) => !o && setFlowDialog(null)}
+        onDone={() => {
+          void loadRequests();
+          onRequestUpdated?.();
+        }}
+      />
     </div>
   );
 }

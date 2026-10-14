@@ -55,6 +55,11 @@ const statusConfig: Record<string, { bg: string; text: string; border: string }>
   }
 };
 
+const statusLabel: Record<string, string> = {
+  Pending_GM: 'Waiting for GM',
+  On_Hold: 'On hold',
+};
+
 export const StatusBadge = ({ status, className }: StatusBadgeProps) => {
   const config = statusConfig[status] || {
     bg: 'bg-gray-500/10',
@@ -70,7 +75,7 @@ export const StatusBadge = ({ status, className }: StatusBadgeProps) => {
       config.border,
       className
     )}>
-      {status}
+      {statusLabel[status] ?? status}
     </span>
   );
 };

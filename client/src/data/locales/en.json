@@ -1457,14 +1457,14 @@
     "action": {
       "approve": "Approve",
       "reject": "Reject",
-      "to_hr": "Send to HR for documents",
+      "to_hr": "Request documents from employee (via HR)",
       "docs_received": "Documents received → back to GM",
       "ready": "Document ready"
     },
     "short": {
       "approve": "Approve",
       "reject": "Reject",
-      "to_hr": "To HR",
+      "to_hr": "Request documents",
       "docs_received": "Docs received",
       "ready": "Document ready",
       "cannot_issue": "Cannot issue"

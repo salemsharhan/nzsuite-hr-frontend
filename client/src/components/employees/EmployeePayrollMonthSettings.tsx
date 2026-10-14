@@ -239,6 +239,8 @@ export function EmployeePayrollMonthSettings({
   };
 
   const hasAnyRows = entries.length > 0 || approvedLeaves.length > 0;
+
+  return (
     <Card className="overflow-hidden">
       <CardHeader className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-white/10">
         <CardTitle className="flex items-center gap-2 text-xl">

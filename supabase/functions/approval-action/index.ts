@@ -2,7 +2,7 @@
 // The decision is executed by the same n8n engine that handles the WhatsApp polls, so the app,
 // the GM/HR WhatsApp polls and the employee notifications always stay in sync.
 //
-// POST { approval_id, action: 'approve'|'reject'|'to_hr'|'docs_received'|'ready', note? }
+// POST { approval_id, action: 'approve'|'reject'|'to_gm'|'to_hr'|'docs_received'|'ready', note? }
 // Caller must be an active super_admin, or an admin of the request's company.
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
@@ -15,7 +15,7 @@ const corsHeaders = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 
-const ACTIONS = new Set(['approve', 'reject', 'to_hr', 'docs_received', 'ready'])
+const ACTIONS = new Set(['approve', 'reject', 'to_gm', 'to_hr', 'docs_received', 'ready'])
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })

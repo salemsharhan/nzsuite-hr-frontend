@@ -1452,14 +1452,16 @@
       "approved": "Approved",
       "completed": "Completed",
       "rejected": "Rejected",
-      "cancelled": "Cancelled"
+      "cancelled": "Cancelled",
+      "pending_dept_head": "Waiting for department head"
     },
     "action": {
       "approve": "Approve",
       "reject": "Reject",
       "to_hr": "Request documents from employee (via HR)",
       "docs_received": "Documents received → back to GM",
-      "ready": "Document ready"
+      "ready": "Document ready",
+      "to_gm": "Forward to GM"
     },
     "short": {
       "approve": "Approve",
@@ -1467,7 +1469,8 @@
       "to_hr": "Request documents",
       "docs_received": "Docs received",
       "ready": "Document ready",
-      "cannot_issue": "Cannot issue"
+      "cannot_issue": "Cannot issue",
+      "to_gm": "To GM"
     },
     "kind": {
       "leave": "Leave",
@@ -1479,7 +1482,8 @@
       "waitingHr": "Waiting for HR",
       "decidedToday": "Decided today",
       "oldestOpen": "Oldest open",
-      "nothingWaiting": "Nothing waiting"
+      "nothingWaiting": "Nothing waiting",
+      "waitingDept": "Waiting for dept head"
     },
     "view": {
       "open": "Open",
@@ -1507,7 +1511,8 @@
       "app": "{{name}} (in the app)",
       "gm": "GM (WhatsApp)",
       "hr": "HR (WhatsApp)",
-      "system": "System"
+      "system": "System",
+      "dept": "Department head (WhatsApp)"
     },
     "gmNote": "GM note",
     "hrNote": "HR note",
@@ -1524,7 +1529,9 @@
       "toTime": "To time",
       "purpose": "Purpose",
       "language": "Language",
-      "destination": "Destination"
+      "destination": "Destination",
+      "department": "Department",
+      "deptHead": "Department head"
     },
     "dialog": {
       "note": "Note (optional)",
@@ -1545,8 +1552,59 @@
       "hrDocs": "HR docs",
       "prep": "HR prepares",
       "done": "Done",
-      "rejected": "Rejected"
+      "rejected": "Rejected",
+      "dept": "Dept head"
     },
-    "bulkInFlow": "{{count}} selected request(s) are in the WhatsApp GM flow — decide them one by one or on the Approvals page."
+    "bulkInFlow": "{{count}} selected request(s) are in the WhatsApp GM flow — decide them one by one or on the Approvals page.",
+    "settings": {
+      "tab": "Settings",
+      "title": "Approval settings",
+      "company": "Company",
+      "deptStep": "Department head approval",
+      "deptStepHint": "Leave and permission requests go to the department head first. He can approve, reject or forward to the GM. Certificates go straight to the GM.",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "approvers": "Approvers",
+      "gm": "General manager",
+      "hr": "HR",
+      "approversHint": "GM and HR WhatsApp numbers are managed in Settings → Payroll approvals. HR is only contacted when the GM requests documents or a certificate must be prepared.",
+      "notSet": "Not set",
+      "departments": "Department heads",
+      "department": "Department",
+      "head": "Head",
+      "noHead": "No head (goes to GM)",
+      "waOverride": "WhatsApp number (optional)",
+      "waOverrideHint": "Leave empty to use the employee's phone",
+      "save": "Save",
+      "saved": "Saved",
+      "saveFailed": "Could not save",
+      "employees": "employees",
+      "onlyAdmins": "Only administrators can change approval settings."
+    },
+    "employee": {
+      "received": "Received",
+      "dept": "Department head",
+      "gm": "General manager",
+      "docs": "Documents needed",
+      "prep": "Preparing",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "done": "Done",
+      "status": {
+        "received": "Received",
+        "dept": "With department head",
+        "gm": "With the general manager",
+        "docs": "Documents needed",
+        "prep": "Being prepared by HR",
+        "approved": "Approved",
+        "rejected": "Rejected",
+        "completed": "Ready"
+      },
+      "docsHint": "Please submit the required supporting documents to HR so your request can be completed.",
+      "prepHint": "Approved — HR is preparing your document. You will be notified on WhatsApp when it is ready.",
+      "waHint": "You will receive updates on WhatsApp.",
+      "progress": "Progress",
+      "inProgress": "In progress"
+    }
   }
 }

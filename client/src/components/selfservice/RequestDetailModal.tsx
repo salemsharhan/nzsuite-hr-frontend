@@ -1,6 +1,6 @@
 import { ModalEnhanced } from '../common/ModalEnhanced';
 import { Request } from '../../services/selfServiceApi';
-import { StatusBadge } from '../common/StatusBadge';
+import { EmployeeRequestSteps, EmployeeStatusBadge } from '../approvals/EmployeeRequestProgress';
 import { Clock, User, MessageSquare, Paperclip } from 'lucide-react';
 
 interface RequestDetailModalProps {
@@ -24,7 +24,12 @@ export const RequestDetailModal = ({ request, isOpen, onClose }: RequestDetailMo
             <h3 className="text-xl font-semibold text-foreground">{request.type}</h3>
             <p className="text-sm text-muted-foreground mt-1">{request.id} • {request.category}</p>
           </div>
-          <StatusBadge status={request.status} />
+          <EmployeeStatusBadge status={request.status} currentApprover={request.currentApprover} category={request.category} />
+        </div>
+
+        {/* Where the request is now */}
+        <div className="rounded-lg border border-border p-4">
+          <EmployeeRequestSteps status={request.status} currentApprover={request.currentApprover} category={request.category} />
         </div>
 
         {/* Timeline */}
@@ -122,17 +127,6 @@ export const RequestDetailModal = ({ request, isOpen, onClose }: RequestDetailMo
           </div>
         )}
 
-        {/* Current Approver */}
-        {request.currentApprover && (
-          <div className="bg-primary/10 border border-primary/20 rounded-lg p-4">
-            <div className="flex items-center gap-2 text-primary">
-              <User className="w-4 h-4" />
-              <span className="text-sm font-medium">
-                Currently with: {request.currentApprover}
-              </span>
-            </div>
-          </div>
-        )}
       </div>
     </ModalEnhanced>
   );

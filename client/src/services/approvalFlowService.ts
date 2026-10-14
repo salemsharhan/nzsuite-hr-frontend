@@ -10,6 +10,7 @@ import { supabase } from './supabase';
  */
 
 export type ApprovalStage =
+  | 'pending_dept_head'
   | 'pending_gm'
   | 'pending_hr_docs'
   | 'pending_hr_doc_prep'
@@ -18,14 +19,14 @@ export type ApprovalStage =
   | 'rejected'
   | 'cancelled';
 
-export type ApprovalAction = 'approve' | 'reject' | 'to_hr' | 'docs_received' | 'ready';
+export type ApprovalAction = 'approve' | 'reject' | 'to_gm' | 'to_hr' | 'docs_received' | 'ready';
 export type ApprovalSourceTable = 'leave_requests' | 'employee_requests' | 'document_requests';
 export type ApprovalKind = 'leave' | 'request' | 'document';
 
 export interface ApprovalHistoryEntry {
   at: string;
   event?: string;
-  by?: 'gm' | 'hr' | 'app';
+  by?: 'dept' | 'gm' | 'hr' | 'app';
   action?: ApprovalAction;
   from?: ApprovalStage;
   to?: ApprovalStage;
@@ -53,6 +54,8 @@ export interface ApprovalSnapshot {
   company_name?: string;
   gm_name?: string;
   hr_name?: string;
+  department_name?: string;
+  dept_head_name?: string;
 }
 
 export interface RequestApproval {
@@ -72,9 +75,10 @@ export interface RequestApproval {
   updated_at: string;
 }
 
-export const OPEN_STAGES: ApprovalStage[] = ['pending_gm', 'pending_hr_docs', 'pending_hr_doc_prep'];
+export const OPEN_STAGES: ApprovalStage[] = ['pending_dept_head', 'pending_gm', 'pending_hr_docs', 'pending_hr_doc_prep'];
 
-export const STAGE_META: Record<ApprovalStage, { label: string; waitingOn: 'GM' | 'HR' | null; tone: string }> = {
+export const STAGE_META: Record<ApprovalStage, { label: string; waitingOn: 'DEPT' | 'GM' | 'HR' | null; tone: string }> = {
+  pending_dept_head: { label: 'Waiting for department head', waitingOn: 'DEPT', tone: 'cyan' },
   pending_gm: { label: 'Waiting for GM', waitingOn: 'GM', tone: 'blue' },
   pending_hr_docs: { label: 'HR collecting documents', waitingOn: 'HR', tone: 'orange' },
   pending_hr_doc_prep: { label: 'HR preparing document', waitingOn: 'HR', tone: 'violet' },
@@ -87,6 +91,7 @@ export const STAGE_META: Record<ApprovalStage, { label: string; waitingOn: 'GM' 
 export const ACTION_META: Record<ApprovalAction, { label: string; variant: 'default' | 'destructive' | 'outline' }> = {
   approve: { label: 'Approve', variant: 'default' },
   reject: { label: 'Reject', variant: 'destructive' },
+  to_gm: { label: 'Forward to GM', variant: 'outline' },
   to_hr: { label: 'Send to HR for documents', variant: 'outline' },
   docs_received: { label: 'Documents received → back to GM', variant: 'default' },
   ready: { label: 'Document ready', variant: 'default' },
@@ -94,6 +99,7 @@ export const ACTION_META: Record<ApprovalAction, { label: string; variant: 'defa
 
 /** Actions possible at each stage (mirrors the n8n engine). */
 export function actionsForStage(stage: ApprovalStage): ApprovalAction[] {
+  if (stage === 'pending_dept_head') return ['approve', 'to_gm', 'reject'];
   if (stage === 'pending_gm') return ['approve', 'to_hr', 'reject'];
   if (stage === 'pending_hr_docs') return ['docs_received', 'reject'];
   if (stage === 'pending_hr_doc_prep') return ['ready', 'reject'];
@@ -122,7 +128,63 @@ export function describeApproval(a: Pick<RequestApproval, 'snapshot' | 'kind'>):
   return parts.join(' · ');
 }
 
+export interface MyRequest {
+  source_table: ApprovalSourceTable;
+  id: string;
+  kind: ApprovalKind;
+  title: string;
+  category: string | null;
+  details: Record<string, any>;
+  status: string;
+  current_approver: string | null;
+  submitted_at: string;
+  ref_no: number | null;
+  stage: ApprovalStage | null;
+  dept_head_name: string | null;
+  updated_at: string;
+}
+
+/** Employee id of the logged-in self-service user (same lookup the self-service pages use). */
+export function currentEmployeeId(): string | null {
+  try {
+    const user = JSON.parse(sessionStorage.getItem('user') || 'null');
+    if (user?.employee_id) return user.employee_id;
+    const emp = JSON.parse(sessionStorage.getItem('employee_data') || 'null');
+    return emp?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Arabic names for the common request / leave types stored in English. */
+const AR_TITLES: [RegExp, string][] = [
+  [/^sick|مرض/i, 'إجازة مرضية'],
+  [/^annual|سنوي/i, 'إجازة سنوية'],
+  [/emergency|طارئ/i, 'إجازة طارئة'],
+  [/unpaid|بدون راتب/i, 'إجازة بدون راتب'],
+  [/maternity|أمومة/i, 'إجازة أمومة'],
+  [/hajj|حج/i, 'إجازة حج'],
+  [/permission|early leave|استئذان/i, 'استئذان / خروج مبكر'],
+  [/salary certificate|شهادة راتب/i, 'شهادة راتب'],
+  [/experience|خبرة/i, 'شهادة خبرة'],
+  [/to whom|لمن يهمه/i, 'شهادة لمن يهمه الأمر'],
+  [/update personal|تحديث البيانات/i, 'تحديث البيانات الشخصية'],
+];
+export function requestTitle(title: string | null | undefined, lang?: string): string {
+  const t = String(title ?? '').trim();
+  if (!lang?.startsWith('ar')) return t;
+  for (const [re, ar] of AR_TITLES) if (re.test(t)) return ar;
+  return t;
+}
+
 export const approvalFlowService = {
+  /** All requests of one employee with their approval stage (self-service). */
+  async myRequests(employeeId: string): Promise<MyRequest[]> {
+    const { data, error } = await supabase.rpc('employee_my_requests', { p_employee_id: employeeId });
+    if (error) throw new Error(error.message);
+    return (data ?? []) as MyRequest[];
+  },
+
   async list(params: { companyId?: string | null; stages?: ApprovalStage[] } = {}): Promise<RequestApproval[]> {
     let query = supabase.from('request_approvals').select('*').order('ref_no', { ascending: false }).limit(500);
     if (params.companyId) query = query.eq('company_id', params.companyId);

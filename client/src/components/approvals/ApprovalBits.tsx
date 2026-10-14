@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatDistanceToNow } from 'date-fns';
 import { ar as arLocale } from 'date-fns/locale';
-import { CheckCircle2, FileCheck2, FileSearch, Loader2, Send, XCircle } from 'lucide-react';
+import { ArrowUpCircle, CheckCircle2, FileCheck2, FileSearch, Loader2, Send, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -21,6 +21,7 @@ import {
 } from '@/services/approvalFlowService';
 
 const TONE: Record<string, string> = {
+  cyan: 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border-cyan-500/25',
   blue: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/25',
   orange: 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/25',
   violet: 'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/25',
@@ -97,7 +98,19 @@ export function ApprovalPipeline({ approval }: { approval: RequestApproval }) {
 
   type Step = { key: string; label: string; state: 'done' | 'current' | 'todo' | 'failed' };
   const steps: Step[] = [];
-  steps.push({ key: 'gm', label: p('gm', 'GM'), state: wentToHr ? 'done' : approval.stage === 'pending_gm' ? 'current' : gmDecided ? 'done' : 'todo' });
+  const viaHead = !!approval.snapshot?.dept_head_name || approval.stage === 'pending_dept_head';
+  if (viaHead) {
+    const headDecided = history.find((h) => h.from === 'pending_dept_head');
+    steps.push({
+      key: 'dept',
+      label: p('dept', 'Dept head'),
+      state: approval.stage === 'pending_dept_head' ? 'current' : headDecided?.to === 'rejected' ? 'failed' : 'done',
+    });
+  }
+  const reachedGm = !viaHead || history.some((h) => h.from === 'pending_dept_head' && h.to === 'pending_gm') || approval.stage === 'pending_gm';
+  if (reachedGm) {
+    steps.push({ key: 'gm', label: p('gm', 'GM'), state: wentToHr ? 'done' : approval.stage === 'pending_gm' ? 'current' : gmDecided ? 'done' : 'todo' });
+  }
   if (wentToHr) {
     steps.push({ key: 'hr_docs', label: p('hrDocs', 'HR docs'), state: approval.stage === 'pending_hr_docs' ? 'current' : 'done' });
     steps.push({ key: 'gm2', label: p('gm', 'GM'), state: approval.stage === 'pending_gm' ? 'current' : gmDecided ? 'done' : 'todo' });
@@ -132,6 +145,7 @@ export function ApprovalPipeline({ approval }: { approval: RequestApproval }) {
 const ACTION_ICON: Record<ApprovalAction, typeof CheckCircle2> = {
   approve: CheckCircle2,
   reject: XCircle,
+  to_gm: ArrowUpCircle,
   to_hr: FileSearch,
   docs_received: Send,
   ready: FileCheck2,

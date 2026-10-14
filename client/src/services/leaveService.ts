@@ -7,7 +7,7 @@ export interface LeaveRequest {
   start_date: string;
   end_date: string;
   reason: string;
-  status: 'Pending' | 'Pending_GM' | 'On_Hold' | 'Approved' | 'Rejected';
+  status: 'Pending' | 'Pending_Dept_Head' | 'Pending_GM' | 'On_Hold' | 'Approved' | 'Rejected';
   created_at: string;
   gm_note?: string | null;
   hr_note?: string | null;
@@ -38,7 +38,7 @@ export interface LeaveRequest {
 }
 
 export interface LeaveRequestFilters {
-  status?: 'Pending' | 'Pending_GM' | 'On_Hold' | 'Approved' | 'Rejected' | 'all';
+  status?: 'Pending' | 'Pending_Dept_Head' | 'Pending_GM' | 'On_Hold' | 'Approved' | 'Rejected' | 'all';
   leave_type?: string;
   date_from?: string;
   date_to?: string;
@@ -266,7 +266,7 @@ export const leaveService = {
 
   async updateStatus(
     id: string,
-    status: 'Pending' | 'Pending_GM' | 'On_Hold' | 'Approved' | 'Rejected',
+    status: 'Pending' | 'Pending_Dept_Head' | 'Pending_GM' | 'On_Hold' | 'Approved' | 'Rejected',
     extra?: { hr_note?: string; gm_note?: string; hr_decided_by?: string },
   ) {
     try {

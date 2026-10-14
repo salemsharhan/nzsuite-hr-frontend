@@ -44,7 +44,9 @@ function historyText(h: ApprovalHistoryEntry, L: ReturnType<typeof useApprovalLa
   const who =
     h.by === 'app'
       ? t('approvalFlow.by.app', { name: h.actor ?? 'Admin' })
-      : h.by === 'gm'
+      : h.by === 'dept'
+        ? t('approvalFlow.by.dept')
+        : h.by === 'gm'
         ? t('approvalFlow.by.gm')
         : h.by === 'hr'
           ? t('approvalFlow.by.hr')
@@ -107,6 +109,7 @@ export function RequestApprovalsBoard() {
   const stats = useMemo(() => {
     const today = new Date().toDateString();
     return {
+      dept: rows.filter((r) => r.stage === 'pending_dept_head').length,
       gm: rows.filter((r) => r.stage === 'pending_gm').length,
       hr: rows.filter((r) => r.stage === 'pending_hr_docs' || r.stage === 'pending_hr_doc_prep').length,
       decidedToday: rows.filter((r) => !OPEN_STAGES.includes(r.stage) && new Date(r.updated_at).toDateString() === today).length,
@@ -130,8 +133,11 @@ export function RequestApprovalsBoard() {
     });
   }, [rows, view, kind, company, search]);
 
+  const hasDeptStep = stats.dept > 0 || rows.some((r) => !!r.snapshot?.dept_head_name);
+
   const waitingOn = (r: RequestApproval) => {
     const w = STAGE_META[r.stage]?.waitingOn;
+    if (w === 'DEPT') return r.snapshot?.dept_head_name || t('approvalFlow.fields.deptHead');
     if (w === 'GM') return r.snapshot?.gm_name || 'GM';
     if (w === 'HR') return r.snapshot?.hr_name || 'HR';
     return null;
@@ -139,7 +145,10 @@ export function RequestApprovalsBoard() {
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+      <div className={cn('grid gap-3 grid-cols-2', hasDeptStep ? 'lg:grid-cols-5' : 'lg:grid-cols-4')}>
+        {hasDeptStep && (
+          <StatCard icon={UserCheck} label={t('approvalFlow.stats.waitingDept')} value={stats.dept} tone="cyan" onClick={() => setView('open')} />
+        )}
         <StatCard icon={UserCheck} label={t('approvalFlow.stats.waitingGm')} value={stats.gm} tone="blue" onClick={() => setView('open')} />
         <StatCard icon={Users} label={t('approvalFlow.stats.waitingHr')} value={stats.hr} tone="orange" onClick={() => setView('open')} />
         <StatCard icon={Inbox} label={t('approvalFlow.stats.decidedToday')} value={stats.decidedToday} tone="green" onClick={() => setView('decided')} />
@@ -166,7 +175,7 @@ export function RequestApprovalsBoard() {
                   view === v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
                 )}
               >
-                {v === 'open' ? `${t('approvalFlow.view.open')} (${stats.gm + stats.hr})` : t(`approvalFlow.view.${v}`)}
+                {v === 'open' ? `${t('approvalFlow.view.open')} (${stats.dept + stats.gm + stats.hr})` : t(`approvalFlow.view.${v}`)}
               </button>
             ))}
           </div>
@@ -367,7 +376,9 @@ function DetailFields({ approval }: { approval: RequestApproval }) {
     }
     for (const k of ['purpose', 'language', 'destination'] as const) if (d[k]) fields.push([f(k, k), d[k]]);
   }
-  fields.push([f('submitted', 'Submitted'), fmt(s?.created_at)], [f('gm', 'GM'), s?.gm_name], [f('hr', 'HR'), s?.hr_name]);
+  fields.push([f('submitted', 'Submitted'), fmt(s?.created_at)], [f('department', 'Department'), s?.department_name]);
+  if (s?.dept_head_name) fields.push([f('deptHead', 'Department head'), s.dept_head_name]);
+  fields.push([f('gm', 'GM'), s?.gm_name]);
   return (
     <dl className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-1.5 text-sm">
       {fields
@@ -394,10 +405,11 @@ function StatCard({
   label: string;
   value: number | string;
   hint?: string;
-  tone: 'blue' | 'orange' | 'green' | 'gray';
+  tone: 'cyan' | 'blue' | 'orange' | 'green' | 'gray';
   onClick?: () => void;
 }) {
   const toneCls = {
+    cyan: 'text-cyan-700 dark:text-cyan-400 bg-cyan-500/10',
     blue: 'text-blue-600 dark:text-blue-400 bg-blue-500/10',
     orange: 'text-orange-600 dark:text-orange-400 bg-orange-500/10',
     green: 'text-green-600 dark:text-green-400 bg-green-500/10',

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { EmployeeRequestSteps, EmployeeStatusBadge } from '../components/approvals/EmployeeRequestProgress';
 import { useTranslation } from 'react-i18next';
 import { 
   Calendar, 
@@ -92,18 +93,7 @@ export default function EmployeeLeavesPage() {
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'Approved':
-        return <Badge variant="success" className="gap-1"><CheckCircle size={14} /> {t('leaves.approved') || 'Approved'}</Badge>;
-      case 'Rejected':
-        return <Badge variant="destructive" className="gap-1"><XCircle size={14} /> {t('leaves.rejected') || 'Rejected'}</Badge>;
-      case 'Pending':
-        return <Badge variant="warning" className="gap-1"><Clock size={14} /> {t('leaves.pending') || 'Pending'}</Badge>;
-      default:
-        return <Badge>{status}</Badge>;
-    }
-  };
+  const getStatusBadge = (status: string) => <EmployeeStatusBadge status={status} />;
 
   const calculateDays = (startDate: string, endDate: string): number => {
     const start = new Date(startDate);
@@ -116,7 +106,7 @@ export default function EmployeeLeavesPage() {
   // Calculate statistics
   const stats = {
     totalRequests: leaveRequests.length,
-    pending: leaveRequests.filter(r => r.status === 'Pending').length,
+    pending: leaveRequests.filter(r => r.status !== 'Approved' && r.status !== 'Rejected').length,
     approved: leaveRequests.filter(r => r.status === 'Approved').length,
     rejected: leaveRequests.filter(r => r.status === 'Rejected').length,
     totalDaysTaken: leaveRequests
@@ -476,6 +466,9 @@ export default function EmployeeLeavesPage() {
                 <Label className="text-muted-foreground">{t('leaves.submittedAt') || 'Submitted'}</Label>
                 <p className="font-medium">{new Date(selectedRequest.created_at).toLocaleDateString()}</p>
               </div>
+            </div>
+            <div className="rounded-lg border border-border p-4">
+              <EmployeeRequestSteps status={selectedRequest.status} />
             </div>
             <div>
               <Label className="text-muted-foreground">{t('leaves.reason') || 'Reason'}</Label>

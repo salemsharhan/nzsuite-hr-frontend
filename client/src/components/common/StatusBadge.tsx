@@ -43,6 +43,11 @@ const statusConfig: Record<string, { bg: string; text: string; border: string }>
     text: 'text-gray-500',
     border: 'border-gray-500/20'
   },
+  'Pending_Dept_Head': {
+    bg: 'bg-cyan-500/10',
+    text: 'text-cyan-600',
+    border: 'border-cyan-500/20'
+  },
   'Pending_GM': {
     bg: 'bg-blue-500/10',
     text: 'text-blue-500',
@@ -56,6 +61,7 @@ const statusConfig: Record<string, { bg: string; text: string; border: string }>
 };
 
 const statusLabel: Record<string, string> = {
+  Pending_Dept_Head: 'Waiting for department head',
   Pending_GM: 'Waiting for GM',
   On_Hold: 'On hold',
 };

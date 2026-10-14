@@ -21,6 +21,7 @@ import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RequestApprovalsBoard } from '@/components/approvals/RequestApprovalsBoard';
+import { ApprovalSettings } from '@/components/approvals/ApprovalSettings';
 
 export default function HrApprovalsPage() {
   const { t } = useTranslation();
@@ -36,12 +37,16 @@ export default function HrApprovalsPage() {
         <TabsList>
           <TabsTrigger value="requests">{t('approvalFlow.tabRequests')}</TabsTrigger>
           <TabsTrigger value="manual">{t('approvalFlow.tabManual')}</TabsTrigger>
+          <TabsTrigger value="settings">{t('approvalFlow.settings.tab')}</TabsTrigger>
         </TabsList>
         <TabsContent value="requests">
           <RequestApprovalsBoard />
         </TabsContent>
         <TabsContent value="manual">
           <ManualGmApprovals />
+        </TabsContent>
+        <TabsContent value="settings">
+          <ApprovalSettings />
         </TabsContent>
       </Tabs>
     </div>

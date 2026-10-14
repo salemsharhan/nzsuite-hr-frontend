@@ -18,7 +18,7 @@ import i18n from 'i18next';
 import { approvalFlowService, actionsForStage, ACTION_META, type ApprovalAction, type RequestApproval } from '@/services/approvalFlowService';
 import { ApprovalActionDialog, ApprovalActionIcon, ApprovalActionLabel, ApprovalFlowCaption, ApprovalStageBadge } from '@/components/approvals/ApprovalBits';
 
-type LeaveStatus = 'Pending' | 'Pending_GM' | 'On_Hold' | 'Approved' | 'Rejected';
+type LeaveStatus = 'Pending' | 'Pending_Dept_Head' | 'Pending_GM' | 'On_Hold' | 'Approved' | 'Rejected';
 
 // Interface for display
 interface DisplayLeaveRequest {
@@ -394,6 +394,7 @@ export default function LeaveRequestsTab({ onRequestUpdated }: LeaveRequestsTabP
             <SelectContent>
               <SelectItem value="all">All Status</SelectItem>
               <SelectItem value="Pending">Pending (HR)</SelectItem>
+              <SelectItem value="Pending_Dept_Head">Waiting for department head</SelectItem>
               <SelectItem value="Pending_GM">Pending GM</SelectItem>
               <SelectItem value="On_Hold">On Hold</SelectItem>
               <SelectItem value="Approved">Approved</SelectItem>

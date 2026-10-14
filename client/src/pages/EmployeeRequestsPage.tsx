@@ -62,7 +62,7 @@ export default function EmployeeRequestsPage() {
   const flowReload = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<
-    'all' | 'Pending' | 'Pending_GM' | 'On_Hold' | 'In Review' | 'Approved' | 'Rejected' | 'Completed' | 'Cancelled'
+    'all' | 'Pending' | 'Pending_Dept_Head' | 'Pending_GM' | 'On_Hold' | 'In Review' | 'Approved' | 'Rejected' | 'Completed' | 'Cancelled'
   >('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [selectedRequest, setSelectedRequest] = useState<CombinedRequest | null>(null);

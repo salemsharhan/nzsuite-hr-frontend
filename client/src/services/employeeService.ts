@@ -326,7 +326,7 @@ export const employeeService = {
   async getAll(companyId?: string): Promise<Employee[]> {
     try {
       const params: any = {
-        select: '*,departments!employees_department_id_fkey(name),jobs(name),roles(name)',
+        select: '*,departments(name),jobs(name),roles(name)',
         order: 'created_at.desc'
       };
       
